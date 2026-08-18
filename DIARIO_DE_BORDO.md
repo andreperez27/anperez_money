@@ -168,3 +168,56 @@ usuário logado, lidas do Supabase com RLS como única portaria.
 ### Próximo passo
 Etapa 03: criação de conta pelo app (escrita no banco via `.insert()`),
 com as mesmas garantias de RLS (policy `with check`).
+
+---
+
+## Etapa 03 — criação de contas pelo app (18/08/2026)
+
+### Objetivo
+Formulário no Dashboard cria contas no Supabase; a lista atualiza na
+hora. O `user_id` é preenchido pelo próprio Postgres (DEFAULT), e a
+policy RLS `with check` é a garantia de que ninguém insere conta para
+outro usuário.
+
+### Banco (alterações autorizadas, reversíveis)
+1. `alter table public.contas alter column user_id set default auth.uid();`
+   — coluna passa a ser preenchida pelo banco no momento do insert
+   (avaliando o JWT da conexão). Reversível: `drop default`.
+2. `grant insert on public.contas to authenticated;` — verificou-se
+   depois que os grants já existiam no projeto (padrão antigo do
+   Supabase concede tudo a anon/authenticated). Verificação por
+   `information_schema` confirmou: `column_default = auth.uid()` e
+   `authenticated` com INSERT/SELECT etc.
+
+### Conceito-chave da etapa
+"Fazer o Postgres preencher" = **DEFAULT na coluna** (preenche), não a
+policy (valida) nem o grant (abre a porta). Os três são complementares.
+O DEFAULT funciona via API porque a conexão carrega o JWT; no SQL
+Editor (papel postgres) continuaria NULL — mesma lição da Etapa 02.
+
+### Arquivos
+- `src/hooks/useContas.js` — função `carregar()` extraída (usada na
+  montagem e após criação) + `criarConta()`: insert SEM `user_id`,
+  depois recarrega a lista.
+- `src/pages/Dashboard.jsx` — formulário controlado (nome, tipo,
+  saldo inicial), botão disabled durante envio, mensagens de
+  sucesso/erro.
+- `DIARIO_DE_BORDO.md` — este registro.
+
+### Testes
+- build: PASSOU (72 módulos, sem erro)
+- criação normal pela UI: PASSOU — conta real "Nubank PJ" (R$ 158,69)
+  criada pelo formulário, lista atualizou sem reload
+- user_id nascido automaticamente: PASSOU — conferido por join com
+  auth.users: a linha nasceu com andre.270378@gmail.com, sem o app
+  enviar user_id (quem preencheu foi o DEFAULT auth.uid())
+- teste negativo de adulteração pela API (with check): PASSOU — POST
+  manual via fetch com user_id alheio respondeu `42501 new row
+  violates row-level security policy for table "contas"`, e nenhuma
+  linha foi criada em nenhuma das tentativas
+
+### Observação de segurança (candidato a etapa futura)
+Os grants do projeto concedem tudo (DELETE/TRUNCATE/UPDATE/etc.)
+também para `anon`. Não é falha enquanto o RLS fecha a porta, mas o
+princípio do menor privilégio sugere revogar de `anon` o que a app não
+usa. Anotado, sem alteração nesta etapa.

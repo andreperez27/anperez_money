@@ -3,38 +3,40 @@ import { supabase } from '../lib/supabaseClient'
 
 // Busca centralizada das contas do usuário logado.
 //
-// POR QUE EXISTE: Dashboard (agora) e Contas/Movimentações (futuro) precisam
-// da mesma lista de contas. Com a busca num hook só, nenhuma tela repete o
-// useEffect — e se um dia a consulta mudar, muda num lugar único.
-//
-// Como funciona: o supabase-js devolve uma promessa com { data, error }.
-// Repare que NÃO existe filtro .eq('user_id', ...) aqui: quem garante que
-// só voltam as suas contas é o RLS no banco (política com auth.uid()),
-// aplicado automaticamente em toda consulta. Escrever o filtro no código
-// seria redundante e esconderia uma falha de RLS.
+// O RLS (política com auth.uid()) filtra no banco; aqui não existe
+// filtro de user_id no código — quem garante o isolamento é o Postgres.
 export function useContas() {
   const [contas, setContas] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
 
-  useEffect(() => {
-    // "ativo" protege contra setState depois do desmonte: se o Dashboard
-    // for desmontado no meio da busca (ex.: logout), a resposta que
-    // eventualmente chegar é simplesmente ignorada.
-    let ativo = true
-
-    supabase
+  // A consulta mora numa função própria para ser usada em dois momentos:
+  // na montagem (useEffect) e após criar uma conta (criarConta), quando a
+  // lista precisa ser recarregada sem que a página inteira recarregue.
+  async function carregar() {
+    const { data, error } = await supabase
       .from('contas')
       .select('*')
       .order('nome')
-      .then(({ data, error }) => {
+    if (error) throw new Error(error.message)
+    return data
+  }
+
+  useEffect(() => {
+    // "ativo" protege contra setState depois do desmonte do componente.
+    let ativo = true
+
+    carregar()
+      .then((data) => {
         if (!ativo) return
-        if (error) {
-          setErro(error.message)
-        } else {
-          setContas(data)
-        }
-        setCarregando(false)
+        setContas(data)
+      })
+      .catch((e) => {
+        if (!ativo) return
+        setErro(e.message)
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false)
       })
 
     return () => {
@@ -42,5 +44,22 @@ export function useContas() {
     }
   }, [])
 
-  return { contas, carregando, erro }
+  // Criar conta. O insert NÃO envia user_id: o DEFAULT auth.uid() que
+  // foi criado no banco preenche com o dono da sessão no momento do
+  // insert (quem insere é o Postgres, lendo o JWT da conexão). Se alguém
+  // tentasse adulterar o payload com um user_id de outra pessoa, a
+  // política RLS with check recusaria a operação com erro — o banco
+  // decide, não o cliente.
+  async function criarConta({ nome, tipo, saldo_atual }) {
+    const { error } = await supabase
+      .from('contas')
+      .insert({ nome, tipo, saldo_atual })
+    if (error) throw new Error(error.message)
+
+    const data = await carregar()
+    setContas(data)
+    setErro(null)
+  }
+
+  return { contas, carregando, erro, criarConta }
 }
