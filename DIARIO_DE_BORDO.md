@@ -84,3 +84,46 @@ funcionando é que entramos na tela de contas e movimentações de fato.
 
 Me avisa quando o SQL Editor mostrar sucesso e as tabelas aparecerem no
 Table Editor, que eu libero o próximo arquivo.
+
+---
+
+## Etapa 01 — fundação do Git (18/08/2026)
+
+### Objetivo
+Eliminar o risco de vazar `.venv` (ambiente Python do projeto antigo) e
+bancos locais para o GitHub, e criar o primeiro commit do projeto.
+
+### Decisões
+- `.gitignore` ganhou as seções "Ambientes locais" (`.venv/`, `venv/`,
+  `env/`) e "Bancos de dados locais" (`*.db`, `*.sqlite`, `*.sqlite3`).
+  Dados financeiros reais só devem viver no Supabase (com RLS) ou em
+  backups fora do repositório, nunca no Git.
+- Commit inicial `6aad0b8` criado e enviado para
+  `https://github.com/andreperez27/anperez_money` (branch `master`).
+- Problema de máquina resolvido: o `credential.helper` global apontava
+  para `manager-core` (Git Credential Manager), que não está instalado.
+  Ajustado para `wincred` (cofre de credenciais do Windows).
+
+### Conceitos aprendidos
+- Padrões de caminho no `.gitignore` (pasta `x/`, extensão `*.db`)
+- Ciclo completo: `git status` → `git diff` → `git add` → `git commit` →
+  `git push`
+- `git check-ignore -v` para provar que arquivos sensíveis estão protegidos
+- Auditoria de staging com `git grep --cached` buscando segredos
+- `remote` vs `origin`; `git push -u` (upstream)
+- `credential.helper` e o que é o cofre de credenciais do Windows
+
+### Pendência registrada (para a etapa de deploy)
+O repositório no GitHub se chama `anperez_money` (underscore), mas o
+`vite.config.js` (base) e o `main.jsx` (basename) usam `/anperez-money/`
+(hífen). Decisão de André: manter o underscore e ajustar o código na
+etapa de deploy. Se o deploy for feito antes, o site quebra (CSS/JS 404).
+
+### Próximo passo
+Etapa 02: telas de Contas e Movimentações de verdade no Supabase,
+substituindo o placeholder do Dashboard.
+
+### Estado do banco original
+`dados.db` (233 KB, 581 movimentações) preservado em
+`C:\Users\andre\Desktop\contas\contabilidade total\App financeiro`.
+Fonte futura de migração — não foi tocado.
