@@ -44,6 +44,15 @@ export function useContas() {
     }
   }, [])
 
+  // Recarrega a lista de contas. Existe porque o saldo pode mudar por
+  // fora deste hook: quando uma movimentação é lançada, o trigger
+  // atualiza saldo_atual no banco — o Dashboard chama atualizar() logo
+  // após criarMovimentacao para a tela refletir o novo saldo.
+  async function atualizar() {
+    const data = await carregar()
+    setContas(data)
+  }
+
   // Criar conta. O insert NÃO envia user_id: o DEFAULT auth.uid() que
   // foi criado no banco preenche com o dono da sessão no momento do
   // insert (quem insere é o Postgres, lendo o JWT da conexão). Se alguém
@@ -56,10 +65,9 @@ export function useContas() {
       .insert({ nome, tipo, saldo_atual })
     if (error) throw new Error(error.message)
 
-    const data = await carregar()
-    setContas(data)
+    await atualizar()
     setErro(null)
   }
 
-  return { contas, carregando, erro, criarConta }
+  return { contas, carregando, erro, criarConta, atualizar }
 }

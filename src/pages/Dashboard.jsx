@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useContas } from '../hooks/useContas'
+import { useMovimentacoes } from '../hooks/useMovimentacoes'
 import { supabase } from '../lib/supabaseClient'
 
 // Formata 1500.5 como "R$ 1.500,50".
@@ -9,25 +10,42 @@ const formatoReal = new Intl.NumberFormat('pt-BR', {
   currency: 'BRL',
 })
 
-// A tela pós-login. Enquanto não existir rota própria, lista de contas
-// e o formulário de criação moram aqui.
+// "2026-08-18" vira "18/08/2026" na tela.
+function formatarData(dataISO) {
+  const [ano, mes, dia] = dataISO.split('-')
+  return `${dia}/${mes}/${ano}`
+}
+
+function hoje() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export default function Dashboard() {
   const { usuario } = useAuth()
-  const { contas, carregando, erro, criarConta } = useContas()
+  const { contas, carregando: contasCarregando, erro: contasErro, criarConta, atualizar } = useContas()
+  const { movimentacoes, carregando: movCarregando, erro: movErro, criarMovimentacao } = useMovimentacoes()
 
-  // Estado do formulário de nova conta. São "inputs controlados": o valor
-  // digitado mora no estado do React (não no DOM), então o componente
-  // sempre sabe exatamente o que está no campo.
+  // --- Estado do formulário de nova conta ---
   const [nome, setNome] = useState('')
   const [tipo, setTipo] = useState('corrente')
   const [saldo, setSaldo] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  const [mensagem, setMensagem] = useState(null)
+  const [enviandoConta, setEnviandoConta] = useState(false)
+  const [mensagemConta, setMensagemConta] = useState(null)
+
+  // --- Estado do formulário de nova movimentação ---
+  const [contaId, setContaId] = useState('')
+  const [tipoOp, setTipoOp] = useState('Entrada')
+  const [valor, setValor] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [categoria, setCategoria] = useState('')
+  const [data, setData] = useState(hoje)
+  const [enviandoMov, setEnviandoMov] = useState(false)
+  const [mensagemMov, setMensagemMov] = useState(null)
 
   async function handleCriarConta(e) {
     e.preventDefault()
-    setEnviando(true)
-    setMensagem(null)
+    setEnviandoConta(true)
+    setMensagemConta(null)
 
     try {
       await criarConta({
@@ -37,11 +55,42 @@ export default function Dashboard() {
       })
       setNome('')
       setSaldo('')
-      setMensagem({ tipo: 'ok', texto: `Conta "${nome.trim()}" criada.` })
+      setMensagemConta({ tipo: 'ok', texto: `Conta "${nome.trim()}" criada.` })
     } catch (err) {
-      setMensagem({ tipo: 'erro', texto: `Não foi possível criar: ${err.message}` })
+      setMensagemConta({ tipo: 'erro', texto: `Não foi possível criar: ${err.message}` })
     } finally {
-      setEnviando(false)
+      setEnviandoConta(false)
+    }
+  }
+
+  async function handleCriarMovimentacao(e) {
+    e.preventDefault()
+    setEnviandoMov(true)
+    setMensagemMov(null)
+
+    try {
+      await criarMovimentacao({
+        conta_id: contaId,
+        data,
+        descricao: descricao.trim(),
+        valor: Number(valor),
+        categoria: categoria.trim() || null,
+        tipo_op: tipoOp,
+      })
+      // O trigger já ajustou o saldo no banco; atualizar() traz o novo
+      // valor para a tela sem recarregar a página.
+      await atualizar()
+      setValor('')
+      setDescricao('')
+      setCategoria('')
+      setMensagemMov({
+        tipo: 'ok',
+        texto: `${tipoOp === 'Entrada' ? 'Entrada' : 'Saída'} de ${formatoReal.format(Number(valor))} lançada.`,
+      })
+    } catch (err) {
+      setMensagemMov({ tipo: 'erro', texto: `Não foi possível lançar: ${err.message}` })
+    } finally {
+      setEnviandoMov(false)
     }
   }
 
@@ -91,14 +140,84 @@ export default function Dashboard() {
               onChange={(e) => setSaldo(e.target.value)}
               style={estilos.input}
             />
-            <button type="submit" disabled={enviando} style={estilos.botaoCriar}>
-              {enviando ? 'Criando...' : 'Criar conta'}
+            <button type="submit" disabled={enviandoConta} style={estilos.botaoCriar}>
+              {enviandoConta ? 'Criando...' : 'Criar conta'}
             </button>
           </form>
 
-          {mensagem && (
-            <p style={mensagem.tipo === 'ok' ? estilos.mensagemOk : estilos.mensagemErro}>
-              {mensagem.texto}
+          {mensagemConta && (
+            <p style={mensagemConta.tipo === 'ok' ? estilos.mensagemOk : estilos.mensagemErro}>
+              {mensagemConta.texto}
+            </p>
+          )}
+        </section>
+
+        <section style={estilos.secao}>
+          <h2>Nova movimentação</h2>
+          <form onSubmit={handleCriarMovimentacao} style={estilos.form}>
+            <select
+              value={contaId}
+              onChange={(e) => setContaId(e.target.value)}
+              required
+              style={estilos.input}
+            >
+              <option value="" disabled>
+                Selecione a conta...
+              </option>
+              {contas.map((conta) => (
+                <option key={conta.id} value={conta.id}>
+                  {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                </option>
+              ))}
+            </select>
+            <select
+              value={tipoOp}
+              onChange={(e) => setTipoOp(e.target.value)}
+              style={estilos.input}
+            >
+              <option value="Entrada">Entrada</option>
+              <option value="Saida">Saída</option>
+            </select>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              placeholder="Valor (R$)"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              style={estilos.input}
+            />
+            <input
+              type="text"
+              required
+              placeholder="Descrição"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              style={estilos.input}
+            />
+            <input
+              type="text"
+              placeholder="Categoria (opcional)"
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              style={estilos.input}
+            />
+            <input
+              type="date"
+              required
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              style={estilos.input}
+            />
+            <button type="submit" disabled={enviandoMov} style={estilos.botaoCriar}>
+              {enviandoMov ? 'Lançando...' : 'Lançar'}
+            </button>
+          </form>
+
+          {mensagemMov && (
+            <p style={mensagemMov.tipo === 'ok' ? estilos.mensagemOk : estilos.mensagemErro}>
+              {mensagemMov.texto}
             </p>
           )}
         </section>
@@ -106,19 +225,17 @@ export default function Dashboard() {
         <section style={estilos.secao}>
           <h2>Contas</h2>
 
-          {carregando && <p style={estilos.mensagem}>Carregando contas...</p>}
+          {contasCarregando && <p style={estilos.mensagem}>Carregando contas...</p>}
 
-          {erro && (
-            <p style={estilos.erro}>
-              Não foi possível carregar suas contas: {erro}
-            </p>
+          {contasErro && (
+            <p style={estilos.erro}>Não foi possível carregar suas contas: {contasErro}</p>
           )}
 
-          {!carregando && !erro && contas.length === 0 && (
+          {!contasCarregando && !contasErro && contas.length === 0 && (
             <p style={estilos.mensagem}>Nenhuma conta cadastrada ainda.</p>
           )}
 
-          {!carregando && !erro && contas.length > 0 && (
+          {!contasCarregando && !contasErro && contas.length > 0 && (
             <ul style={estilos.lista}>
               {contas.map((conta) => (
                 <li key={conta.id} style={estilos.item}>
@@ -131,6 +248,42 @@ export default function Dashboard() {
                   </span>
                 </li>
               ))}
+            </ul>
+          )}
+        </section>
+
+        <section style={estilos.secao}>
+          <h2>Movimentações recentes</h2>
+
+          {movCarregando && <p style={estilos.mensagem}>Carregando movimentações...</p>}
+
+          {movErro && (
+            <p style={estilos.erro}>Não foi possível carregar as movimentações: {movErro}</p>
+          )}
+
+          {!movCarregando && !movErro && movimentacoes.length === 0 && (
+            <p style={estilos.mensagem}>Nenhuma movimentação ainda.</p>
+          )}
+
+          {!movCarregando && !movErro && movimentacoes.length > 0 && (
+            <ul style={estilos.lista}>
+              {movimentacoes.map((mov) => {
+                const ehEntrada = mov.tipo_op === 'Entrada'
+                return (
+                  <li key={mov.id} style={estilos.item}>
+                    <div>
+                      <span style={estilos.nomeConta}>{mov.descricao}</span>
+                      <span style={estilos.tipoConta}>
+                        {formatarData(mov.data)} · {mov.contas?.nome ?? '—'}
+                        {mov.categoria ? ` · ${mov.categoria}` : ''}
+                      </span>
+                    </div>
+                    <span style={ehEntrada ? estilos.valorEntrada : estilos.valorSaida}>
+                      {ehEntrada ? '+' : '−'} {formatoReal.format(Number(mov.valor))}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </section>
@@ -199,4 +352,6 @@ const estilos = {
   nomeConta: { fontWeight: 'bold' },
   tipoConta: { color: '#9ca3af', marginLeft: '0.6rem', fontSize: '0.85rem' },
   saldo: { fontWeight: 'bold', color: '#42A5F5' },
+  valorEntrada: { fontWeight: 'bold', color: '#4ade80' },
+  valorSaida: { fontWeight: 'bold', color: '#f87171' },
 }

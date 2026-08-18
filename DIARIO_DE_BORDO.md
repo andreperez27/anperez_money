@@ -221,3 +221,47 @@ Os grants do projeto concedem tudo (DELETE/TRUNCATE/UPDATE/etc.)
 também para `anon`. Não é falha enquanto o RLS fecha a porta, mas o
 princípio do menor privilégio sugere revogar de `anon` o que a app não
 usa. Anotado, sem alteração nesta etapa.
+
+---
+
+## Etapa 04 — lançamentos com saldo mantido pelo banco (mês de referência: agosto/2026)
+
+### Banco (alterações autorizadas, reversíveis)
+1. `alter table public.movimentacoes alter column user_id set default
+   auth.uid();` — mesmo padrão da Etapa 03. Verificado por
+   information_schema: DEFAULT = auth.uid() e authenticated com INSERT.
+2. Função `public.atualizar_saldo()` + trigger `trg_atualizar_saldo`
+   (AFTER INSERT FOR EACH ROW): ajusta `saldo_atual` da conta
+   registrada — Entrada soma, Saida subtrai — atomicamente com o
+   insert (mesma transação). `security definer` + `set search_path =
+   public`. Verificado em pg_trigger.
+   Rollback: drop trigger / drop function / drop default.
+
+### Decisão de arquitetura (por quê o trigger e não o app)
+Duas chamadas separadas (insert + update) criam janela de
+inconsistência: se o update falhar, saldo mente. O trigger roda na
+mesma transação e o `saldo_atual = saldo_atual ± valor` é atômico
+mesmo com clientes concorrentes. Pendência anotada: quando existirem
+etapas de editar/excluir movimentação, o trigger precisará evoluir.
+
+### Arquivos
+- `src/hooks/useMovimentacoes.js` (novo) — busca das 10 recentes com
+  embedding `.select('*, contas (nome)')` (join via PostgREST pela FK)
+  + `criarMovimentacao()` (insert sem user_id).
+- `src/hooks/useContas.js` — exposto `atualizar()`: recarrega contas
+  após lançamento, porque o saldo muda no banco por fora do React.
+- `src/pages/Dashboard.jsx` — formulário de movimentação (conta, tipo,
+  valor, descrição, categoria opcional, data) e lista das recentes com
+  cores (verde/vermelho) e data dd/mm/aaaa.
+
+### Testes
+- build: PASSOU (73 módulos)
+- lançamento pela UI: PASSOU — Entrada de R$ 100,00 e Saída de
+  R$ 50,00 criadas pelo formulário nas contas reais
+- saldo pelo trigger: PASSOU — Nubank PJ partiu de R$ 158,69,
+  somou 100 e subtraiu 50 (R$ 208,69), sem o React tocar no saldo
+- user_id automático: PASSOU — as linhas apareceram no app logado
+  (RLS só entrega linhas com o próprio user_id; DEFAULT preencheu)
+- trio de redes de segurança (via API): PASSOU — 23514 (CHECK
+  tipo_op), 23503 (FK conta inexistente), 42501 (RLS user_id alheio);
+  nenhuma linha entrou
