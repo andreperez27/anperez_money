@@ -127,3 +127,44 @@ substituindo o placeholder do Dashboard.
 `dados.db` (233 KB, 581 movimentações) preservado em
 `C:\Users\andre\Desktop\contas\contabilidade total\App financeiro`.
 Fonte futura de migração — não foi tocado.
+
+---
+
+## Etapa 02 — leitura de contas no Dashboard (18/08/2026)
+
+### Objetivo
+Dashboard deixou de ser placeholder e passou a listar as contas do
+usuário logado, lidas do Supabase com RLS como única portaria.
+
+### Arquivos
+- `src/hooks/useContas.js` (novo) — busca centralizada com estados
+  carregando/erro/dados e flag `ativo` no cleanup do useEffect.
+- `src/pages/Dashboard.jsx` (modificado) — renderiza os 4 estados da
+  tela (carregando, erro, vazio, lista) e formata saldo com
+  `Intl.NumberFormat` (pt-BR).
+- `DIARIO_DE_BORDO.md` (este registro).
+
+### Decisões e lições
+- A consulta NÃO filtra `user_id` no código: quem garante o isolamento
+  é o RLS (política com `auth.uid()`), aplicado no banco a cada
+  requisição. Filtro no cliente seria redundante, mascararia falha de
+  RLS e criaria falsa sensação de segurança.
+- Conceito importante: `auth.uid()` lê a variável de sessão
+  `request.jwt.claim.sub`, injetada pelo PostgREST quando a requisição
+  passa pela API com um JWT. No SQL Editor (papel `postgres`, acesso
+  administrativo direto, ignora RLS) essa variável NÃO existe → o
+  primeiro INSERT de teste falhou com NULL em `user_id` (barrado pela
+  constraint NOT NULL — sorte que existe). Correção: id explícito via
+  `select id, email from auth.users;`.
+- Banco alterado com autorização: 2 contas fictícias de teste
+  (`Teste Carteira` R$ 150,75 e `Teste Banco` R$ 2.500,00) para o
+  user `6596eb4e-7fcf-4bc2-b340-ec43af57cfcb`
+  (andre.270378@gmail.com). Removíveis com
+  `delete from contas where nome like 'Teste %';`.
+- Testes: `npm run build` OK; lista renderizada corretamente com
+  formato monetário brasileiro; estado vazio OK. Pendente de testar
+  manualmente: estado de erro (remover internet e recarregar).
+
+### Próximo passo
+Etapa 03: criação de conta pelo app (escrita no banco via `.insert()`),
+com as mesmas garantias de RLS (policy `with check`).
