@@ -1,0 +1,55 @@
+# ==========================================================================
+# SEGURANÇA — nunca remova estas linhas
+# ==========================================================================
+# .env.local é onde vão morar suas chaves reais do Supabase. Enquanto ele
+# estiver listado aqui, o comando "git add ." jamais vai incluir esse
+# arquivo num commit, mesmo que você esqueça e rode sem pensar.
+.env.local
+.env.*.local
+
+# Qualquer variação de nome com "secret" ou "service_role" no meio também
+# fica de fora por precaução extra, mesmo que você crie um arquivo com nome
+# diferente do padrão pra testar algo.
+*secret*
+*service_role*
+
+# ==========================================================================
+# Ambientes locais — não fazem sentido versionar
+# ==========================================================================
+# .venv é o ambiente Python do projeto antigo (SQLite/Streamlit). É uma
+# cópia local de pacotes específica desta máquina; quem versiona é a
+# definição das dependências (requirements.txt / package.json), não a
+# pasta em si. O mesmo vale pra qualquer venv futuro (venv/, env/).
+.venv/
+venv/
+env/
+
+# ==========================================================================
+# Gerados automaticamente — não fazem sentido versionar
+# ==========================================================================
+# node_modules pode ter dezenas de milhares de arquivos. Ele é reconstruído
+# a partir do package.json com "npm install", então nunca precisa ir pro
+# GitHub.
+node_modules/
+
+# Pasta de build gerada pelo Vite quando você roda "npm run build". É o que
+# a automação de deploy (GitHub Actions) gera sozinha a cada publicação.
+dist/
+
+# Arquivos de log e cache que ferramentas variadas criam durante o
+# desenvolvimento.
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+
+# ==========================================================================
+# Bancos de dados locais — nunca versionar
+# ==========================================================================
+# Qualquer banco SQLite de trabalho (.db) fica de fora. Dados financeiros
+# reais só devem existir no Supabase (protegidos por RLS) ou em backups
+# fora do repositório, nunca no Git.
+*.db
+*.sqlite
+*.sqlite3
