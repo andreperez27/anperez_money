@@ -7,3 +7,15 @@ body {
   background-color: #0b0f19;
   color: #e5e7eb;
 }
+
+/* Tela inteira sem rolagem de página: a altura é a da janela visível
+   (100dvh respeita a barra de endereço do celular; 100vh fica como
+   fallback) e o conteúdo que não cabe é gerenciado por quem escala
+   (CaberNaTela) ou pelas áreas internas com rolagem própria. */
+.tela-inteira {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

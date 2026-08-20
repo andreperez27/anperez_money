@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import CaberNaTela from '../components/CaberNaTela'
+import logo from '../assets/logo.png'
 
 // Um único componente cobre login e criação de conta, alternando o modo
 // com esse estado. Isso evita duplicar o formulário inteiro em dois
@@ -43,9 +45,10 @@ export default function Login() {
   }
 
   return (
-    <div style={estilos.container}>
-      <div style={estilos.card}>
-        <h1 style={estilos.titulo}>anperez.money</h1>
+    <div className="tela-inteira" style={estilos.container}>
+      <CaberNaTela maxLargura={360} alinhamento="center">
+        <div style={estilos.card}>
+        <img src={logo} alt="ANPEREZ Money" style={estilos.logo} />
         <p style={estilos.subtitulo}>
           {modo === 'entrar' ? 'Entre com sua conta' : 'Crie sua conta'}
         </p>
@@ -82,7 +85,8 @@ export default function Login() {
         >
           {modo === 'entrar' ? 'Ainda não tem conta? Criar uma' : 'Já tem conta? Entrar'}
         </button>
-      </div>
+        </div>
+      </CaberNaTela>
     </div>
   )
 }
@@ -92,8 +96,6 @@ export default function Login() {
 // compartilhado em src/styles/, mas não vamos otimizar isso agora.
 const estilos = {
   container: {
-    minHeight: '100vh',
-    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: 'sans-serif',
@@ -105,6 +107,13 @@ const estilos = {
     width: '100%',
     maxWidth: '360px',
     border: '1px solid #1f2937',
+  },
+  logo: {
+    display: 'block',
+    width: '160px',
+    height: '160px',
+    margin: '0 auto 1rem',
+    borderRadius: '12px',
   },
   titulo: { margin: 0, color: '#e5e7eb' },
   subtitulo: { color: '#9ca3af', marginTop: '0.25rem', marginBottom: '1.5rem' },

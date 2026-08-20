@@ -9,7 +9,7 @@ import './styles/global.css'
 // mesmo jeito que o site do bolão navega entre grupos sem piscar a tela.
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter basename="/anperez-money">
+    <BrowserRouter basename="/anperez_money">
       <App />
     </BrowserRouter>
   </StrictMode>,

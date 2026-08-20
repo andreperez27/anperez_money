@@ -7,7 +7,13 @@ import react from '@vitejs/plugin-react'
 // configuração o Vite gera links assumindo que o site vive na raiz do
 // domínio, o que quebra CSS e JS em produção (funciona local, quebra no ar).
 // Se você trocar o nome do repositório no GitHub, precisa atualizar aqui também.
+// "server.host" expõe o dev server para a rede local (acesso pelo celular
+// na mesma rede via http://IP-DA-MAQUINA:5173). Sem isso, o Vite escuta
+// apenas em localhost.
 export default defineConfig({
   plugins: [react()],
-  base: '/anperez-money/',
+  base: '/anperez_money/',
+  server: {
+    host: true,
+  },
 })

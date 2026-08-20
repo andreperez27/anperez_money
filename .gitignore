@@ -53,3 +53,9 @@ npm-debug.log*
 *.db
 *.sqlite
 *.sqlite3
+
+# Caches do Python e relatório gerado pela migração — o relatório contém
+# saldos reais das contas (mesma regra dos .db: não versionar)
+__pycache__/
+*.pyc
+scripts/relatorio_migracao.md

@@ -1,357 +1,220 @@
-import { useState } from 'react'
-import { useAuth } from '../hooks/useAuth'
+import { Link, useNavigate } from 'react-router-dom'
 import { useContas } from '../hooks/useContas'
-import { useMovimentacoes } from '../hooks/useMovimentacoes'
-import { supabase } from '../lib/supabaseClient'
+import { useTodasCaixinhas } from '../hooks/useCaixinhas'
+import { formatoReal } from '../lib/compartilhados'
+import CaberNaTela from '../components/CaberNaTela'
+import logo from '../assets/logo.png'
+import HomeCard, {
+  IconeContas,
+  IconeCartoes,
+  IconeCaixinhas,
+  IconeRelatorios,
+  IconePonto,
+  IconeConfig,
+} from '../components/HomeCard'
 
-// Formata 1500.5 como "R$ 1.500,50".
-const formatoReal = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-})
-
-// "2026-08-18" vira "18/08/2026" na tela.
-function formatarData(dataISO) {
-  const [ano, mes, dia] = dataISO.split('-')
-  return `${dia}/${mes}/${ano}`
-}
-
-function hoje() {
-  return new Date().toISOString().slice(0, 10)
-}
-
+// Tela inicial (mobile-first): cartão de entrada do app, em fundo claro,
+// com o logo, a saudação e o grid de atalhos. A navegação principal vive
+// no menu do cabeçalho (Início | Contas Correntes | Cartões |
+// Configurações) e aqui no grid.
+//
+// O card mostra o PATRIMÔNIO TOTAL = soma dos saldos de todas as contas
+// ativas + todas as caixinhas ativas. As buscas são feitas com hooks
+// LOCAIS desta página (useContas + useTodasCaixinhas) em vez do contexto
+// de conta ativa, para que a navegação até aqui sempre traga o valor
+// mais recente do banco.
 export default function Dashboard() {
-  const { usuario } = useAuth()
-  const { contas, carregando: contasCarregando, erro: contasErro, criarConta, atualizar } = useContas()
-  const { movimentacoes, carregando: movCarregando, erro: movErro, criarMovimentacao } = useMovimentacoes()
+  const navigate = useNavigate()
+  const {
+    contas,
+    carregando: contasCarregando,
+    erro: contasErro,
+  } = useContas()
+  const {
+    caixinhas,
+    carregando: caixinhasCarregando,
+    erro: caixinhasErro,
+  } = useTodasCaixinhas()
 
-  // --- Estado do formulário de nova conta ---
-  const [nome, setNome] = useState('')
-  const [tipo, setTipo] = useState('corrente')
-  const [saldo, setSaldo] = useState('')
-  const [enviandoConta, setEnviandoConta] = useState(false)
-  const [mensagemConta, setMensagemConta] = useState(null)
+  const contasAtivas = contas.filter((c) => c.ativa)
+  const caixinhasAtivas = caixinhas.filter((cx) => cx.ativa)
+  const patrimonio =
+    contasAtivas.reduce((soma, c) => soma + Number(c.saldo_atual || 0), 0) +
+    caixinhasAtivas.reduce((soma, cx) => soma + Number(cx.saldo || 0), 0)
+  const carregando = contasCarregando || caixinhasCarregando
+  const temAlgo = contasAtivas.length > 0 || caixinhasAtivas.length > 0
 
-  // --- Estado do formulário de nova movimentação ---
-  const [contaId, setContaId] = useState('')
-  const [tipoOp, setTipoOp] = useState('Entrada')
-  const [valor, setValor] = useState('')
-  const [descricao, setDescricao] = useState('')
-  const [categoria, setCategoria] = useState('')
-  const [data, setData] = useState(hoje)
-  const [enviandoMov, setEnviandoMov] = useState(false)
-  const [mensagemMov, setMensagemMov] = useState(null)
-
-  async function handleCriarConta(e) {
-    e.preventDefault()
-    setEnviandoConta(true)
-    setMensagemConta(null)
-
-    try {
-      await criarConta({
-        nome: nome.trim(),
-        tipo,
-        saldo_atual: Number(saldo) || 0,
-      })
-      setNome('')
-      setSaldo('')
-      setMensagemConta({ tipo: 'ok', texto: `Conta "${nome.trim()}" criada.` })
-    } catch (err) {
-      setMensagemConta({ tipo: 'erro', texto: `Não foi possível criar: ${err.message}` })
-    } finally {
-      setEnviandoConta(false)
+  function resumoPatrimonio() {
+    const partes = []
+    if (contasAtivas.length > 0) {
+      partes.push(`${contasAtivas.length} ${contasAtivas.length === 1 ? 'conta' : 'contas'}`)
     }
-  }
-
-  async function handleCriarMovimentacao(e) {
-    e.preventDefault()
-    setEnviandoMov(true)
-    setMensagemMov(null)
-
-    try {
-      await criarMovimentacao({
-        conta_id: contaId,
-        data,
-        descricao: descricao.trim(),
-        valor: Number(valor),
-        categoria: categoria.trim() || null,
-        tipo_op: tipoOp,
-      })
-      // O trigger já ajustou o saldo no banco; atualizar() traz o novo
-      // valor para a tela sem recarregar a página.
-      await atualizar()
-      setValor('')
-      setDescricao('')
-      setCategoria('')
-      setMensagemMov({
-        tipo: 'ok',
-        texto: `${tipoOp === 'Entrada' ? 'Entrada' : 'Saída'} de ${formatoReal.format(Number(valor))} lançada.`,
-      })
-    } catch (err) {
-      setMensagemMov({ tipo: 'erro', texto: `Não foi possível lançar: ${err.message}` })
-    } finally {
-      setEnviandoMov(false)
+    if (caixinhasAtivas.length > 0) {
+      partes.push(`${caixinhasAtivas.length} ${caixinhasAtivas.length === 1 ? 'caixinha' : 'caixinhas'}`)
     }
-  }
-
-  async function handleLogout() {
-    await supabase.auth.signOut()
+    return partes.join(' · ')
   }
 
   return (
-    <div style={estilos.pagina}>
-      <header style={estilos.cabecalho}>
-        <h1 style={estilos.titulo}>anperez.money</h1>
-        <div style={estilos.usuario}>
-          <span>{usuario?.email}</span>
-          <button onClick={handleLogout} style={estilos.botaoSair}>
-            Sair
-          </button>
+    <div className="tela-inteira" style={estilos.pagina}>
+      <CaberNaTela maxLargura={480}>
+        <div style={estilos.corpo}>
+          <header style={estilos.cabecalho}>
+          <img src={logo} alt="ANPEREZ Money" style={estilos.logo} />
+          <h1 style={estilos.saudacao}>Bem-vindo ao ANPEREZ!</h1>
+          <p style={estilos.subtitulo}>
+            Sua jornada financeira e de gestão começa aqui.
+          </p>
+        </header>
+
+        {/* Cartão do patrimônio: toque nele abre Contas e Caixinhas
+            (/contas). Busca local = sempre o valor mais recente. */}
+        {carregando && (
+          <div style={estilos.cartaoSaldo}>
+            <span style={estilos.cartaoRotulo}>Carregando patrimônio...</span>
+          </div>
+        )}
+
+        {!carregando && temAlgo && (
+          <Link to="/contas" style={estilos.cartaoSaldo}>
+            <div>
+              <span style={estilos.cartaoRotulo}>Patrimônio total</span>
+              <strong style={estilos.cartaoValor}>
+                {formatoReal.format(patrimonio)}
+              </strong>
+              <span style={estilos.cartaoAcao}>{resumoPatrimonio()} · ver detalhes</span>
+            </div>
+            <span style={estilos.cartaoSeta} aria-hidden="true">›</span>
+          </Link>
+        )}
+
+        {!carregando && !temAlgo && (contasErro || caixinhasErro) && (
+          <div style={estilos.cartaoSaldo}>
+            <span style={estilos.cartaoRotulo}>Não foi possível carregar o patrimônio</span>
+          </div>
+        )}
+
+        {!carregando && !temAlgo && !contasErro && !caixinhasErro && (
+          <Link to="/configuracoes" style={estilos.cartaoSaldo}>
+            <div>
+              <span style={estilos.cartaoRotulo}>Nenhuma conta cadastrada</span>
+              <strong style={estilos.cartaoValor}>Cadastre sua primeira conta</strong>
+              <span style={estilos.cartaoAcao}>Ir para Configurações</span>
+            </div>
+            <span style={estilos.cartaoSeta} aria-hidden="true">›</span>
+          </Link>
+        )}
+
+        <div style={estilos.grid}>
+          <HomeCard
+            icone={<IconeContas />}
+            titulo="Contas Correntes"
+            descricao="Saldos e movimentações"
+            aoClicar={() => navigate('/contas')}
+          />
+          <HomeCard
+            icone={<IconeCartoes />}
+            titulo="Cartões de Crédito"
+            descricao="Faturas e limites"
+            aoClicar={() => navigate('/cartoes')}
+          />
+          <HomeCard
+            icone={<IconeCaixinhas />}
+            titulo="Caixinhas"
+            descricao="Reservas e objetivos"
+            aoClicar={() => navigate('/caixinhas')}
+          />
+          <HomeCard
+            icone={<IconeRelatorios />}
+            titulo="Relatórios"
+            descricao="Visão dos seus números"
+            aoClicar={() => navigate('/relatorios')}
+          />
+          <HomeCard
+            icone={<IconePonto />}
+            titulo="Ponto Inteligente"
+            descricao="Jornada e horas a receber"
+            aoClicar={() => navigate('/ponto')}
+          />
+          <HomeCard
+            icone={<IconeConfig />}
+            titulo="Configurações"
+            descricao="Preferências do app"
+            aoClicar={() => navigate('/configuracoes')}
+          />
+          </div>
         </div>
-      </header>
-
-      <main style={estilos.conteudo}>
-        <section style={estilos.secao}>
-          <h2>Nova conta</h2>
-          <form onSubmit={handleCriarConta} style={estilos.form}>
-            <input
-              type="text"
-              placeholder="Nome (ex.: Carteira)"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              required
-              style={estilos.input}
-            />
-            <select
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
-              style={estilos.input}
-            >
-              <option value="corrente">corrente</option>
-              <option value="poupanca">poupança</option>
-              <option value="carteira">carteira</option>
-            </select>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Saldo inicial (R$)"
-              value={saldo}
-              onChange={(e) => setSaldo(e.target.value)}
-              style={estilos.input}
-            />
-            <button type="submit" disabled={enviandoConta} style={estilos.botaoCriar}>
-              {enviandoConta ? 'Criando...' : 'Criar conta'}
-            </button>
-          </form>
-
-          {mensagemConta && (
-            <p style={mensagemConta.tipo === 'ok' ? estilos.mensagemOk : estilos.mensagemErro}>
-              {mensagemConta.texto}
-            </p>
-          )}
-        </section>
-
-        <section style={estilos.secao}>
-          <h2>Nova movimentação</h2>
-          <form onSubmit={handleCriarMovimentacao} style={estilos.form}>
-            <select
-              value={contaId}
-              onChange={(e) => setContaId(e.target.value)}
-              required
-              style={estilos.input}
-            >
-              <option value="" disabled>
-                Selecione a conta...
-              </option>
-              {contas.map((conta) => (
-                <option key={conta.id} value={conta.id}>
-                  {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
-                </option>
-              ))}
-            </select>
-            <select
-              value={tipoOp}
-              onChange={(e) => setTipoOp(e.target.value)}
-              style={estilos.input}
-            >
-              <option value="Entrada">Entrada</option>
-              <option value="Saida">Saída</option>
-            </select>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              required
-              placeholder="Valor (R$)"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              style={estilos.input}
-            />
-            <input
-              type="text"
-              required
-              placeholder="Descrição"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              style={estilos.input}
-            />
-            <input
-              type="text"
-              placeholder="Categoria (opcional)"
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              style={estilos.input}
-            />
-            <input
-              type="date"
-              required
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              style={estilos.input}
-            />
-            <button type="submit" disabled={enviandoMov} style={estilos.botaoCriar}>
-              {enviandoMov ? 'Lançando...' : 'Lançar'}
-            </button>
-          </form>
-
-          {mensagemMov && (
-            <p style={mensagemMov.tipo === 'ok' ? estilos.mensagemOk : estilos.mensagemErro}>
-              {mensagemMov.texto}
-            </p>
-          )}
-        </section>
-
-        <section style={estilos.secao}>
-          <h2>Contas</h2>
-
-          {contasCarregando && <p style={estilos.mensagem}>Carregando contas...</p>}
-
-          {contasErro && (
-            <p style={estilos.erro}>Não foi possível carregar suas contas: {contasErro}</p>
-          )}
-
-          {!contasCarregando && !contasErro && contas.length === 0 && (
-            <p style={estilos.mensagem}>Nenhuma conta cadastrada ainda.</p>
-          )}
-
-          {!contasCarregando && !contasErro && contas.length > 0 && (
-            <ul style={estilos.lista}>
-              {contas.map((conta) => (
-                <li key={conta.id} style={estilos.item}>
-                  <div>
-                    <span style={estilos.nomeConta}>{conta.nome}</span>
-                    <span style={estilos.tipoConta}>{conta.tipo}</span>
-                  </div>
-                  <span style={estilos.saldo}>
-                    {formatoReal.format(Number(conta.saldo_atual))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section style={estilos.secao}>
-          <h2>Movimentações recentes</h2>
-
-          {movCarregando && <p style={estilos.mensagem}>Carregando movimentações...</p>}
-
-          {movErro && (
-            <p style={estilos.erro}>Não foi possível carregar as movimentações: {movErro}</p>
-          )}
-
-          {!movCarregando && !movErro && movimentacoes.length === 0 && (
-            <p style={estilos.mensagem}>Nenhuma movimentação ainda.</p>
-          )}
-
-          {!movCarregando && !movErro && movimentacoes.length > 0 && (
-            <ul style={estilos.lista}>
-              {movimentacoes.map((mov) => {
-                const ehEntrada = mov.tipo_op === 'Entrada'
-                return (
-                  <li key={mov.id} style={estilos.item}>
-                    <div>
-                      <span style={estilos.nomeConta}>{mov.descricao}</span>
-                      <span style={estilos.tipoConta}>
-                        {formatarData(mov.data)} · {mov.contas?.nome ?? '—'}
-                        {mov.categoria ? ` · ${mov.categoria}` : ''}
-                      </span>
-                    </div>
-                    <span style={ehEntrada ? estilos.valorEntrada : estilos.valorSaida}>
-                      {ehEntrada ? '+' : '−'} {formatoReal.format(Number(mov.valor))}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
-      </main>
+      </CaberNaTela>
     </div>
   )
 }
 
 const estilos = {
   pagina: {
-    minHeight: '100vh',
+    background: '#f6f7f9',
+    color: '#111827',
     fontFamily: 'sans-serif',
-    background: '#0b0f19',
-    color: '#e5e7eb',
+    // Base levemente maior que o padrão (16px): a tela inicial respira
+    // melhor e o CaberNaTela encolhe/amplia conforme a altura real.
+    fontSize: '1.05rem',
+  },
+  corpo: {
+    width: '100%',
+    maxWidth: '480px',
+    padding: '1rem 1rem 0.5rem',
   },
   cabecalho: {
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '1rem 2rem',
-    borderBottom: '1px solid #1f2937',
+    textAlign: 'center',
+    gap: '0.4rem',
+    marginBottom: '1.75rem',
+    paddingTop: '1rem',
   },
-  titulo: { margin: 0, fontSize: '1.25rem' },
-  usuario: { display: 'flex', alignItems: 'center', gap: '1rem' },
-  botaoSair: {
-    padding: '0.4rem 0.9rem',
-    borderRadius: '8px',
-    border: '1px solid #374151',
-    background: 'none',
-    color: '#e5e7eb',
-    cursor: 'pointer',
+  logo: {
+    width: '84px',
+    height: '84px',
+    borderRadius: '20px',
+    marginBottom: '0.75rem',
+    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.12)',
   },
-  conteudo: { padding: '2rem', maxWidth: '720px', margin: '0 auto' },
-  secao: { marginBottom: '2rem' },
-  form: { display: 'flex', flexDirection: 'column', gap: '0.6rem', maxWidth: '340px' },
-  input: {
-    padding: '0.6rem 0.8rem',
-    borderRadius: '8px',
-    border: '1px solid #374151',
-    background: '#111827',
-    color: '#e5e7eb',
-  },
-  botaoCriar: {
-    padding: '0.6rem',
-    borderRadius: '8px',
-    border: 'none',
-    background: '#42A5F5',
-    color: '#0b0f19',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  mensagem: { color: '#9ca3af' },
-  erro: { color: '#ef4444' },
-  mensagemOk: { color: '#4ade80' },
-  mensagemErro: { color: '#ef4444' },
-  lista: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  item: {
+  saudacao: { margin: 0, fontSize: '1.4rem', fontWeight: 'bold' },
+  subtitulo: { margin: 0, color: '#6b7280', fontSize: '0.9rem' },
+  cartaoSaldo: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '0.9rem 1.1rem',
-    borderRadius: '10px',
-    background: '#111827',
-    border: '1px solid #1f2937',
+    background: '#ffffff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '16px',
+    padding: '1rem 1.1rem',
+    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+    textDecoration: 'none',
+    color: 'inherit',
+    gap: '0.5rem',
+    marginBottom: '1.25rem',
   },
-  nomeConta: { fontWeight: 'bold' },
-  tipoConta: { color: '#9ca3af', marginLeft: '0.6rem', fontSize: '0.85rem' },
-  saldo: { fontWeight: 'bold', color: '#42A5F5' },
-  valorEntrada: { fontWeight: 'bold', color: '#4ade80' },
-  valorSaida: { fontWeight: 'bold', color: '#f87171' },
+  cartaoRotulo: {
+    display: 'block',
+    fontSize: '0.8rem',
+    color: '#6b7280',
+  },
+  cartaoValor: {
+    display: 'block',
+    fontSize: '1.35rem',
+    color: '#111827',
+    margin: '0.1rem 0 0.15rem',
+  },
+  cartaoAcao: {
+    display: 'block',
+    fontSize: '0.75rem',
+    color: '#2f7dc4',
+  },
+  cartaoSeta: { fontSize: '1.6rem', color: '#9ca3af' },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '0.85rem',
+  },
 }
