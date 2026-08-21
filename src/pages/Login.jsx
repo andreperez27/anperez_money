@@ -119,6 +119,8 @@ const estilos = {
   subtitulo: { color: '#9ca3af', marginTop: '0.25rem', marginBottom: '1.5rem' },
   form: { display: 'flex', flexDirection: 'column', gap: '0.75rem' },
   input: {
+    width: '100%',
+    boxSizing: 'border-box',
     padding: '0.6rem 0.8rem',
     borderRadius: '8px',
     border: '1px solid #374151',

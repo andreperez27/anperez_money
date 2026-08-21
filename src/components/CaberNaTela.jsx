@@ -1,25 +1,18 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import useMediaQuery from '../hooks/useMediaQuery'
 
-// Envolve o conteúdo de uma tela para OCUPAR a viewport inteira: mede o
-// conteúdo real (scrollWidth/Height, que ignoram transform) e aplica
-// transform: scale():
-// - conteúdo maior que a tela → encolhe (f < 1)
-// - conteúdo menor que a tela → AMPLIA (f > 1) em telas grandes
-//   (desktop/tablet), preenchendo a altura disponível
-// Em telas mais estreitas que maxLargura o conteúdo reflui (largura
-// 100%) e o limite passa a ser só a altura. O fator nunca passa da
-// largura real da tela (fLargo) — nada estoura nem é cortado.
+// Breakpoint móvil: por debajo de esta anchura el contenido NO se escala
+// (la página roe y CaberNaTela renderiza os hijos directos, sin envolver).
+const BREAKPOINT = '(max-width: 640px)'
+
+// Envuelve el contenido de una tela para OCUPAR la viewport en desktop:
+// mide el contenido real (scrollWidth/Height) y aplica transform: scale()
+// para que entre sin rolag de página, con margen de seguridad calculada.
 //
-// Regras de rolagem do app:
-// - A PÁGINA nunca rola (o palco corta o que sobrar do box de layout).
-// - Textos longos/lista rolam DENTRO das próprias áreas (overflow dos
-//   componentes, ex.: estilosComuns.lista com maxHeight).
-// - Zoom do navegador amplia tudo proporcionalmente sem quebrar o
-//   encaixe — a escala é relativa à tela, não absoluta.
-//
-// transform (diferente de zoom CSS) NÃO altera o box de layout, então a
-// medição é estável: não realimenta o cálculo nem trava o ResizeObserver.
+// En móvil (< breakpoint) ese encaje se omite: el contenido fluye a tamaño
+// real y la página roe normalmente — no se encogen textos ni botones.
 export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 'flex-start' }) {
+  const esMovil = useMediaQuery(BREAKPOINT)
   const ref = useRef(null)
   const [fator, setFator] = useState(null)
 
@@ -27,30 +20,25 @@ export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 
     const no = ref.current
     if (!no) return
 
-    let fatorAtual = null
+    let fatorActual = null
 
     function medir() {
       const { innerHeight: alturaTela, innerWidth: larguraTela } = window
       const alturaDoConteudo = no.scrollHeight
       const larguraDoConteudo = no.scrollWidth
       // fAlto: preencher a altura (sobe acima de 1 em telas grandes).
-      // fLargo: jamais passar da largura da tela — é quem limita o
-      // ampliar quando a tela é menor que maxLargura.
-      //
-      // Margem de segurança de 4px na altura: com o encaixe perfeito o
-      // navegador "acerta" o último pixel e corta a linha do rodapé;
-      // a reserva garante que o texto final nunca encoste no corte.
+      // fLargo: jamais passar da largura da tela — limita o ampliar quando
+      // a tela é menor que maxLargura.
+      // Margen de segurança de 4px na altura: a última linha não é cortada.
       const f = Math.min(
         (alturaTela - 4) / alturaDoConteudo,
-        larguraTela / larguraDoConteudo,
+        larguraDoConteudo ? larguraTela / larguraDoConteudo : 1,
       )
-      // floor (nunca arredonda para cima): se o fator exato fosse
-      // 0.9996, arredondar para 1 deixaria o conteúdo 0.04% maior que
-      // a tela e cortaria a última linha.
-      const arredondado = Math.floor(f * 1000) / 1000
-      if (fatorAtual !== arredondado) {
-        fatorAtual = arredondado
-        setFator(arredondado)
+      // floor (nunca arredonda para cima): evita que 0.9996 passe a 1.
+      const redondeado = Math.floor(f * 1000) / 1000
+      if (fatorActual !== redondeado) {
+        fatorActual = redondeado
+        setFator(redondeado)
       }
     }
 
@@ -64,11 +52,15 @@ export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 
     }
   }, [maxLargura])
 
+  if (esMovil) {
+    // Móvil: render direto, sin escala — a página roe.
+    return <div style={{ width: '100%' }}>{children}</div>
+  }
+
   return (
     <div style={estilos.palco}>
-      {/* Quando amplia (f > 1), ancorar no topo: centralizar cortaria o
-          cartão no topo da tela. Quando encaixa (f <= 1), vale o
-          alinhamento pedido pela tela (ex.: Login centraliza). */}
+      {/* Quando amplía (f > 1), ancorar no topo: centralizar cortaría o
+          cartón. Quando encaixa (f <= 1), vale o alineamento pedido. */}
       <div
         style={{
           height: '100%',
@@ -94,8 +86,8 @@ export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 
 }
 
 const estilos = {
-  // O palco É a tela (largura total): o conteúdo ampliado visualmente
-  // maior que a coluna nunca é cortado porque f <= largura da tela.
+  // O palco ES a tela (largura total): o contido ampliado nunca cortado
+  // porque f <= largura da tela.
   palco: {
     flex: 1,
     minHeight: 0,

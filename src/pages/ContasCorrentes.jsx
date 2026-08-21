@@ -5,6 +5,7 @@ import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useCaixinhas, useTodasCaixinhas } from '../hooks/useCaixinhas'
 import { useMovimentacoes } from '../hooks/useMovimentacoes'
 import { useResumoMes } from '../hooks/useResumoMes'
+import useMediaQuery from '../hooks/useMediaQuery'
 import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
 
 // "Contas Correntes" — referência de design da tela "Gestão de Contas
@@ -22,6 +23,7 @@ export default function ContasCorrentes() {
   const navigate = useNavigate()
   const { contas, carregando: contasCarregando, erro: contasErro, atualizar } = useContas()
   const { contaAtiva, setContaAtiva } = useContaAtiva()
+  const esMovil = useMediaQuery('(max-width: 640px)')
   const { entradas, saidas, carregando: resumoCarregando, erro: resumoErro, atualizar: atualizarResumo } = useResumoMes()
   const { criarCaixinha } = useCaixinhas(contaAtiva?.id)
   const {
@@ -314,7 +316,7 @@ export default function ContasCorrentes() {
                 {formatoReal.format(Number(contaAtiva.saldo_atual))}
               </p>
             )}
-            <div style={estilosResumo.gradeLancamento}>
+            <div style={esMovil ? { ...estilosResumo.gradeLancamento, gridTemplateColumns: '1fr' } : estilosResumo.gradeLancamento}>
               <select
                 value={tipoOp}
                 onChange={(e) => setTipoOp(e.target.value)}

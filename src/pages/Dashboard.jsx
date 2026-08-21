@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useContas } from '../hooks/useContas'
 import { useTodasCaixinhas } from '../hooks/useCaixinhas'
+import { useMuyEstrecho } from '../hooks/useMediaQuery'
 import { formatoReal } from '../lib/compartilhados'
 import CaberNaTela from '../components/CaberNaTela'
 import logo from '../assets/logo.png'
@@ -14,17 +15,18 @@ import HomeCard, {
 } from '../components/HomeCard'
 
 // Tela inicial (mobile-first): cartão de entrada do app, em fundo claro,
-// com o logo, a saudação e o grid de atalhos. A navegação principal vive
+// com o logo, a saudação e o grid de atalhos. A navegación principal vive
 // no menu do cabeçalho (Início | Contas Correntes | Cartões |
 // Configurações) e aqui no grid.
 //
-// O card mostra o PATRIMÔNIO TOTAL = soma dos saldos de todas as contas
-// ativas + todas as caixinhas ativas. As buscas são feitas com hooks
-// LOCAIS desta página (useContas + useTodasCaixinhas) em vez do contexto
-// de conta ativa, para que a navegação até aqui sempre traga o valor
-// mais recente do banco.
+// O card mostra o PATRIMÓNIO TOTAL = soma dos saldos de todas as contas
+// activas + todas as caixinhas activas. As buscas são feitas com hooks
+// LOCALES de esta página (useContas + useTodasCaixinhas) em vez do
+// contexto de conta activa, para que a navegación até aqui sempre traiga
+// o valor más reciente do banco.
 export default function Dashboard() {
   const navigate = useNavigate()
+  const muyEstrecho = useMuyEstrecho()
   const {
     contas,
     carregando: contasCarregando,
@@ -105,7 +107,7 @@ export default function Dashboard() {
           </Link>
         )}
 
-        <div style={estilos.grid}>
+        <div style={{ ...estilos.grid, gridTemplateColumns: muyEstrecho ? '1fr' : estilos.grid.gridTemplateColumns }}>
           <HomeCard
             icone={<IconeContas />}
             titulo="Contas Correntes"
@@ -150,12 +152,12 @@ export default function Dashboard() {
 }
 
 const estilos = {
-  pagina: {
+pagina: {
     background: '#f6f7f9',
     color: '#111827',
-    fontFamily: 'sans-serif',
-    // Base levemente maior que o padrão (16px): a tela inicial respira
-    // melhor e o CaberNaTela encolhe/amplia conforme a altura real.
+    fontFamily: 'san-serif',
+    // Base levemente mayor que el estándar (16px): la pantalla inicial
+    // respiró mejor con un texto más cómodo de leer en móvil.
     fontSize: '1.05rem',
   },
   corpo: {

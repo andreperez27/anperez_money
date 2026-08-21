@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useContas } from '../hooks/useContas'
 import { useMovimentacoes, buscarSaldoAntesDe } from '../hooks/useMovimentacoes'
 import { useContaAtiva } from '../context/ContaAtivaContext'
+import useMediaQuery from '../hooks/useMediaQuery'
 import SeletorPeriodo from '../components/SeletorPeriodo'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 
@@ -103,6 +104,7 @@ export default function Movimentacoes() {
 
   const [mostrandoNova, setMostrandoNova] = useState(false)
   const [movEmEdicao, setMovEmEdicao] = useState(null)
+  const esMovil = useMediaQuery('(max-width: 640px)')
   const [tipoOp, setTipoOp] = useState('Entrada')
   const [valor, setValor] = useState('')
   const [descricao, setDescricao] = useState('')
@@ -299,41 +301,99 @@ export default function Movimentacoes() {
                       </div>
                     )}
 
-                                        {/* Cabeçalho da tabela (fica fixo; só as linhas rolam) */}
-                    <div style={estilos.tabelaCabecalho}>
-                      <span style={estilos.gradeCabecalho}>Data</span>
-                      <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                        Descrição
-                      </span>
-                      <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                        Débito
-                      </span>
-                      <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                        Crédito
-                      </span>
-                      <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                        Ações
-                      </span>
-                    </div>
+                                        {/* Cabeçalho da tabela: só em desktop (em móvil cada fila
+                        se mostra como tarjeta empilada). */}
+                    {!esMovil && (
+                      <div style={estilos.tabelaCabecalho}>
+                        <span style={estilos.gradeCabecalho}>Data</span>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                          Descrição
+                        </span>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                          Débito
+                        </span>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                          Crédito
+                        </span>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                          Ações
+                        </span>
+                      </div>
+                    )}
 
                     <ul style={estilosComuns.lista}>
                       {movimentacoes.map((mov) => {
                         const ehEntrada = mov.tipo_op === 'Entrada'
                         // Movimentações ligadas a caixinhas (categoria
                         // 'caixinha', criadas por caixinha_guardar/resgatar)
-                        // não podem ser editadas/excluídas direto: o
-                        // vínculo é gerenciado pela própria caixinha.
+                        // não podem ser editadas/excluidas direto.
                         const ehCaixinha = mov.categoria === 'caixinha'
-                        return (
+                        const rotuloCategoria = mov.categoria ? (
+                          <span style={estilosComuns.tipoConta}>{mov.categoria}</span>
+                        ) : null
+
+                        return esMovil ? (
+                          <li key={mov.id} style={estilos.cardMovil}>
+                            <div style={estilos.cardMovilTopo}>
+                              <div style={estilos.cardMovilDesc}>
+                                <span style={estilosComuns.nomeConta}>{mov.descricao}</span>
+                                {rotuloCategoria}
+                              </div>
+                              <span style={estilos.cardMovilData}>
+                                {formatarData(mov.data)}
+                              </span>
+                            </div>
+                            <div style={estilos.cardMovilValor}>
+                              <span style={estilos.cardMovilRotulo}>
+                                {ehEntrada ? 'Crédito' : 'Débito'}
+                              </span>
+                              <strong
+                                style={{
+                                  color: ehEntrada ? '#4ade80' : '#f87171',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                {formatoReal.format(Number(mov.valor))}
+                              </strong>
+                            </div>
+                            <div style={estilos.cardMovilAcciones}>
+                              {ehCaixinha ? (
+                                <span
+                                  style={estilos.cadeado}
+                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
+                                >
+                                  🔒
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => iniciarEdicao(mov)}
+                                    style={estilos.botaoAcao}
+                                    title="Editar movimentação"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExcluir(mov)}
+                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
+                                    title="Excluir movimentação"
+                                  >
+                                    Excluir
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </li>
+                        ) : (
                           <li key={mov.id} style={estilos.tabelaLinha}>
                             <span style={estilos.celulaData}>
                               {formatarData(mov.data)}
                             </span>
                             <span style={{ ...estilos.celulaDescricao, borderLeft: '1px solid #1f2937' }}>
                               <span style={estilosComuns.nomeConta}>{mov.descricao}</span>
-                              {mov.categoria && (
-                                <span style={estilosComuns.tipoConta}>{mov.categoria}</span>
-                              )}
+                              {rotuloCategoria}
                             </span>
                             <span style={{ ...estilos.celulaValor, color: '#f87171', borderLeft: '1px solid #1f2937' }}>
                               {ehEntrada ? '' : formatoReal.format(Number(mov.valor))}
@@ -343,7 +403,12 @@ export default function Movimentacoes() {
                             </span>
                             <span style={{ ...estilos.celulaAcoes, borderLeft: '1px solid #1f2937' }}>
                               {ehCaixinha ? (
-                                <span style={estilos.cadeado} title="Movimentação de caixinha — gerencie pelos botões da caixinha">🔒</span>
+                                <span
+                                  style={estilos.cadeado}
+                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
+                                >
+                                  🔒
+                                </span>
                               ) : (
                                 <>
                                   <button
@@ -401,9 +466,7 @@ export default function Movimentacoes() {
               Conta: <strong>{contaAtiva.nome}</strong> —{' '}
               {formatoReal.format(Number(contaAtiva.saldo_atual))}
             </p>
-            {/* Linha 1: Tipo | Data | Valor. Linha 2: Descrição (2/3) +
-                Categoria (1/3). Grade única de 3 colunas. */}
-            <div style={estilos.gradeLancamento}>
+            <div style={esMovil ? { ...estilos.gradeLancamento, gridTemplateColumns: '1fr' } : estilos.gradeLancamento}>
               <select
                 value={tipoOp}
                 onChange={(e) => setTipoOp(e.target.value)}
@@ -613,6 +676,48 @@ const estilos = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: '0.6rem',
+  },
+  // Estratégia móvil para o extrato: fila em tarjeta empilhada (evita
+  // o overflow horizontal das colunas fixas da tabela). Conserva Data,
+  // Descripción/categoria, el importe (Crédito/Débito) e as acciones.
+  cardMovil: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.4rem',
+    padding: '0.6rem 0.8rem',
+    borderRadius: '10px',
+    background: '#111827',
+    border: '1px solid #1f2937',
+  },
+  cardMovilTopo: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+  },
+  cardMovilDesc: {
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+  },
+  cardMovilData: {
+    flexShrink: 0,
+    color: '#9ca3af',
+    fontSize: '0.72rem',
+    whiteSpace: 'nowrap',
+  },
+  cardMovilValor: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+  },
+  cardMovilRotulo: { color: '#9ca3af', fontSize: '0.72rem' },
+  cardMovilAcciones: {
+    display: 'flex',
+    gap: '0.4rem',
+    justifyContent: 'flex-end',
   },
   botaoNova: {
     position: 'fixed',
