@@ -4,6 +4,7 @@ import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useCaixinhas, useTodasCaixinhas } from '../hooks/useCaixinhas'
 import { useMovimentacoes } from '../hooks/useMovimentacoes'
+import { useTransferencias } from '../hooks/useTransferencias'
 import { useResumoMes } from '../hooks/useResumoMes'
 import useMediaQuery from '../hooks/useMediaQuery'
 import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
@@ -17,8 +18,9 @@ import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
 //   pílulas do cabeçalho — não navega.
 // - Caixinhas: visão consolidada de todas + "Nova Caixinha" vinculada à
 //   conta ativa.
-// - Ações: Lançar (formulário real), Extrato (navega para /movimentacoes
-//   já filtrado pela conta ativa) e Transferir desabilitado ("em breve").
+// - Ações: Lançar e Transferir (dois fluxos: entre contas próprias via RPC
+//   atômica; para terceiros como saída comum) e Extrato (navega para
+//   /movimentacoes já filtrado pela conta ativa).
 export default function ContasCorrentes() {
   const navigate = useNavigate()
   const { contas, carregando: contasCarregando, erro: contasErro, atualizar } = useContas()
@@ -53,6 +55,158 @@ export default function ContasCorrentes() {
   const [novaCaixinha, setNovaCaixinha] = useState({ nome: '', saldo: '', objetivo: '' })
 
   const { criarMovimentacao } = useMovimentacoes({ contaId: contaAtiva?.id })
+
+  // ===== Transferências (ETAPA 05B) =====
+  // Fluxo A "Entre minhas contas": RPC atômica criar_transferencia.
+  // Fluxo B "Para outra pessoa": lançamento comum de Saída pelo hook de
+  // movimentações — sem tabela transferencias e sem RPC.
+  const { transferir } = useTransferencias()
+
+  const [mostrandoTransferencia, setMostrandoTransferencia] = useState(false)
+  const [modoTransferencia, setModoTransferencia] = useState(null) // 'entreContas' | 'terceiro'
+  const [enviandoTransferencia, setEnviandoTransferencia] = useState(false)
+
+  const [transfEntre, setTransfEntre] = useState({
+    origemId: '',
+    destinoId: '',
+    valor: '',
+    data: hoje,
+    descricao: '',
+  })
+
+  const [transfTerceiro, setTransfTerceiro] = useState({
+    origemId: '',
+    destinatario: '',
+    valor: '',
+    data: hoje,
+    categoria: '',
+    descricao: '',
+  })
+
+  // Só contas ATIVAS participam de transferências.
+  const contasAtivas = contas.filter((c) => c.ativa)
+
+  // Validação em tempo real do Fluxo A (espelha as regras da RPC no banco;
+  // o banco continua sendo a autoridade final).
+  const errosTransfEntre = []
+  const contaOrigemTransf = contasAtivas.find((c) => c.id === transfEntre.origemId)
+  if (!transfEntre.origemId) {
+    errosTransfEntre.push('Selecione a conta de origem.')
+  }
+  if (!transfEntre.destinoId) {
+    errosTransfEntre.push('Selecione a conta de destino.')
+  } else if (transfEntre.destinoId === transfEntre.origemId) {
+    errosTransfEntre.push('Origem e destino devem ser diferentes.')
+  }
+  if (!transfEntre.valor || !(Number(transfEntre.valor) > 0)) {
+    errosTransfEntre.push('Informe um valor maior que zero.')
+  } else if (
+    contaOrigemTransf &&
+    Number(transfEntre.valor) > Number(contaOrigemTransf.saldo_atual)
+  ) {
+    errosTransfEntre.push(
+      `Saldo insuficiente em ${contaOrigemTransf.nome} (disponível: ${formatoReal.format(Number(contaOrigemTransf.saldo_atual))}).`,
+    )
+  }
+
+  // Validação do Fluxo B: SEM regra de saldo — é um lançamento comum,
+  // exatamente igual ao botão Lançar (o trigger aceita saldo negativo).
+  const errosTransfTerceiro = []
+  if (!transfTerceiro.origemId) {
+    errosTransfTerceiro.push('Selecione a conta de origem.')
+  }
+  if (!transfTerceiro.destinatario.trim()) {
+    errosTransfTerceiro.push('Informe o destinatário.')
+  }
+  if (!transfTerceiro.valor || !(Number(transfTerceiro.valor) > 0)) {
+    errosTransfTerceiro.push('Informe um valor maior que zero.')
+  }
+
+  function alternarPainelTransferencia() {
+    if (mostrandoTransferencia) {
+      setMostrandoTransferencia(false)
+      setModoTransferencia(null)
+      return
+    }
+    // Origem inicial dos dois fluxos = conta ativa do momento.
+    setTransfEntre((t) => ({ ...t, origemId: contaAtiva?.id || '' }))
+    setTransfTerceiro((t) => ({ ...t, origemId: contaAtiva?.id || '' }))
+    setMensagem(null)
+    setMostrandoTransferencia(true)
+  }
+
+  // Fluxo A: a RPC trava as duas contas, valida saldo e grava transferencia +
+  // as duas movimentações vinculadas numa única transação. Aqui só atualizamos
+  // saldos/resumo após o sucesso (o extrato recarrega sozinho ao navegar).
+  async function handleTransferirEntreContas(e) {
+    e.preventDefault()
+    setEnviandoTransferencia(true)
+    setMensagem(null)
+
+    try {
+      await transferir({
+        contaOrigemId: transfEntre.origemId,
+        contaDestinoId: transfEntre.destinoId,
+        valor: Number(transfEntre.valor),
+        data: transfEntre.data,
+        descricao: transfEntre.descricao.trim() || null,
+      })
+      await atualizar()
+      await atualizarResumo()
+      const origemNome =
+        contas.find((c) => c.id === transfEntre.origemId)?.nome ?? 'origem'
+      const destinoNome =
+        contas.find((c) => c.id === transfEntre.destinoId)?.nome ?? 'destino'
+      setTransfEntre({ origemId: contaAtiva?.id || '', destinoId: '', valor: '', data: hoje, descricao: '' })
+      setModoTransferencia(null)
+      setMostrandoTransferencia(false)
+      setMensagem({
+        tipo: 'ok',
+        texto: `Transferência de ${formatoReal.format(Number(transfEntre.valor))} de ${origemNome} para ${destinoNome} concluída.`,
+      })
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: `Não foi possível transferir: ${err.message}` })
+    } finally {
+      setEnviandoTransferencia(false)
+    }
+  }
+
+  // Fluxo B: Saída comum com descrição composta. Destinatário e descrição são
+  // campos separados na tela; no banco viram uma única string em descricao.
+  async function handleTransferirParaTerceiro(e) {
+    e.preventDefault()
+    setEnviandoTransferencia(true)
+    setMensagem(null)
+
+    const destinatario = transfTerceiro.destinatario.trim()
+    const complemento = transfTerceiro.descricao.trim()
+
+    try {
+      await criarMovimentacao({
+        conta_id: transfTerceiro.origemId,
+        data: transfTerceiro.data,
+        descricao: complemento
+          ? `Transferência para ${destinatario} — ${complemento}`
+          : `Transferência para ${destinatario}`,
+        valor: Number(transfTerceiro.valor),
+        categoria: transfTerceiro.categoria.trim() || null,
+        tipo_op: 'Saida',
+      })
+      await atualizar()
+      await atualizarResumo()
+      setTransfTerceiro({ origemId: contaAtiva?.id || '', destinatario: '', valor: '', data: hoje, categoria: '', descricao: '' })
+      setModoTransferencia(null)
+      setMostrandoTransferencia(false)
+      setMensagem({
+        tipo: 'ok',
+        texto: `Saída de ${formatoReal.format(Number(transfTerceiro.valor))} registrada (transferência para ${destinatario}).`,
+      })
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: `Não foi possível registrar: ${err.message}` })
+    } finally {
+      setEnviandoTransferencia(false)
+    }
+  }
 
   async function handleLancar(e) {
     e.preventDefault()
@@ -295,8 +449,8 @@ export default function ContasCorrentes() {
           <button type="button" onClick={() => setMostrandoLancamento(!mostrandoLancamento)} style={estilosComuns.botaoCriar}>
             {mostrandoLancamento ? 'Fechar lançamento' : 'Lançar'}
           </button>
-          <button type="button" disabled title="Em breve" style={estilosAcao.desabilitado}>
-            Transferir
+          <button type="button" onClick={alternarPainelTransferencia} style={estilosAcao.ativo}>
+            {mostrandoTransferencia ? 'Fechar' : 'Transferir'}
           </button>
           <button type="button" onClick={handleExtrato} style={estilosAcao.ativo}>
             Extrato
@@ -347,6 +501,203 @@ export default function ContasCorrentes() {
             </div>
             <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
               {enviando ? 'Lançando...' : 'Lançar'}
+            </button>
+          </form>
+        )}
+
+        {/* Painel Transferir: escolha do modo → formulário correspondente.
+            Em ≤640px tudo vira uma coluna (padrão esMovil do app). */}
+        {mostrandoTransferencia && !modoTransferencia && (
+          <div
+            style={{
+              display: 'grid',
+              gap: '0.6rem',
+              gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
+              marginTop: '0.75rem',
+              marginBottom: '3.5rem',
+            }}
+          >
+            <button type="button" onClick={() => setModoTransferencia('entreContas')} style={estilosAcao.opcao}>
+              <strong>Entre minhas contas</strong>
+              <span style={estilosComuns.mensagem}>
+                Movimentar dinheiro entre minhas próprias contas.
+              </span>
+            </button>
+            <button type="button" onClick={() => setModoTransferencia('terceiro')} style={estilosAcao.opcao}>
+              <strong>Para outra pessoa</strong>
+              <span style={estilosComuns.mensagem}>
+                Registrar uma transferência/pagamento para um terceiro.
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Fluxo A — Entre minhas contas */}
+        {mostrandoTransferencia && modoTransferencia === 'entreContas' && (
+          <form
+            onSubmit={handleTransferirEntreContas}
+            style={{ ...estilosComuns.form, marginTop: '0.75rem', marginBottom: '3.5rem', maxWidth: '480px' }}
+          >
+            {!contaAtiva && (
+              <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
+            )}
+            <div
+              style={{
+                display: 'grid',
+                gap: '0.6rem',
+                gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
+              }}
+            >
+              <select
+                value={transfEntre.origemId}
+                onChange={(e) => setTransfEntre({ ...transfEntre, origemId: e.target.value })}
+                style={{ ...estilosComuns.input, background: '#111827' }}
+              >
+                <option value="">Conta de origem...</option>
+                {contasAtivas.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={transfEntre.destinoId}
+                onChange={(e) => setTransfEntre({ ...transfEntre, destinoId: e.target.value })}
+                style={{ ...estilosComuns.input, background: '#111827' }}
+              >
+                <option value="">Conta de destino...</option>
+                {contasAtivas
+                  .filter((conta) => conta.id !== transfEntre.origemId)
+                  .map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                    </option>
+                  ))}
+              </select>
+              <input
+                type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
+                value={transfEntre.valor}
+                onChange={(e) => setTransfEntre({ ...transfEntre, valor: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="date" required
+                value={transfEntre.data}
+                onChange={(e) => setTransfEntre({ ...transfEntre, data: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="text" placeholder="Descrição (opcional)"
+                value={transfEntre.descricao}
+                onChange={(e) => setTransfEntre({ ...transfEntre, descricao: e.target.value })}
+                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
+              />
+            </div>
+            {contaOrigemTransf && (
+              <p style={estilosComuns.mensagem}>
+                Disponível na origem: {formatoReal.format(Number(contaOrigemTransf.saldo_atual))}
+              </p>
+            )}
+            {errosTransfEntre.length > 0 && (
+              <ul style={estilosAcao.avisoLista}>
+                {errosTransfEntre.map((aviso) => (
+                  <li key={aviso}>{aviso}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="submit"
+              disabled={enviandoTransferencia || errosTransfEntre.length > 0}
+              style={estilosComuns.botaoCriar}
+            >
+              {enviandoTransferencia ? 'Transferindo...' : 'Transferir'}
+            </button>
+          </form>
+        )}
+
+        {/* Fluxo B — Para outra pessoa (saída comum; sem PIX, sem integração) */}
+        {mostrandoTransferencia && modoTransferencia === 'terceiro' && (
+          <form
+            onSubmit={handleTransferirParaTerceiro}
+            style={{ ...estilosComuns.form, marginTop: '0.75rem', marginBottom: '3.5rem', maxWidth: '480px' }}
+          >
+            {!contaAtiva && (
+              <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
+            )}
+            <div
+              style={{
+                display: 'grid',
+                gap: '0.6rem',
+                gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
+              }}
+            >
+              <select
+                value={transfTerceiro.origemId}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, origemId: e.target.value })}
+                style={{ ...estilosComuns.input, background: '#111827', gridColumn: esMovil ? 'auto' : 'span 2' }}
+              >
+                <option value="">Conta de origem...</option>
+                {contasAtivas.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text" required placeholder="Destinatário (para quem vai)"
+                value={transfTerceiro.destinatario}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, destinatario: e.target.value })}
+                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
+              />
+              <input
+                type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
+                value={transfTerceiro.valor}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, valor: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="date" required
+                value={transfTerceiro.data}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, data: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="text" list="categorias-transferencia" placeholder="Categoria (opcional)"
+                value={transfTerceiro.categoria}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, categoria: e.target.value })}
+                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
+              />
+              {/* Datalist = só sugestões sobre o input livre de sempre;
+                  o mecanismo de categorias (texto livre/NULL) não muda. */}
+              <datalist id="categorias-transferencia">
+                <option value="pagamento" />
+                <option value="aluguel" />
+                <option value="servico" />
+                <option value="presente" />
+                <option value="devolucao" />
+                <option value="emprestimo" />
+                <option value="outro" />
+              </datalist>
+              <input
+                type="text" placeholder="Descrição (opcional)"
+                value={transfTerceiro.descricao}
+                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, descricao: e.target.value })}
+                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
+              />
+            </div>
+            {errosTransfTerceiro.length > 0 && (
+              <ul style={estilosAcao.avisoLista}>
+                {errosTransfTerceiro.map((aviso) => (
+                  <li key={aviso}>{aviso}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="submit"
+              disabled={enviandoTransferencia || errosTransfTerceiro.length > 0}
+              style={estilosComuns.botaoCriar}
+            >
+              {enviandoTransferencia ? 'Registrando...' : 'Registrar saída'}
             </button>
           </form>
         )}
@@ -430,15 +781,6 @@ const estilosConta = {
 }
 
 const estilosAcao = {
-  desabilitado: {
-    flex: '1 1 100px',
-    padding: '0.6rem',
-    borderRadius: '8px',
-    border: '1px solid #1f2937',
-    background: '#111827',
-    color: '#4b5563',
-    cursor: 'not-allowed',
-  },
   ativo: {
     flex: '1 1 100px',
     padding: '0.6rem',
@@ -449,5 +791,26 @@ const estilosAcao = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     fontWeight: 'bold',
+  },
+  // Cartões de escolha do painel Transferir (Entre minhas contas / Para
+  // outra pessoa): área de toque generosa, texto descritivo abaixo do título.
+  opcao: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '0.25rem',
+    textAlign: 'left',
+    background: '#111827',
+    border: '1px solid #374151',
+    borderRadius: '12px',
+    color: '#e5e7eb',
+    fontFamily: 'inherit',
+    padding: '0.9rem 1rem',
+    cursor: 'pointer',
+  },
+  avisoLista: {
+    margin: 0,
+    paddingLeft: '1.1rem',
+    color: '#ef4444',
   },
 }

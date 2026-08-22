@@ -960,3 +960,86 @@ calculada) e adicionou-se um breakpoint condicional só para telas pequenas:
 Confirmar o teste móvel no celular do André. Para a próxima etapa fica o
 módulo completo de Cartões de Crédito (fase 2 do schema), sem iniciar ainda.
 Não se implementou nenhuma lógica de cartão.
+
+## Etapa 14 — Transferências: entre contas próprias + para terceiros (22/08/2026)
+
+### Objetivo
+Habilitar o botão "Transferir" em Contas Correntes com DOIS fluxos de
+contabilidade diferente (ETAPA 05B): mover dinheiro entre contas próprias
+(neutro no patrimônio, invisível em receita/despesa) e registrar saída para
+terceiro (saída comum que reduz saldo e patrimônio).
+
+### Arquitetura (Fluxo A — Entre minhas contas)
+`transferencias` → 2 `movimentacoes` vinculadas por `transferencia_id`
+(Saida na origem + Entrada no destino, categoria 'transferencia'), gravadas
+pela RPC atômica `criar_transferencia`. O trigger `trg_atualizar_saldo`
+existente ajusta os dois saldos sozinho — nada de lógica financeira nova no app.
+
+### Migration (`supabase/06_transferencias.sql`) — ADITIVA, idempotente
+- Tabela `transferencias`: user_id, conta_origem_id, conta_destino_id (FKs com
+  ON DELETE RESTRICT — protegem o histórico; o app nunca exclui conta física),
+  valor numeric(12,2) CHECK > 0, data, descricao NULL, request_id UNIQUE
+  (idempotência), CHECK origem <> destino. RLS policy padrão auth.uid().
+- `movimentacoes.transferencia_id uuid NULL` + FK RESTRICT + índice.
+- Guard `trg_protege_transferencia` (BEFORE INSERT/UPDATE/DELETE):
+  INSERT com transferencia_id exige GUC local 'sim' E transferência existente
+  do mesmo dono (validação estrutural); UPDATE/DELETE bloqueados incondicional-
+  mente para linhas vinculadas. Linhas NULL passam intocadas (caixinhas ok).
+- RPC `criar_transferencia(...) returns uuid`: SECURITY DEFINER,
+  search_path=public, EXECUTE só p/ authenticated.
+
+### Segurança
+- GUC `app.criando_transferencia` com `set_config(..., true)` = LOCAL à
+  transação (some no commit/rollback; sem vazamento entre requisições/pool).
+- Inalcançável pelo front: PostgREST só expõe tabelas+RLS e RPCs grantadas;
+  set_config vive fora dos schemas expostos.
+- Pós-condição na RPC antes do retorno: count = 2 E soma Entrada = soma Saída
+  = valor (única composição possível: 1 Entrada + 1 Saída iguais → diferença
+  zero). Falhou? RAISE → rollback TOTAL.
+- Nada confiado ao frontend: validação de saldo é no banco, pós-lock.
+
+### Concorrência
+Lock duplo determinístico numa única query:
+`perform 1 from contas where id in (origem, destino) order by id for update;`
+Toda sessão adquire os locks na mesma ordem física → sem deadlock AB-BA
+(A→B simultâneo com B→A). Saldo validado SÓ depois dos dois locks.
+Idempotência: request_id repetido devolve a transferência existente.
+
+### Fluxo B (Para outra pessoa)
+Lançamento comum tipo_op='Saida' pelo hook useMovimentacoes existente — SEM
+tabela transferencias, SEM RPC, SEM coluna destinatario. Descrição composta:
+"Transferência para {destinatário} — {descrição}" (ou sem travessão quando não
+há descrição). Categoria segue texto livre/NULL (datalist apenas sugere).
+Editável/excluível normalmente no extrato. Sem PIX, sem integração bancária.
+
+### Arquivos
+- Criados: `supabase/06_transferencias.sql`, `src/hooks/useTransferencias.js`.
+- Alterados: `src/pages/ContasCorrentes.jsx` (botão habilitado, painel com os
+  2 cartões de modo, formulários com validação em tempo real, origem inicial =
+  conta ativa, submit desabilitado enquanto inválido/enviando),
+  `src/hooks/useResumoMes.js` (filtra categoria='transferencia' ANTES das somas;
+  filtro no cliente porque .neq no SQL excluiria linhas com categoria NULL),
+  `src/pages/Movimentacoes.jsx` (resumo do período exclui transferência interna;
+  badge ⇄ + 🔒 nas linhas vinculadas; buscarSaldoAntesDe INTACTO de propósito).
+- Intactos de propósito: Dashboard (patrimônio por saldo — neutro automático),
+  caixinhas (RPCs/telas), cartões, Relatórios (placeholder), Configurações.
+
+### Testes
+- `npm run build`: **PASSOU** (94 módulos; único aviso chunk >500kB preexistente).
+- Roteiro SQL (`supabase/testes_06_transferencias.sql`) EXECUTADO pelo André
+  no SQL Editor após aplicar a migration — **todos os cenários passaram**
+  (erros exatamente onde esperados): saldo correto 700/300, saldo insuficiente,
+  origem=destino, conta alheia (via troca de claims), conta inativa, valor
+  0/negativo, idempotência por request_id (1 transferência, ids iguais),
+  sequência A→B/B→A com patrimônio neutro (880/120/1000), guard contra INSERT
+  forjado sem flag E com flag falsificada (validação estrutural segura),
+  edição/exclusão individual bloqueadas, regressão de caixinha (guardar ok) e
+  lançamento comum (saldo 850).
+- Regressão manual pendente no APP: fluxo "Transferir" na tela Contas,
+  extrato com badge ⇄ e 🔒, formulários a 360px/400px no celular, login/logout.
+
+### Próximo passo
+Migration aplicada e roteiro SQL aprovado (22/08/2026). Falta a validação do
+APP em si: fluxo Transferir (os dois modos), extrato com badge/🔒 e teste
+móvel 360px/400px. Estorno fica para etapa futura (Opção B: transferência
+espelho + coluna status; zero DELETEs).

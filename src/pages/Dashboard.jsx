@@ -63,7 +63,7 @@ export default function Dashboard() {
         <div style={estilos.corpo}>
           <header style={estilos.cabecalho}>
           <img src={logo} alt="ANPEREZ Money" style={estilos.logo} />
-          <h1 style={estilos.saudacao}>Bem-vindo ao ANPEREZ!</h1>
+          <h1 style={estilos.saudacao}>ANPEREZ MONEY!</h1>
           <p style={estilos.subtitulo}>
             Sua jornada financeira e de gestão começa aqui.
           </p>

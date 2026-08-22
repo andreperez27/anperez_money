@@ -91,13 +91,16 @@ export default function Movimentacoes() {
     }
   }, [filtros.contaId, filtros.dataInicio, pulsoAbertura])
 
-  // Resumo do período (somente dos lançamentos exibidos).
+  // Resumo do período (somente dos lançamentos exibidos). Transferência
+  // interna (categoria 'transferencia') não é receita nem despesa: sai das
+  // somas aqui, mas continua afetando o saldo real e o de abertura.
   const resumo = useMemo(() => {
+    const ehInterna = (m) => m.categoria === 'transferencia'
     const entradas = movimentacoes
-      .filter((m) => m.tipo_op === 'Entrada')
+      .filter((m) => m.tipo_op === 'Entrada' && !ehInterna(m))
       .reduce((s, m) => s + Number(m.valor), 0)
     const saidas = movimentacoes
-      .filter((m) => m.tipo_op === 'Saida')
+      .filter((m) => m.tipo_op === 'Saida' && !ehInterna(m))
       .reduce((s, m) => s + Number(m.valor), 0)
     return { entradas, saidas, saldo: entradas - saidas }
   }, [movimentacoes])
@@ -326,9 +329,19 @@ export default function Movimentacoes() {
                         const ehEntrada = mov.tipo_op === 'Entrada'
                         // Movimentações ligadas a caixinhas (categoria
                         // 'caixinha', criadas por caixinha_guardar/resgatar)
-                        // não podem ser editadas/excluidas direto.
+                        // e as duas pernas de uma transferência interna
+                        // (categoria/transferencia_id) não podem ser
+                        // editadas/excluidas direto — operação indivisível.
                         const ehCaixinha = mov.categoria === 'caixinha'
-                        const rotuloCategoria = mov.categoria ? (
+                        const ehTransferencia =
+                          mov.categoria === 'transferencia' || !!mov.transferencia_id
+                        const protegido = ehCaixinha || ehTransferencia
+                        const tituloProtegido = ehCaixinha
+                          ? 'Movimentação de caixinha — gerencie pelos botões da caixinha'
+                          : 'Parte de uma transferência entre contas — indivisível'
+                        const rotuloCategoria = ehTransferencia ? (
+                          <span style={estilos.badgeTransferencia}>⇄ transferência</span>
+                        ) : mov.categoria ? (
                           <span style={estilosComuns.tipoConta}>{mov.categoria}</span>
                         ) : null
 
@@ -357,11 +370,8 @@ export default function Movimentacoes() {
                               </strong>
                             </div>
                             <div style={estilos.cardMovilAcciones}>
-                              {ehCaixinha ? (
-                                <span
-                                  style={estilos.cadeado}
-                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
-                                >
+                              {protegido ? (
+                                <span style={estilos.cadeado} title={tituloProtegido}>
                                   🔒
                                 </span>
                               ) : (
@@ -402,11 +412,8 @@ export default function Movimentacoes() {
                               {ehEntrada ? formatoReal.format(Number(mov.valor)) : ''}
                             </span>
                             <span style={{ ...estilos.celulaAcoes, borderLeft: '1px solid #1f2937' }}>
-                              {ehCaixinha ? (
-                                <span
-                                  style={estilos.cadeado}
-                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
-                                >
+                              {protegido ? (
+                                <span style={estilos.cadeado} title={tituloProtegido}>
                                   🔒
                                 </span>
                               ) : (
@@ -658,6 +665,18 @@ const estilos = {
     fontSize: '0.7rem',
     cursor: 'default',
     opacity: 0.6,
+  },
+  // Selo visual das duas pernas de uma transferência interna (substitui o
+  // texto da categoria no extrato, desktop e mobile).
+  badgeTransferencia: {
+    marginLeft: '0.6rem',
+    fontSize: '0.65rem',
+    fontWeight: 'bold',
+    color: '#42A5F5',
+    border: '1px solid #374151',
+    borderRadius: '999px',
+    padding: '0.05rem 0.45rem',
+    whiteSpace: 'nowrap',
   },
   botaoCancelar: {
     background: 'transparent',
