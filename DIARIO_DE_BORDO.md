@@ -1087,3 +1087,24 @@ linhas a cada engano.
 ### Próximo passo
 André aplica `07_excluir_transferencia.sql`, roda o roteiro e valida os novos
 botões no celular.
+
+## Hotfix p��s-Etapa 15 ��" botǜo flutuante do Extrato (responsividade)
+
+**Sintomas**: desktop (Chrome) o botǜo "+ Nova movimentação" ficava fora da tela;
+no celular ele nem aparecia.
+
+**Causas (duas, distintas)**:
+1. Desktop: o Layout envolve todas as telas em CaberNaTela, que aplica
+   transform: scale(). Um ancestral com transform vira o referencial de
+   position: fixed ��" o botǜo nǜo se posicionava pela janela e sim pela caixa
+   escalada, sendo cortado pelo overflow: hidden do palco.
+2. M��vel: sem transform, o fixed voltava ao normal, mas bottom: 1rem com
+   z-index: 5 deixava o botǜo ATR֓S da bottom nav (z-index: 20).
+
+**Correção** (Movimentacoes.jsx): o botǜo agora renderiza via createPortal
+para document.body (escapa do ancestral escalado; fixed volta a valer a
+viewport no desktop). z-index sobe para 40 (acima do header z-30 e da nav
+z-20) e, no m��vel, bottom = calc(4.4rem + env(safe-area-inset-bottom)) para
+flutuar acima da bottom nav.
+
+Build: PASSOU (94 m��dulos). Pendente: validaçǜo visual de AndrǸ.

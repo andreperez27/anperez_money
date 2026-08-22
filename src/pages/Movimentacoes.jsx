@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useContas } from '../hooks/useContas'
 import { useMovimentacoes, buscarSaldoAntesDe } from '../hooks/useMovimentacoes'
@@ -629,25 +630,27 @@ export default function Movimentacoes() {
         </section>
       )}
 
-      {contaAtiva && (
-        <button
-          type="button"
-          onClick={() => {
-            if (mostrandoNova) {
-              // Fechar: sai da edição e limpa o formulário.
-              setMostrandoNova(false)
-              setMovEmEdicao(null)
-              setMensagem(null)
-            } else {
-              abrirFormularioNova()
-            }
-          }}
-          style={estilos.botaoNova}
-          aria-expanded={mostrandoNova}
-        >
-          {mostrandoNova ? '−' : '+'} Nova movimentação
-        </button>
-      )}
+      {contaAtiva &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => {
+              if (mostrandoNova) {
+                // Fechar: sai da edição e limpa o formulário.
+                setMostrandoNova(false)
+                setMovEmEdicao(null)
+                setMensagem(null)
+              } else {
+                abrirFormularioNova()
+              }
+            }}
+            style={esMovil ? { ...estilos.botaoNova, ...estilos.botaoNovaMovel } : estilos.botaoNova}
+            aria-expanded={mostrandoNova}
+          >
+            {mostrandoNova ? '−' : '+'} Nova movimentação
+          </button>,
+          document.body,
+        )}
     </div>
   )
 }
@@ -854,6 +857,11 @@ const estilos = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     boxShadow: '0 4px 14px rgba(66, 165, 245, 0.35)',
-    zIndex: 5,
+    // Acima do header fixo (z-30) e da bottom nav (z-20).
+    zIndex: 40,
+  },
+  botaoNovaMovel: {
+    // Sobe acima da bottom nav (altura ~3.6rem) + home indicator.
+    bottom: 'calc(4.4rem + env(safe-area-inset-bottom, 0px))',
   },
 }
