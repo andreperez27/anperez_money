@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useCaixinhas, useTodasCaixinhas } from '../hooks/useCaixinhas'
@@ -23,6 +23,7 @@ import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
 //   /movimentacoes já filtrado pela conta ativa).
 export default function ContasCorrentes() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { contas, carregando: contasCarregando, erro: contasErro, atualizar } = useContas()
   const { contaAtiva, setContaAtiva } = useContaAtiva()
   const esMovil = useMediaQuery('(max-width: 640px)')
@@ -134,6 +135,24 @@ export default function ContasCorrentes() {
     setMensagem(null)
     setMostrandoTransferencia(true)
   }
+
+  // Chegada vindo de "Editar transferência" no extrato: abre o formulário
+  // Fluxo A pré-preenchido e limpa o estado de navegação para não reabrir
+  // sozinho em renders seguintes.
+  useEffect(() => {
+    const pre = location.state?.prefillTransferencia
+    if (!pre) return
+    setTransfEntre({
+      origemId: pre.origemId || '',
+      destinoId: pre.destinoId || '',
+      valor: pre.valor || '',
+      data: pre.data || hoje,
+      descricao: pre.descricao || '',
+    })
+    setModoTransferencia('entreContas')
+    setMostrandoTransferencia(true)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   // Fluxo A: a RPC trava as duas contas, valida saldo e grava transferencia +
   // as duas movimentações vinculadas numa única transação. Aqui só atualizamos

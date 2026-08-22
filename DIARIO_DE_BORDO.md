@@ -1043,3 +1043,47 @@ Migration aplicada e roteiro SQL aprovado (22/08/2026). Falta a validação do
 APP em si: fluxo Transferir (os dois modos), extrato com badge/🔒 e teste
 móvel 360px/400px. Estorno fica para etapa futura (Opção B: transferência
 espelho + coluna status; zero DELETEs).
+
+## Etapa 15 — exclusão física segura de transferências + editar = excluir e relançar (22/08/2026)
+
+### Decisão do André
+Validação visual móvel aprovada, mas faltavam botões para editar/excluir uma
+transferência realizada. Decidiu-se pelo modelo **"exclusão física segura"**
+(descartando estorno espelho): app pessoal de usuário único — lixo de teste e
+lançamentos errados devem SUMIR sem rastro; auditoria via espelho dobraria as
+linhas a cada engano.
+
+### Migration (`supabase/07_excluir_transferencia.sql`) — aditiva
+- Guard `protege_movimentacao_transferida` atualizado: DELETE de linha
+  vinculada agora é liberado APENAS com GUC LOCAL `app.excluindo_transferencia`
+  = 'sim' (definido só pela RPC). UPDATE continua bloqueado INCONDICIONALMENTE
+  (edição parcial nunca existe). INSERT segue exigindo a flag da criação.
+- RPC `excluir_transferencia(p_transferencia_id)`: valida dono → trava as duas
+  contas `order by id for update` (serializa contra criar/excluir simultâneas)
+  → GUC local → DELETE das movimentações (trigger atualizar_saldo reverte os
+  DOIS saldos) → pós-condição (0 linhas restantes) → DELETE do registro.
+  Falha no meio = rollback total.
+
+### Front-end
+- `useTransferencias.js`: nova função `excluir(id)` chamando a RPC.
+- `useMovimentacoes.js`: expõe `atualizar()` (recarga com filtros vigentes —
+  necessário porque a exclusão acontece por fora dos métodos do hook).
+- `Movimentacoes.jsx`: linhas ⇄ ganham botões Editar/Excluir (mobile card +
+  desktop table). Excluir confirma e reverte saldos na hora. Editar busca o
+  registro em `transferencias`, exclui e navega para /contas com
+  `location.state.prefillTransferencia`.
+- `ContasCorrentes.jsx`: consome `prefillTransferencia` num useEffect (abre o
+  painel Fluxo A pré-preenchido e limpa o state para não reabrir sozinho).
+
+### Testes
+- `npm run build`: **PASSOU** (94 módulos).
+- Roteiro SQL novo (`supabase/testes_07_excluir_transferencia.sql`), pendente
+  no SQL Editor: A criar→excluir reverte 1000/0→700/300→1000/0 sem sobrar nada;
+  B DELETE direto continua bloqueado; C UPDATE segue impossível; D excluir
+  transferência alheia recusada; E id inexistente recusado; F ciclo
+  criar→excluir→recriar com request_id reutilizado; G regressão lançamento
+  comum intacto.
+
+### Próximo passo
+André aplica `07_excluir_transferencia.sql`, roda o roteiro e valida os novos
+botões no celular.

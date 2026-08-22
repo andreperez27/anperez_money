@@ -127,6 +127,15 @@ export function useMovimentacoes({
     setErro(null)
   }
 
+  // Recarrega a lista JÁ com os filtros vigentes (usado quando o banco
+  // muda por fora dos métodos acima — ex.: exclusão de uma transferência
+  // pela RPC excluir_transferencia na tela de extrato).
+  async function atualizar() {
+    const dados = await carregar()
+    setMovimentacoes(dados)
+    setErro(null)
+  }
+
   return {
     movimentacoes,
     carregando,
@@ -134,6 +143,7 @@ export function useMovimentacoes({
     criarMovimentacao,
     editarMovimentacao,
     excluirMovimentacao,
+    atualizar,
   }
 }
 

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
 import { useContas } from '../hooks/useContas'
 import { useMovimentacoes, buscarSaldoAntesDe } from '../hooks/useMovimentacoes'
+import { useTransferencias } from '../hooks/useTransferencias'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import useMediaQuery from '../hooks/useMediaQuery'
 import SeletorPeriodo from '../components/SeletorPeriodo'
@@ -65,8 +67,10 @@ export default function Movimentacoes() {
     }
   }, [periodo, personalizado.dataInicio, personalizado.dataFim, contaAtiva?.id])
 
-  const { movimentacoes, carregando, erro, criarMovimentacao, editarMovimentacao, excluirMovimentacao } =
+  const { movimentacoes, carregando, erro, criarMovimentacao, editarMovimentacao, excluirMovimentacao, atualizar: atualizarLista } =
     useMovimentacoes(filtros)
+  const { excluir: excluirTransferenciaRpc } = useTransferencias()
+  const navigate = useNavigate()
 
   // Saldo de abertura: soma das movimentações ANTES do período (só
   // existe quando o filtro tem data de início). O "pulso" força o
@@ -216,6 +220,62 @@ export default function Movimentacoes() {
     }
   }
 
+  // "Excluir" numa linha de transferência: RPC excluir_transferencia apaga
+  // as duas movimentações e o registro, revertendo os dois saldos. Sem rastro.
+  async function handleExcluirTransferencia(mov) {
+    if (
+      !window.confirm(
+        `Excluir a transferência "${mov.descricao}" de ${formatoReal.format(Number(mov.valor))}? Os saldos das duas contas serão revertidos.`,
+      )
+    ) {
+      return
+    }
+    setMensagem(null)
+    try {
+      await excluirTransferenciaRpc(mov.transferencia_id)
+      await atualizarLista()
+      await atualizar()
+      setPulsoAbertura((p) => p + 1)
+      setMensagem({ tipo: 'ok', texto: 'Transferência excluída (saldos revertidos nas duas contas).' })
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: `Não foi possível excluir a transferência: ${err.message}` })
+    }
+  }
+
+  // "Editar" numa transferência = remover e reabrir o formulário em Contas
+  // Correntes pré-preenchido (modelo decidido: não existe edição parcial).
+  async function handleEditarTransferencia(mov) {
+    setMensagem(null)
+    const { data: transf, error } = await supabase
+      .from('transferencias')
+      .select('*')
+      .eq('id', mov.transferencia_id)
+      .single()
+    if (error || !transf) {
+      setMensagem({ tipo: 'erro', texto: 'Não foi possível carregar os dados da transferência.' })
+      return
+    }
+    if (!window.confirm('A transferência será removida e o formulário abrirá preenchido para você ajustar e relançar.')) {
+      return
+    }
+    try {
+      await excluirTransferenciaRpc(transf.id)
+      navigate('/contas', {
+        state: {
+          prefillTransferencia: {
+            origemId: transf.conta_origem_id,
+            destinoId: transf.conta_destino_id,
+            valor: String(Number(transf.valor)),
+            data: transf.data,
+            descricao: transf.descricao || '',
+          },
+        },
+      })
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: `Não foi possível editar a transferência: ${err.message}` })
+    }
+  }
+
   return (
     <div style={{ ...estilosComuns.conteudo, fontSize: '0.85rem' }}>
       {contasCarregando && <p style={estilosComuns.mensagem}>Carregando contas...</p>}
@@ -335,10 +395,9 @@ export default function Movimentacoes() {
                         const ehCaixinha = mov.categoria === 'caixinha'
                         const ehTransferencia =
                           mov.categoria === 'transferencia' || !!mov.transferencia_id
-                        const protegido = ehCaixinha || ehTransferencia
-                        const tituloProtegido = ehCaixinha
-                          ? 'Movimentação de caixinha — gerencie pelos botões da caixinha'
-                          : 'Parte de uma transferência entre contas — indivisível'
+                        // Caixinha = só 🔒 (gerencie pelos botões da caixinha).
+                        // Transferência = Editar/Excluir próprios (operações
+                        // atômicas via RPC; edição parcial nunca existe).
                         const rotuloCategoria = ehTransferencia ? (
                           <span style={estilos.badgeTransferencia}>⇄ transferência</span>
                         ) : mov.categoria ? (
@@ -370,10 +429,32 @@ export default function Movimentacoes() {
                               </strong>
                             </div>
                             <div style={estilos.cardMovilAcciones}>
-                              {protegido ? (
-                                <span style={estilos.cadeado} title={tituloProtegido}>
+                              {ehCaixinha ? (
+                                <span
+                                  style={estilos.cadeado}
+                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
+                                >
                                   🔒
                                 </span>
+                              ) : ehTransferencia ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditarTransferencia(mov)}
+                                    style={estilos.botaoAcao}
+                                    title="Editar transferência (remove e reabre o formulário preenchido)"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExcluirTransferencia(mov)}
+                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
+                                    title="Excluir transferência (reverte os saldos)"
+                                  >
+                                    Excluir
+                                  </button>
+                                </>
                               ) : (
                                 <>
                                   <button
@@ -412,10 +493,32 @@ export default function Movimentacoes() {
                               {ehEntrada ? formatoReal.format(Number(mov.valor)) : ''}
                             </span>
                             <span style={{ ...estilos.celulaAcoes, borderLeft: '1px solid #1f2937' }}>
-                              {protegido ? (
-                                <span style={estilos.cadeado} title={tituloProtegido}>
+                              {ehCaixinha ? (
+                                <span
+                                  style={estilos.cadeado}
+                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
+                                >
                                   🔒
                                 </span>
+                              ) : ehTransferencia ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditarTransferencia(mov)}
+                                    style={estilos.botaoAcao}
+                                    title="Editar transferência (remove e reabre o formulário preenchido)"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExcluirTransferencia(mov)}
+                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
+                                    title="Excluir transferência (reverte os saldos)"
+                                  >
+                                    Excluir
+                                  </button>
+                                </>
                               ) : (
                                 <>
                                   <button

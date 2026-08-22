@@ -39,5 +39,15 @@ export function useTransferencias() {
     return transferenciaId
   }
 
-  return { transferir }
+  // Exclusão física segura: a RPC excluir_transferencia trava as duas contas,
+  // apaga as duas movimentações (saldos revertidos pelo trigger) e o registro.
+  // Sem rastro — modelo decidido para erros/testes (Etapa 15).
+  async function excluir(transferenciaId) {
+    const { error } = await supabase.rpc('excluir_transferencia', {
+      p_transferencia_id: transferenciaId,
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  return { transferir, excluir }
 }
