@@ -1108,3 +1108,131 @@ z-20) e, no m��vel, bottom = calc(4.4rem + env(safe-area-inset-bottom)) para
 flutuar acima da bottom nav.
 
 Build: PASSOU (94 m��dulos). Pendente: validaçǜo visual de AndrǸ.
+
+## Correção A+B+C — Reconciliação dos extratos (trigger NÃO alterado)
+
+### Causa raiz (auditoria)
+1. Trigger atualizar_saldo aplica saldo na hora, SEM olhar a data: lançamento
+   FUTURO já está no saldo_atual, mas fica fora da pesquisa do extrato
+   ([início..fim]) → abertura+período divergia do saldo sem explicação.
+2. Abertura INCLUÍA transferências; resumo EXCLUÍA → identidade quebrava
+   com transferência interna no período.
+3. hoje()/inicioDoMes/fimDoMes usavam toISOString (UTC): entre 21h–0h no
+   UTC−3 devolviam AMANHÃ (formulário criava lançamento futuro sozinho).
+
+### Correções
+- src/lib/extratoCalc.js (NOVO): funções puras somarEfeito,
+  resumirMovimentacoes, saldoNoFimDoPeriodo — UMA definição da fórmula.
+- useMovimentacoes.js: buscarSaldoAntesDe reusa somarEfeito (comportamento
+  idêntico); NOVA buscarEfeitoApos({contaId,data}) → {quantidade,liquido}
+  para o aviso de futuros (.gt); ordenação ganhou desempate por id.
+- Movimentacoes.jsx: resumo em 4 conceitos (Entradas | Saídas |
+  Transferências líquidas com sub Recebidas/Enviadas | Saldo do período);
+  novo card SALDO NO FIM DO PERÍODO (= abertura + saldo do período); aviso
+  âmbar quando há linhas após o fim ('N lançamentos futuros alteram o
+  saldo atual em ±R$ Y'); auto-validação no console: sem futuros,
+  fim==saldo_atual, divergência é ALERTADA e nunca mascarada.
+- Datas civis: compartilhados.js ganhou dataCivil() (componentes locais) e
+  hoje() reescrito; inicioDoMes/fimDoMes (extrato) e limites do mês
+  (useResumoMes) migrados; CaixinhaDetalhe usa o helper (sem duplicar).
+- toISOString auditado: as 5 ocorrências eram TODAS data civil → corrigidas;
+  nenhuma era timestamp real (criado_em nunca é formatado por toISOString).
+
+### Fórmula final
+saldo_no_fim_do_período = abertura(data<início) + entradas − saídas
+                          + transferências(recebidas−enviadas)
+saldo_atual = fórmula acima + efeito das linhas com data>fim (futuras)
+
+### Testes
+- node scripts/teste_reconciliacao.mjs: 11/11 ok (regra §3, transf. dentro/
+  fora, caixinhas, mesmo dia, futuros líquidos, identidade sem futuros,
+  dataCivil às 22:30, padding, null).
+- supabase/testes_reconciliacao_extrato.sql: blocos A–E (identidade server-
+  side, diferença == efeito futuro, transferências nas duas contas,
+  caixinha, bordas inclusivo/exclusivo). Pendente rodar no SQL Editor.
+- npm run build: PASSOU (95 módulos).
+
+### Decisões
+- TRIGGER NÃO ALTERADO (autorização explícita): saldo_atual continua a
+  autoridade incluindo futuros; extrato apenas explica a diferença.
+- 'Últimos 10' segue sem cards de abertura/fim/aviso (sem janela de datas).
+
+## 23/08/2026 (tarde) ' CORRE'O DO SALDO DE ABERTURA NO EXTRATO
+
+### Causa exata
+- Modo 'ltimos 10' gerava filtros {contaId, limite:10} SEM datas e o useEffect
+  da abertura retornava cedo sem dataInicio => saldoAbertura=null SEMPRE nesse
+  modo; card de abertura/fim ocultos; sobrava s'o movimento l'quido rotulado
+  como "Saldo do per'odo" (evid'ncia Nubank PJ: 2050,00-705,23-1069,11=275,66
+  vs saldo_atual 434,35; abertura correta 158,69).
+
+### Corre'o
+- extratoCalc.js: montarFiltroAntesDaJanela(ultimaLinha) monta o complemento
+  exato da janela na ordena'o documentada: data.lt.D, and(data.eq.D,
+  criado_em.lt.C), and(data.eq.D, criado_em.eq.C, id.gt.I). ATEN'O: dentro do
+  mesmo dia ficam FORA os de criado_em MENOR (ordem desc), n'o maior ' bug
+  pego pelo teste de janela antes do build.
+- useMovimentacoes.js: buscarAberturaDaJanela({contaId, ultimaLinha}) usa esse
+  filtro + somarEfeito.
+- Movimentacoes.jsx: estado aberturaJanela ('ltimos 10'; null enquanto
+  carrega; 0 quando a lista cobre todo o hist'rico); aberturaEfetiva = janela
+  OU por datas; cards renomeados: "Movimento do per'odo" (l'quido, azul) +
+  SALDO DE ABERTURA + SALDO NO FIM DO PER'ODO agora vis'veis TAMB'M em
+  'ltimos 10; auto-valida'o [RECONCILIA'O] estendida ' janela (nela nunca h'
+  linha ap's o fim).
+
+### Testes
+- node scripts/teste_reconciliacao.mjs: 14/14 ok (novos: caso real
+  158,69+2050,00-705,23-1069,11=434,35 em centavos; string do filtro;
+  janela com mesmo dia cortado pega exatamente y7+x5, fim fecha com total).
+- npm run build: PASSOU (95 m'dulos).
+
+### Pendente
+- Blocos A'"E de supabase/testes_reconciliacao_extrato.sql no SQL Editor.
+- Valida'o visual no celular (Nubank PJ deve mostrar abertura 158,69 e fim
+  434,35 em 'ltimos 10).
+- Commit/push somente ap's valida'o visual do usu'rio.
+
+## 23/08/2026 (noite) ' REFINAMENTO VISUAL DO EXTRATO (modelo banc'rio)
+
+### Mudan'a (s' apresenta'o; l'gica intocada)
+- Os 6 cards (Entradas/Sa'das/Transferncias/Movimento/Abertura/Fim) sa'raram
+  da tela. Ficou uma barra discreta: SALDO ATUAL + aviso 'mbar de futuros.
+- extratoCalc.js: NOVA fun'o pura saldosProgressivos(movimentacoes, abertura)
+  ' percorre do mais antigo ao mais novo em CENTAVOS e devolve Map
+  id'saldoLinha; null sem abertura. Aditiva; nada existente alterado.
+- Movimentacoes.jsx: lista em ordem CRON'LICA (abertura no topo, final no p');
+  colunas Data | Hist'rico | D'bito | Cr'dito | Saldo | A'es (desktop, valores
+  ' direita); transferncia recebida=Cr'dito / enviada=D'bito com badge '
+  discreto; linhas especiais SALDO DE ABERTURA (tracejada) e SALDO FINAL DO
+  PER'ODO (borda azul) usam aberturaEfetiva/saldoFimPeriodo J validados.
+  Mobile: carto empilhado (data, hist'rico, s'o o campo com valor com sinal,
+  Saldo, a'es) sem scroll horizontal. Saldo negativo = 'mbar de alerta.
+
+### Testes
+- node scripts/teste_reconciliacao.mjs: 17/17 ok (3 novos de saldo
+  progressivo: caso linha-a-linha + identidade com saldoNoFimDoPeriodo,
+  null sem abertura, centavos sem deriva 0,1+0,1+0,1).
+- npm run build: PASSOU (95 m'dulos).
+
+### Pendente
+- Valida'o visual desktop/mobile pelo usu'rio antes de commit/push.
+
+## 23/08/2026 (noite, ajuste 2) ' Saldo Atual na linha dos filtros + a'es em 'cones
+- Movimentacoes.jsx: SALDO ATUAL saiu da barra acima da tabela e foi para a
+  MESMA LINHA das p'lulas [ltimos 10][Ms atual][Ms anterior][Personalizado]
+  (flex; empurrado ' direita com margin-left:auto; quebra p/ baixo se n'o
+  couber). A barra acima da tabela sobrevive s' para o aviso 'mbar de
+  lan'amentos futuros (some quando n'o h').
+- Bot'es Editar/Excluir viraram 'cones ' ' com title e aria-label;
+  estilo botaoAcao compactado (lineHeight 1, padding .22/.38, cor #9ca3af).
+- Testes: 17/17 ok. Build PASSOU. Aguarda valida'o visual.
+
+## 23/08/2026 (noite, ajuste 3) ' Ordem bancria no extrato
+- Movimentacoes.jsx: lista agora do MAIS RECENTE para o mais antigo (ordem
+  nativa do hook, sem o reverse). SALDO FINAL DO PER'ODO subiu para o topo;
+  SALDO DE ABERTURA foi para o p', junto ' linha mais antiga (padro de
+  extrato bancrio). O saldo progressivo por linha continua sendo o saldo
+  real AP's cada lanamento (Map por id em saldosProgressivos ' independe
+  da ordem de exibio). Nenhuma lgica alterada.
+- Testes: 17/17 ok. Build PASSOU. Aguarda validao visual.

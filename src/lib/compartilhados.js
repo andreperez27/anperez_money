@@ -16,9 +16,21 @@ export function formatarData(dataISO) {
   return `${dia}/${mes}/${ano}`
 }
 
-// Data de hoje no formato que o input type="date" entende (YYYY-MM-DD).
+// Data civil LOCAL ("YYYY-MM-DD") de um Date, montada por componentes
+// locais. NUNCA usar toISOString() para data civil financeira: ele converte
+// para UTC e desloca o dia (no UTC−3, entre 21h e meia-noite devolveria o
+// dia SEGUINTE). Serve para filtros de período e default de formulários.
+export function dataCivil(data) {
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
+// Data de hoje no formato que o input type="date" entende (YYYY-MM-DD),
+// no fuso do aparelho (civil), não em UTC.
 export function hoje() {
-  return new Date().toISOString().slice(0, 10)
+  return dataCivil(new Date())
 }
 
 // Estilos compartilhados pelas páginas autenticadas.

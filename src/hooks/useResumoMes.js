@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { dataCivil } from '../lib/compartilhados'
 
 // Resumo do mês corrente somando movimentações de TODAS as contas do
 // usuário (não só da ativa) — a visão consolidada usada no topo da tela
@@ -12,13 +13,11 @@ export function useResumoMes() {
   const [erro, setErro] = useState(null)
 
   async function carregar() {
+    // Datas civis por componentes locais (dataCivil): toISOString aqui
+    // deslocaria o dia em fusos positivos e à noite no UTC−3.
     const agora = new Date()
-    const primeiroDia = new Date(agora.getFullYear(), agora.getMonth(), 1)
-      .toISOString()
-      .slice(0, 10)
-    const ultimoDia = new Date(agora.getFullYear(), agora.getMonth() + 1, 0)
-      .toISOString()
-      .slice(0, 10)
+    const primeiroDia = dataCivil(new Date(agora.getFullYear(), agora.getMonth(), 1))
+    const ultimoDia = dataCivil(new Date(agora.getFullYear(), agora.getMonth() + 1, 0))
 
     const { data, error } = await supabase
       .from('movimentacoes')

@@ -3,28 +3,35 @@ import { Link, useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useContas } from '../hooks/useContas'
-import { useMovimentacoes, buscarSaldoAntesDe } from '../hooks/useMovimentacoes'
+import {
+  useMovimentacoes,
+  buscarSaldoAntesDe,
+  buscarEfeitoApos,
+  buscarAberturaDaJanela,
+} from '../hooks/useMovimentacoes'
 import { useTransferencias } from '../hooks/useTransferencias'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import useMediaQuery from '../hooks/useMediaQuery'
 import SeletorPeriodo from '../components/SeletorPeriodo'
-import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
+import { estilosComuns, formatarData, formatoReal, hoje, dataCivil } from '../lib/compartilhados'
+import { resumirMovimentacoes, saldoNoFimDoPeriodo, saldosProgressivos } from '../lib/extratoCalc'
 
 // Datas (ISO yyyy-mm-dd) do mês corrente deslocado de `deslocamento`
 // (0 = atual, -1 = anterior). MesAtual termina HOJE; MesAnterior vai até
-// o último dia do mês.
+// o último dia do mês. Data CIVIL por componentes locais (dataCivil) —
+// toISOString() aqui deslocaria o dia à noite no UTC−3.
 function inicioDoMes(deslocamento = 0) {
   const d = new Date()
   d.setDate(1)
   d.setMonth(d.getMonth() + deslocamento)
-  return d.toISOString().slice(0, 10)
+  return dataCivil(d)
 }
 
 function fimDoMes(deslocamento = 0) {
   const d = new Date()
   d.setMonth(d.getMonth() + deslocamento + 1)
   d.setDate(0)
-  return d.toISOString().slice(0, 10)
+  return dataCivil(d)
 }
 
 // Tela de Extrato/Movimentações da conta ativa (estilo do app antigo):
@@ -96,19 +103,107 @@ export default function Movimentacoes() {
     }
   }, [filtros.contaId, filtros.dataInicio, pulsoAbertura])
 
-  // Resumo do período (somente dos lançamentos exibidos). Transferência
-  // interna (categoria 'transferencia') não é receita nem despesa: sai das
-  // somas aqui, mas continua afetando o saldo real e o de abertura.
-  const resumo = useMemo(() => {
-    const ehInterna = (m) => m.categoria === 'transferencia'
-    const entradas = movimentacoes
-      .filter((m) => m.tipo_op === 'Entrada' && !ehInterna(m))
-      .reduce((s, m) => s + Number(m.valor), 0)
-    const saidas = movimentacoes
-      .filter((m) => m.tipo_op === 'Saida' && !ehInterna(m))
-      .reduce((s, m) => s + Number(m.valor), 0)
-    return { entradas, saidas, saldo: entradas - saidas }
-  }, [movimentacoes])
+  // Resumo do período em 4 conceitos separados (extratoCalc): Entradas e
+  // Saídas são fluxo financeiro real; Transferências é patrimonial líquido
+  // (recebidas − enviadas) — fora de Entradas/Saídas MAS dentro do saldo;
+  // MOVIMENTO = entradas − saídas + transferências (NÃO é saldo!).
+  const resumo = useMemo(() => resumirMovimentacoes(movimentacoes), [movimentacoes])
+
+  // Abertura da JANELA "Últimos 10" (modo sem datas): a lista é o topo da
+  // ordenação (data desc, criado_em desc, id asc), então a abertura é o
+  // efeito de tudo ANTES da última linha exibida — inclusive linhas do
+  // mesmo dia cortadas pelo limite. Lista com menos de 10 linhas cobre o
+  // histórico inteiro → abertura zero.
+  const [aberturaJanela, setAberturaJanela] = useState(null)
+  useEffect(() => {
+    let ativo = true
+    setAberturaJanela(null)
+    if (periodo !== 'ultimos10' || !filtros.contaId) return
+    if (carregando) return
+    if (movimentacoes.length === 0) {
+      setAberturaJanela(0)
+      return
+    }
+    if (movimentacoes.length < 10) {
+      setAberturaJanela(0)
+      return
+    }
+    buscarAberturaDaJanela({ contaId: filtros.contaId, ultimaLinha: movimentacoes[movimentacoes.length - 1] })
+      .then((valor) => {
+        if (ativo) setAberturaJanela(valor)
+      })
+      .catch(() => {
+        if (ativo) setAberturaJanela(null)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [periodo, filtros.contaId, carregando, movimentacoes, pulsoAbertura])
+
+  // Abertura efetiva: por datas (mês atual/anterior/personalizado) ou pela
+  // janela (Últimos 10). Alimenta abertura + fim do período na tela.
+  const aberturaEfetiva = periodo === 'ultimos10' ? aberturaJanela : saldoAbertura
+
+  // Efeito das movimentações FUTURAS ao período (data > dataFim): o trigger
+  // aplica saldo na hora, então elas já estão no saldo_atual mas fora da
+  // pesquisa. O aviso explica a diferença entre "saldo no fim do período"
+  // e "saldo atual" sem mascarar nada. Só faz sentido com data de fim.
+  const [efeitoFuturo, setEfeitoFuturo] = useState(null)
+  useEffect(() => {
+    let ativo = true
+    setEfeitoFuturo(null)
+    if (!filtros.contaId || !filtros.dataFim) return
+
+    buscarEfeitoApos({ contaId: filtros.contaId, data: filtros.dataFim })
+      .then((r) => {
+        if (ativo) setEfeitoFuturo(r)
+      })
+      .catch(() => {
+        if (ativo) setEfeitoFuturo(null)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [filtros.contaId, filtros.dataFim, pulsoAbertura])
+
+  // SALDO NO FIM DO PERÍODO = abertura + entradas − saídas + transferências
+  // (abertura da JANELA em "Últimos 10", abertura por datas nos demais).
+  // Derivado das linhas do extrato — NUNCA copiado do saldo_atual.
+  const saldoFimPeriodo = saldoNoFimDoPeriodo(aberturaEfetiva, resumo)
+
+  // Validação automática de reconciliação: quando NÃO existe linha após o
+  // fim da pesquisa, o saldo calculado TEM que bater com o saldo_atual da
+  // conta (autoridade = trigger). Na janela "Últimos 10" nunca há linha
+  // depois dela (ela contém as mais recentes). Se divergir, registra
+  // alerta no console — nunca corrige nem esconde (mascarar é proibido).
+  useEffect(() => {
+    if (aberturaEfetiva === null || !contaAtiva) return
+    if (periodo !== 'ultimos10') {
+      if (!efeitoFuturo || efeitoFuturo.quantidade > 0) return
+    }
+    const emCentavos =
+      Math.round(saldoFimPeriodo * 100) - Math.round(Number(contaAtiva.saldo_atual) * 100)
+    if (emCentavos !== 0) {
+      console.warn(
+        '[RECONCILIAÇÃO] Sem lançamentos futuros, saldo no fim do período deveria',
+        'igualar o saldo_atual e divergiu por', emCentavos, 'centavos.',
+        { calculado: saldoFimPeriodo, saldoAtual: contaAtiva.saldo_atual },
+      )
+    }
+  }, [periodo, aberturaEfetiva, efeitoFuturo, saldoFimPeriodo, contaAtiva])
+
+  // Apresentação estilo extrato bancário (Data | Histórico | Débito |
+  // Crédito | Saldo): lista na ordem do banco — MAIS RECENTE primeiro —
+  // com o SALDO FINAL DO PERÍODO no topo e o SALDO DE ABERTURA no pé
+  // (antes da linha mais antiga). O saldo progressivo de cada linha é o
+  // saldo real da conta APÓS aquela movimentação, calculado por
+  // saldosProgressivos em centavos a partir da abertura validada — o Map
+  // é por id, então serve na mesma ordem em que a lista for exibida.
+  // Enquanto a abertura não chega do banco, a coluna mostra '—'.
+  const saldosLinha = useMemo(
+    () => saldosProgressivos(movimentacoes, aberturaEfetiva),
+    [movimentacoes, aberturaEfetiva],
+  )
 
   const [mostrandoNova, setMostrandoNova] = useState(false)
   const [movEmEdicao, setMovEmEdicao] = useState(null)
@@ -302,14 +397,29 @@ export default function Movimentacoes() {
               )}
             </div>
 
-            <SeletorPeriodo
-              valor={periodo}
-              aoTrocarPeriodo={setPeriodo}
-              dataInicio={personalizado.dataInicio}
-              dataFim={personalizado.dataFim}
-              aoTrocarDataInicio={(v) => setPersonalizado((p) => ({ ...p, dataInicio: v }))}
-              aoTrocarDataFim={(v) => setPersonalizado((p) => ({ ...p, dataFim: v }))}
-            />
+            {/* Filtros e saldo na mesma linha: pílulas de período à
+                esquerda, SALDO ATUAL empurrado para a direita (quebra
+                para baixo só quando não cabe, ex.: telas estreitas). */}
+            <div style={estilos.filtroLinha}>
+              <div style={estilos.filtroPilulas}>
+                <SeletorPeriodo
+                  valor={periodo}
+                  aoTrocarPeriodo={setPeriodo}
+                  dataInicio={personalizado.dataInicio}
+                  dataFim={personalizado.dataFim}
+                  aoTrocarDataInicio={(v) => setPersonalizado((p) => ({ ...p, dataInicio: v }))}
+                  aoTrocarDataFim={(v) => setPersonalizado((p) => ({ ...p, dataFim: v }))}
+                />
+              </div>
+              {contaAtiva && (
+                <span style={estilos.saldoNaLinha}>
+                  Saldo Atual{' '}
+                  <strong style={estilos.saldoNaLinhaValor}>
+                    {formatoReal.format(Number(contaAtiva.saldo_atual))}
+                  </strong>
+                </span>
+              )}
+            </div>
           </section>
 
           <section style={estilosComuns.secao}>
@@ -335,57 +445,87 @@ export default function Movimentacoes() {
                   </p>
                 ) : (
                   <>
-                    {/* Resumo do período */}
-                    <div style={estilos.resumoGrupo}>
-                      <div style={estilos.resumoCard}>
-                        <span style={estilos.resumoRotulo}>Entradas</span>
-                        <strong style={{ ...estilos.resumoValor, color: '#4ade80' }}>
-                          {formatoReal.format(resumo.entradas)}
-                        </strong>
-                      </div>
-                      <div style={estilos.resumoCard}>
-                        <span style={estilos.resumoRotulo}>Saídas</span>
-                        <strong style={{ ...estilos.resumoValor, color: '#f87171' }}>
-                          {formatoReal.format(resumo.saidas)}
-                        </strong>
-                      </div>
-                      <div style={estilos.resumoCard}>
-                        <span style={estilos.resumoRotulo}>Saldo do período</span>
-                        <strong style={{ ...estilos.resumoValor, color: '#42A5F5' }}>
-                          {formatoReal.format(resumo.saldo)}
-                        </strong>
-                      </div>
-                    </div>
-
-                    {/* Saldo de abertura (quando o período tem início) */}
-                    {saldoAbertura !== null && (
-                      <div style={estilos.abertura}>
-                        <span>SALDO DE ABERTURA</span>
-                        <strong>{formatoReal.format(saldoAbertura)}</strong>
+                    {/* Aviso discreto de lançamentos futuros (o SALDO ATUAL
+                        foi para a linha dos filtros). Entradas/Saídas/
+                        transferências/movimento continuam calculados no
+                        código para reconciliação e validação automática. */}
+                    {efeitoFuturo !== null && efeitoFuturo.quantidade > 0 && (
+                      <div style={estilos.barraResumo}>
+                        <span style={estilos.avisoFuturoInline} role="status">
+                          ⏳{' '}
+                          {efeitoFuturo.quantidade === 1
+                            ? '1 lançamento futuro altera o saldo atual em'
+                            : `${efeitoFuturo.quantidade} lançamentos futuros alteram o saldo atual em`}{' '}
+                          {efeitoFuturo.liquido < 0 ? '−' : '+'}
+                          {formatoReal.format(Math.abs(efeitoFuturo.liquido))}.
+                        </span>
                       </div>
                     )}
 
-                                        {/* Cabeçalho da tabela: só em desktop (em móvil cada fila
-                        se mostra como tarjeta empilada). */}
+                    {/* Cabeçalho do extrato (desktop): Data | Histórico |
+                        Débito | Crédito | Saldo (+ Ações). No celular cada
+                        linha vira cartão empilhado, sem scroll horizontal. */}
                     {!esMovil && (
                       <div style={estilos.tabelaCabecalho}>
                         <span style={estilos.gradeCabecalho}>Data</span>
-                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                          Descrição
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'left' }}>
+                          Histórico
                         </span>
-                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
                           Débito
                         </span>
-                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
                           Crédito
                         </span>
-                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }}>
-                          Ações
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
+                          Saldo
                         </span>
+                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151' }} />
                       </div>
                     )}
 
                     <ul style={estilosComuns.lista}>
+                      {/* Linha do topo: SALDO FINAL DO PERÍODO — valor JÁ
+                          validado pela reconciliação; nunca recalculado. No
+                          extrato "mais recente primeiro" ele abre a lista.
+                          Data = fim do período ou da linha mais recente. */}
+                      {(() => {
+                        if (saldoFimPeriodo === null) return null
+                        const dataFim =
+                          filtros.dataFim || movimentacoes[0]?.data || ''
+                        return esMovil ? (
+                          <li key="saldo-final" style={{ ...estilos.cardMovil, ...estilos.cardFinal }}>
+                            <div style={estilos.cardMovilTopo}>
+                              <span style={{ ...estilos.rotuloEspecial, color: '#e5e7eb' }}>
+                                SALDO FINAL DO PERÍODO
+                              </span>
+                              <span style={estilos.cardMovilData}>{formatarData(dataFim)}</span>
+                            </div>
+                            <div style={estilos.cardMovilValor}>
+                              <span style={estilos.cardMovilRotulo}>Saldo</span>
+                              <strong style={{ ...corDoSaldo(saldoFimPeriodo), fontWeight: 'bold' }}>
+                                {formatoReal.format(saldoFimPeriodo)}
+                              </strong>
+                            </div>
+                          </li>
+                        ) : (
+                          <li key="saldo-final" style={{ ...estilos.tabelaLinha, ...estilos.linhaFinal }}>
+                            <span style={estilos.celulaData}>{formatarData(dataFim)}</span>
+                            <span style={estilos.celulaDescricao}>
+                              <span style={{ ...estilos.rotuloEspecial, color: '#e5e7eb' }}>
+                                SALDO FINAL DO PERÍODO
+                              </span>
+                            </span>
+                            <span style={estilos.celulaValor} />
+                            <span style={estilos.celulaValor} />
+                            <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(saldoFimPeriodo) }}>
+                              {formatoReal.format(saldoFimPeriodo)}
+                            </span>
+                            <span style={estilos.celulaAcoes} />
+                          </li>
+                        )
+                      })()}
+
                       {movimentacoes.map((mov) => {
                         const ehEntrada = mov.tipo_op === 'Entrada'
                         // Movimentações ligadas a caixinhas (categoria
@@ -405,6 +545,64 @@ export default function Movimentacoes() {
                           <span style={estilosComuns.tipoConta}>{mov.categoria}</span>
                         ) : null
 
+                        // Saldo progressivo: efeito real desta linha na conta,
+                        // acumulado desde a abertura (centavos, sem deriva).
+                        const saldoLinha = saldosLinha ? saldosLinha.get(mov.id) : null
+
+                        const acoes = ehCaixinha ? (
+                          <span
+                            style={estilos.cadeado}
+                            title="Movimentação de caixinha — gerencie pelos botões da caixinha"
+                          >
+                            🔒
+                          </span>
+                        ) : ehTransferencia ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleEditarTransferencia(mov)}
+                              style={estilos.botaoAcao}
+                              title="Editar transferência (remove e reabre o formulário preenchido)"
+                              aria-label="Editar transferência"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExcluirTransferencia(mov)}
+                              style={estilos.botaoAcao}
+                              title="Excluir transferência (reverte os saldos)"
+                              aria-label="Excluir transferência"
+                            >
+                              🗑️
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicao(mov)}
+                              style={estilos.botaoAcao}
+                              title="Editar movimentação"
+                              aria-label="Editar movimentação"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExcluir(mov)}
+                              style={estilos.botaoAcao}
+                              title="Excluir movimentação"
+                              aria-label="Excluir movimentação"
+                            >
+                              🗑️
+                            </button>
+                          </>
+                        )
+
+                        // Na tabela, transferência recebida ocupa CRÉDITO e a
+                        // enviada ocupa DÉBITO (ambas alteram o saldo da conta);
+                        // o badge ⇄ mantém a identificação discreta.
                         return esMovil ? (
                           <li key={mov.id} style={estilos.cardMovil}>
                             <div style={estilos.cardMovilTopo}>
@@ -426,124 +624,78 @@ export default function Movimentacoes() {
                                   fontWeight: 'bold',
                                 }}
                               >
-                                {formatoReal.format(Number(mov.valor))}
+                                {ehEntrada ? '+' : '−'}{formatoReal.format(Number(mov.valor))}
                               </strong>
                             </div>
-                            <div style={estilos.cardMovilAcciones}>
-                              {ehCaixinha ? (
-                                <span
-                                  style={estilos.cadeado}
-                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
-                                >
-                                  🔒
-                                </span>
-                              ) : ehTransferencia ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditarTransferencia(mov)}
-                                    style={estilos.botaoAcao}
-                                    title="Editar transferência (remove e reabre o formulário preenchido)"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleExcluirTransferencia(mov)}
-                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
-                                    title="Excluir transferência (reverte os saldos)"
-                                  >
-                                    Excluir
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => iniciarEdicao(mov)}
-                                    style={estilos.botaoAcao}
-                                    title="Editar movimentação"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleExcluir(mov)}
-                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
-                                    title="Excluir movimentação"
-                                  >
-                                    Excluir
-                                  </button>
-                                </>
-                              )}
+                            <div style={estilos.cardMovilValor}>
+                              <span style={estilos.cardMovilRotulo}>Saldo</span>
+                              <strong style={{ ...corDoSaldo(saldoLinha), fontWeight: 'bold' }}>
+                                {saldoLinha === null ? '—' : formatoReal.format(saldoLinha)}
+                              </strong>
                             </div>
+                            <div style={estilos.cardMovilAcciones}>{acoes}</div>
                           </li>
                         ) : (
                           <li key={mov.id} style={estilos.tabelaLinha}>
                             <span style={estilos.celulaData}>
                               {formatarData(mov.data)}
                             </span>
-                            <span style={{ ...estilos.celulaDescricao, borderLeft: '1px solid #1f2937' }}>
+                            <span style={estilos.celulaDescricao}>
                               <span style={estilosComuns.nomeConta}>{mov.descricao}</span>
                               {rotuloCategoria}
                             </span>
-                            <span style={{ ...estilos.celulaValor, color: '#f87171', borderLeft: '1px solid #1f2937' }}>
+                            <span style={{ ...estilos.celulaValor, color: '#f87171' }}>
                               {ehEntrada ? '' : formatoReal.format(Number(mov.valor))}
                             </span>
-                            <span style={{ ...estilos.celulaValor, color: '#4ade80', borderLeft: '1px solid #1f2937' }}>
+                            <span style={{ ...estilos.celulaValor, color: '#4ade80' }}>
                               {ehEntrada ? formatoReal.format(Number(mov.valor)) : ''}
                             </span>
-                            <span style={{ ...estilos.celulaAcoes, borderLeft: '1px solid #1f2937' }}>
-                              {ehCaixinha ? (
-                                <span
-                                  style={estilos.cadeado}
-                                  title="Movimentação de caixinha — gerencie pelos botões da caixinha"
-                                >
-                                  🔒
-                                </span>
-                              ) : ehTransferencia ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditarTransferencia(mov)}
-                                    style={estilos.botaoAcao}
-                                    title="Editar transferência (remove e reabre o formulário preenchido)"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleExcluirTransferencia(mov)}
-                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
-                                    title="Excluir transferência (reverte os saldos)"
-                                  >
-                                    Excluir
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => iniciarEdicao(mov)}
-                                    style={estilos.botaoAcao}
-                                    title="Editar movimentação"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleExcluir(mov)}
-                                    style={{ ...estilos.botaoAcao, color: '#f87171' }}
-                                    title="Excluir movimentação"
-                                  >
-                                    Excluir
-                                  </button>
-                                </>
-                              )}
+                            <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(saldoLinha) }}>
+                              {saldoLinha === null ? '—' : formatoReal.format(saldoLinha)}
                             </span>
+                            <span style={estilos.celulaAcoes}>{acoes}</span>
                           </li>
                         )
                       })}
+
+                      {/* Linha do pé: SALDO DE ABERTURA (discreta, tracejada)
+                          — fica junto à linha mais antiga, como em extratos
+                          bancários "mais recente primeiro". Data = início do
+                          período ou a data da linha de borda da janela. */}
+                      {(() => {
+                        if (aberturaEfetiva === null) return null
+                        const dataAbertura =
+                          filtros.dataInicio && filtros.dataInicio !== '9999-12-31'
+                            ? filtros.dataInicio
+                            : movimentacoes[movimentacoes.length - 1]?.data ?? ''
+                        return esMovil ? (
+                          <li key="abertura" style={{ ...estilos.cardMovil, ...estilos.cardAbertura }}>
+                            <div style={estilos.cardMovilTopo}>
+                              <span style={estilos.rotuloEspecial}>SALDO DE ABERTURA</span>
+                              <span style={estilos.cardMovilData}>{formatarData(dataAbertura)}</span>
+                            </div>
+                            <div style={estilos.cardMovilValor}>
+                              <span style={estilos.cardMovilRotulo}>Saldo</span>
+                              <strong style={{ ...corDoSaldo(aberturaEfetiva), fontWeight: 'bold' }}>
+                                {formatoReal.format(aberturaEfetiva)}
+                              </strong>
+                            </div>
+                          </li>
+                        ) : (
+                          <li key="abertura" style={{ ...estilos.tabelaLinha, ...estilos.linhaAbertura }}>
+                            <span style={estilos.celulaData}>{formatarData(dataAbertura)}</span>
+                            <span style={estilos.celulaDescricao}>
+                              <span style={estilos.rotuloEspecial}>SALDO DE ABERTURA</span>
+                            </span>
+                            <span style={estilos.celulaValor} />
+                            <span style={estilos.celulaValor} />
+                            <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(aberturaEfetiva) }}>
+                              {formatoReal.format(aberturaEfetiva)}
+                            </span>
+                            <span style={estilos.celulaAcoes} />
+                          </li>
+                        )
+                      })()}
                     </ul>
                   </>
                 )}
@@ -655,6 +807,13 @@ export default function Movimentacoes() {
   )
 }
 
+// Cor da coluna Saldo: azul do sistema em valores >= 0; negativo usa o
+// padrão de alerta âmbar já existente no app (mesma cor do aviso de
+// futuros). Sem criar paleta nova.
+function corDoSaldo(valor) {
+  return { color: valor !== null && valor < 0 ? '#fbbf24' : '#42A5F5' }
+}
+
 const estilos = {
   topo: {
     display: 'flex',
@@ -671,39 +830,33 @@ const estilos = {
     borderRadius: '999px',
     padding: '0.15rem 0.55rem',
   },
-  resumoGrupo: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' },
-  resumoCard: {
-    flex: '1 1 120px',
-    background: '#111827',
-    border: '1px solid #1f2937',
-    borderRadius: '10px',
-    padding: '0.75rem',
+  // Linha dos filtros: pílulas de período + SALDO ATUAL à direita.
+  filtroLinha: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '0.25rem',
-  },
-  resumoRotulo: { color: '#9ca3af', fontSize: '0.75em' },
-  resumoValor: { fontSize: '1em', fontWeight: 'bold' },
-  abertura: {
-    display: 'flex',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.5rem 0.9rem',
-    borderRadius: '10px',
-    border: '1px dashed #374151',
-    background: '#111827',
-    color: '#9ca3af',
-    fontSize: '0.78rem',
-    letterSpacing: '0.04em',
-    marginBottom: '0.75rem',
+    gap: '0.4rem 1rem',
   },
-  // Extrato em tabela, como no app antigo: Data | Descrição | Débito |
-  // Crédito | Ações, com colunas separadas por linha vertical (estilo
-  // planilha) e textos centralizados nas células.
+  filtroPilulas: { flex: '1 1 auto', minWidth: 0 },
+  saldoNaLinha: {
+    marginLeft: 'auto',
+    whiteSpace: 'nowrap',
+    fontSize: '0.72rem',
+    color: '#9ca3af',
+    letterSpacing: '0.03em',
+  },
+  saldoNaLinhaValor: { color: '#e5e7eb', fontSize: '0.92rem', marginLeft: '0.15rem' },
+  // Barra discreta acima da tabela (só o aviso de futuros, quando existe).
+  barraResumo: {
+    marginBottom: '0.6rem',
+    fontSize: '0.72rem',
+  },
+  avisoFuturoInline: { color: '#fbbf24' },
+  // Extrato bancário: Data | Histórico | Débito | Crédito | Saldo (+ Ações),
+  // com colunas separadas por linha vertical e valores à direita.
   tabelaCabecalho: {
     display: 'grid',
-    gridTemplateColumns: '88px 1fr 92px 92px 78px',
+    gridTemplateColumns: '84px minmax(0, 1fr) 96px 100px 108px 78px',
     alignItems: 'center',
     padding: '0.3rem 0',
     color: '#6b7280',
@@ -720,7 +873,7 @@ const estilos = {
   },
   tabelaLinha: {
     display: 'grid',
-    gridTemplateColumns: '88px 1fr 92px 92px 78px',
+    gridTemplateColumns: '84px minmax(0, 1fr) 96px 100px 108px 78px',
     alignItems: 'center',
     padding: '0.45rem 0',
     borderRadius: '8px',
@@ -740,31 +893,57 @@ const estilos = {
     minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    textAlign: 'center',
+    textAlign: 'left',
     padding: '0 0.5rem',
+    borderLeft: '1px solid #1f2937',
   },
   celulaValor: {
     fontWeight: 'bold',
     fontSize: '0.78rem',
-    textAlign: 'center',
+    textAlign: 'right',
     whiteSpace: 'nowrap',
-    padding: '0 0.5rem',
+    padding: '0 0.6rem',
+    borderLeft: '1px solid #1f2937',
+  },
+  // Coluna Saldo: azul do sistema; negativo cai no âmbar de alerta
+  // (via corDoSaldo). Alinhada à direita como os demais valores.
+  celulaSaldo: {
+    fontWeight: 'bold',
+    fontSize: '0.78rem',
+    textAlign: 'right',
+    whiteSpace: 'nowrap',
+    padding: '0 0.6rem',
+    borderLeft: '1px solid #1f2937',
   },
   celulaAcoes: {
     display: 'flex',
     gap: '0.25rem',
     justifyContent: 'center',
     padding: '0 0.25rem',
+    borderLeft: '1px solid #1f2937',
   },
+  // Rótulo das linhas especiais (abertura/final), em maiúsculas discretas.
+  rotuloEspecial: {
+    color: '#9ca3af',
+    fontWeight: 'bold',
+    fontSize: '0.7rem',
+    letterSpacing: '0.05em',
+  },
+  linhaAbertura: { border: '1px dashed #374151' },
+  cardAbertura: { border: '1px dashed #374151' },
+  linhaFinal: { border: '1px solid #42A5F5' },
+  cardFinal: { border: '1px solid #42A5F5' },
+  // Botões de ação viraram ícones (✏️ editar, 🗑️ excluir): compactos,
+  // com tooltip e aria-label; o valor em strong herda a cor do ícone.
   botaoAcao: {
     background: 'transparent',
     border: '1px solid #374151',
     borderRadius: '6px',
-    color: '#42A5F5',
+    color: '#9ca3af',
     fontFamily: 'inherit',
-    fontSize: '0.68rem',
-    fontWeight: 'bold',
-    padding: '0.15rem 0.35rem',
+    fontSize: '0.78rem',
+    lineHeight: 1,
+    padding: '0.22rem 0.38rem',
     cursor: 'pointer',
   },
   cadeado: {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { somarEfeito, montarFiltroAntesDaJanela } from '../lib/extratoCalc'
 
 // Busca centralizada das movimentações da conta ativa, com filtros de
 // período (data_inicio/data_fim) e limite opcional.
@@ -36,8 +37,13 @@ export function useMovimentacoes({
       .eq('conta_id', contaId)
     if (dataInicio) query = query.gte('data', dataInicio)
     if (dataFim) query = query.lte('data', dataFim)
+    // Ordenação determinística: data desc, depois criado_em desc e id asc
+    // como desempate (linhas criadas na mesma transação — ex.: par de uma
+    // transferência — podem nascer com timestamp idêntico; o id uuid
+    // garante ordem estável entre buscas).
     query = query.order('data', { ascending: false })
     query = query.order('criado_em', { ascending: false })
+    query = query.order('id', { ascending: true })
     if (limite) query = query.limit(limite)
 
     const { data, error } = await query
@@ -147,13 +153,13 @@ export function useMovimentacoes({
   }
 }
 
-// Saldo de abertura de um período: a soma de TODAS as movimentações com
-// data ANTES de `data` (exclusive) na conta ativa — o saldo que a conta
-// tinha na véspera do primeiro lançamento do período. Query adicional
-// enxuta (só tipo_op e valor), que é o que o RLS permite e basta pra
-// somar. Depois do período, o saldo pode evoluir por fora desta soma
-// (novos lançamentos) — para o extrato isso não importa, o valor é o da
-// data de início.
+// Saldo de abertura de um período: o efeito acumulado de TODAS as
+// movimentações com data ANTES de `data` (exclusive) na conta ativa — o
+// saldo que a conta tinha na véspera do primeiro dia do período. Inclui
+// transferências internas (efeito real no saldo) e lançamentos de caixinha,
+// porque ambos são linhas comuns em movimentacoes. Query enxuta (só
+// tipo_op e valor), que basta para somar. O efeito é calculado por
+// somarEfeito (extratoCalc) — mesma fórmula usada pelo resumo da tela.
 export async function buscarSaldoAntesDe({ contaId, data }) {
   if (!contaId || !data) return null
 
@@ -165,8 +171,44 @@ export async function buscarSaldoAntesDe({ contaId, data }) {
 
   if (error) throw new Error(error.message)
 
-  return linhas.reduce(
-    (soma, l) => soma + (l.tipo_op === 'Entrada' ? 1 : -1) * Number(l.valor),
-    0,
-  )
+  return somarEfeito(linhas)
+}
+
+// Efeito das movimentações FUTURAS ao período (data > `data`, exclusive):
+// quantas são e quanto SOMAM líquido no saldo_atual. Serve para o aviso de
+// divergência do extrato quando a pesquisa termina antes de lançamentos já
+// cadastrados (o trigger aplica saldo na hora, independente da data).
+// Transferências participam naturalmente (cada lado é uma linha própria).
+export async function buscarEfeitoApos({ contaId, data }) {
+  if (!contaId || !data) return { quantidade: 0, liquido: 0 }
+
+  const { data: linhas, error } = await supabase
+    .from('movimentacoes')
+    .select('tipo_op, valor')
+    .eq('conta_id', contaId)
+    .gt('data', data)
+
+  if (error) throw new Error(error.message)
+
+  return { quantidade: linhas.length, liquido: somarEfeito(linhas) }
+}
+
+// Saldo de abertura da JANELA "Últimos N" (modo sem datas): efeito de todas
+// as linhas ANTERIORES à última linha exibida, seguindo a MESMA ordenação
+// determinística da lista (data desc, criado_em desc, id asc) — por isso um
+// dia com mais lançamentos do que o limite não corrompe a conta de abertura:
+// as linhas cortadas pelo limite entram aqui. `ultimaLinha` é o ÚLTIMO
+// elemento do array já ordenado (o mais antigo da janela).
+export async function buscarAberturaDaJanela({ contaId, ultimaLinha }) {
+  if (!contaId || !ultimaLinha) return null
+
+  const { data: linhas, error } = await supabase
+    .from('movimentacoes')
+    .select('tipo_op, valor')
+    .eq('conta_id', contaId)
+    .or(montarFiltroAntesDaJanela(ultimaLinha))
+
+  if (error) throw new Error(error.message)
+
+  return somarEfeito(linhas)
 }

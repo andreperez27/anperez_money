@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useCaixinhas, useCaixinhaMovimentos } from '../hooks/useCaixinhas'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
-import { estilosComuns, formatarData, formatoReal } from '../lib/compartilhados'
+import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 
 const ROTULOS_TIPO = {
   guardar: 'Guardar',
@@ -45,10 +45,8 @@ export default function CaixinhaDetalhe() {
   const [acao, setAcao] = useState(null)
   const [valor, setValor] = useState('')
   const [descricao, setDescricao] = useState('')
-  const agora = new Date()
-  const [data, setData] = useState(
-    `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`
-  )
+  // Data civil local via helper compartilhado (mesma regra do extrato).
+  const [data, setData] = useState(hoje)
   const [mostrandoExtrato, setMostrandoExtrato] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [mensagem, setMensagem] = useState(null)
