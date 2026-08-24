@@ -170,6 +170,19 @@ export function IconePonto() {
   )
 }
 
+// Planejamento: calendário (entradas/despesas futuras por semana).
+export function IconePlanejamento() {
+  return (
+    <Svg>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M3 10h18" />
+      <path d="M9 15l2 2 4-4" />
+    </Svg>
+  )
+}
+
 // Configurações: sliders (linhas com botões de ajuste).
 export function IconeConfig() {
   return (

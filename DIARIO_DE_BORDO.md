@@ -1236,3 +1236,269 @@ saldo_atual = fórmula acima + efeito das linhas com data>fim (futuras)
   real AP's cada lanamento (Map por id em saldosProgressivos ' independe
   da ordem de exibio). Nenhuma lgica alterada.
 - Testes: 17/17 ok. Build PASSOU. Aguarda validao visual.
+
+## 23/08/2026 (madrugada) ' ETAPA 06 E2.5 (proposta) + E2.6 (Dashboard dark + card Planejamento)
+
+### E2.5 ' auditoria e proposta (APROVADA pelo usurio)
+- Auditoria somente-leitura do Dashboard x demais abas: o Dashboard era a
+  nica tela CLARA do app (fundo #f6f7f9, cards brancos com sombra, azul de
+  ao #2f7dc4 fora do vocabulrio, CaberNaTela(480) aninhado dentro do
+  CaberNaTela(720) do Layout = escala dupla exclusiva, typo 'san-serif').
+- Decises aprovadas: tema dark herdando #0b0f19; cards #111827/#1f2937;
+  card heroi vira PLANEJAMENTO DA SEMANA (Opco C: Entradas > Sadas >
+  Resultado com nfase no Resultado); Patrimnio Total migra para a aba
+  Contas (Resumo do ms); resultado previsto NUNCA chamado de "saldo".
+
+### E2.6 ' implementao
+- src/pages/Dashboard.jsx REESCRITO no vocabulrio dark consolidado:
+  fundo herdado do Layout, cartes #111827 + borda #1f2937 raio 12 sem
+  sombra, textos #e5e7eb/#9ca3af/#6b7280, ao/link #42A5F5. CaberNaTela
+  interno REMOVIDO (acabou a escala dupla; contedo via estilosComuns).
+- Card heroi novo: badge S{n} (semana ISO corrente via lib/semana.js),
+  perodo "17 ' 23 AGO" (helper local rotuloPeriodo, inclui viradas de
+  ms/ano), linhas Entradas previstas (#4ade80) / Sadas previstas
+  (#f87171) / Resultado previsto (bold 1.15rem; verde se >= 0, vermelho
+  se < 0). Estados: carregando/erro/vazio no padro das outras abas.
+  Bloco informativo POR ENQUANTO: vira <Link> para /planejamento na E6.
+- PATRIMNIO TOTAL saiu da home (casa definitiva: aba Contas, Resumo do
+  ms; alinhamento futuro do escopo contas+caixinhas pendente). Convite de
+  primeiro acesso sobrevive como linha discreta no p, s quando no h
+  nenhuma conta (useContas mantido apenas para isso).
+- src/hooks/usePlanejamentos.js NOVO (hook mnimo da E2.6):
+  usePlanejamentosDaSemana({ano, semana}) devolve {carregando, erro,
+  itens, atualizar, periodo{inicio,fim}, totais{entradas,saidas,
+  resultado}, contagens{previsto,realizado,cancelado}}. Consulta eq
+  ano_semana/semana ordenada por data_prevista; RLS garante o user_id;
+  totais EXCLUEM estado='cancelado'; periodo vem de semana.js (fonte
+  nica); agregados indiferentes  origem (prontos p/ jornada/recorrentes).
+- semana.js e seus testes (E2) INTACTOS. Nenhum SQL executado. Sem rota/
+  menu novo (E4-E6 futuras).
+
+### Testes
+- node scripts/teste_semana.mjs: 12/12 ok.
+- node scripts/teste_reconciliacao.mjs: 17/17 ok.
+- npm run build: PASSOU (exit 0).
+
+### Pendente
+- Validaco visual desktop/mobile pelo usurio antes de commit/push.
+- Prximas: E3 (hook CRUD completo), E4 (tela leitura), E5 (formulrio/
+  estados/FAB), E6 (rota /planejamento + menus + card vira link).
+
+## 23/08/2026 (madrugada, E2.6-A) ' Dashboard redefinido como HUB de navegao
+
+Deciso conceitual aprovada pelo usurio: a tela inicial NO  uma segunda
+tela de informaes financeiras ' um hub de direcionamento. Sem resumos
+redundantes dos mdulos.
+
+- Dashboard.jsx: card heri de PLANEJAMENTO DA SEMANA REMOVIDO (semana,
+  perodo, entradas/sadas/resultado previstos, contagens). O Dashboard
+  no consulta mais a tabela planejamentos nem importa hook algum de
+  domnio (usePlanejamentosDaSemana/useContas removidos) ' s navegaao.
+- Planejamento virou HomeCard NORMAL (mesmo peso dos demais), com cone
+  de calendrio novo (IconePlanejamento em HomeCard.jsx, padro Svg j
+  existente) e DESABILITADO com selo "Em breve" enquanto a rota
+  /planejamento no existe (o catch-all redirecionaria p/ "/" = clique
+  morto; na E6 troca-se desabilitado por navigate('/planejamento')).
+- Auditoria Caixinhas antes da deciso: caixinha pertence a conta
+  (conta_id; criao vive em ContasCorrentes "+ Nova Caixinha"; detalhe
+  /caixinhas/:id acessvel pela lista consolidada de Contas; a pgina
+  ndice /caixinhas no oferece nada alm do que Contas mostra).
+  DECISO: Opco B ' boto removido da Home; funcionalidade intacta;
+  caminho cannico Contas > Caixinhas. Rota permanece p/ URL/histrico.
+- Relatrios mantido na Home; a pgina ainda  PLACEHOLDER ("Em
+  construo") ' rota existe e navega.
+- Ordem final dos cards: Contas, Cartes | Ponto, Relatrios |
+  Planejamento (Em breve), Configuraes (Ponto ANTES de Relatrios).
+- Patrimnio Total segue FORA da Home (Resumo do ms da aba Contas);
+  ContasCorrentes.jsx intocado nesta etapa.
+- Limpeza total de cdigo morto: usePlanejamentosDaSemana, semanaIso,
+  hoje, formatoReal, Link, useContas, rotuloPeriodo, MESES_ABREV e todos
+  os estilos do heri/primeiro acesso removidos.
+- Visual E2.5 mantido: #0b0f19 herdado, cards #111827/#1f2937, textos
+  #e5e7eb/#9ca3af, ao #42A5F5, sem sombras, header identidade intacta.
+- usePlanejamentos.js e semana.js INTACTOS (hook mnimo da E2.6 sobrevive
+  para uso futuro da aba Planejamento; nada o consome por enquanto).
+
+### Testes (E2.6-A)
+- teste_semana.mjs 12/12 ok; teste_reconciliacao.mjs 17/17 ok;
+  npm run build PASSOU. Sem commit/push (aguarda reviso).
+
+## 23/08/2026 (madrugada, E3 — registro em atraso) ' Domínio completo de Planejamentos
+
+### O que foi feito
+- src/lib/planejamentoCalc.js (NOVO): função PURA calcularResumoPlanejamentos(itens)
+  → { totais{entradas,saidas,resultado}, contagens{previsto,realizado,cancelado} }.
+  Cancelado fica FORA dos totais e DENTRO das contagens; resultado = entradas − saídas.
+- src/hooks/usePlanejamentos.js REESCRITO como ÚNICO hook do domínio:
+  usePlanejamentos({ano, semana}) devolve { carregando, erro, itens, periodo,
+  totais, contagens, atualizar, listarPorSemana, criarPlanejamento,
+  editarPlanejamento, cancelarPlanejamento, excluirPlanejamento }. A semana é SEMPRE
+  derivada de data_prevista via semanaIso (a UI nunca manda ano_semana/semana);
+  edição parcial recalcula a dupla junto quando a data muda; consulta eq ano_semana+
+  semana com ordenação determinística (data_prevista, criado_em, id); mutações
+  recarregam via atualizar(); CANCELAR preserva (estado), EXCLUIR remove; sem user_id
+  no código (RLS); sem ContaAtivaContext (planejamento não pertence a conta).
+- usePlanejamentosDaSemana (hook mínimo da E2.6) ELIMINADO — zero referências.
+- scripts/teste_planejamentoCalc.mjs (NOVO): TESTES 1–10 do modelo → 10/10 ok.
+
+### Testes (E3)
+- teste_planejamentoCalc 10/10 · teste_semana 12/12 · teste_reconciliacao 17/17 ·
+  npm run build PASSOU.
+
+## 23/08/2026 (madrugada, E4) ' Tela de leitura /planejamento
+
+### Verificação prévia exigida pelo André (navegação semanal)
+Confirmado NO CÓDIGO antes de implementar: src/lib/semana.js documenta o caminho
+oficial na própria API (linha ~105) — inicioDaSemanaIso(ano, semana) devolve a
+segunda-feira ("caminho inverso, usado pela navegação da tela") e semanaIso(dataISO)
+decide a dupla resultante. A navegação ‹ › anda ±7 dias CIVIS em UTC sobre essa
+segunda-feira e pergunta à FONTE ÚNICA qual é a nova dupla (ano/semana) — viradas
+de ano corretas por construção. Zero lógica de semana reimplementada na página.
+
+### Arquivos
+- src/pages/Planejamento.jsx (NOVO): título, seletor ‹ [Semana N / AAAA] › +
+  pílula "Hoje" (desabilitada na semana corrente; botões travados enquanto
+  carregando), período da semana (formatarData), resumo em 3 cards (Entradas/Saídas/
+  Resultado PREVISTOS, valores PRONTOS do domínio — nada recalculado na página),
+  linha de contagens, lista ordenada (Data | Descrição | Tipo | Valor | Estado |
+  Ações), badges de estado (previsto azul / realizado verde / cancelado cinza
+  esmaecido com opacity .55 mas VISÍVEL), ações por linha: Cancelar (só quando não
+  cancelado) e Excluir, ambas com window.confirm distinguindo os conceitos
+  ("permanece no histórico" × "não pode ser desfeita"); erros de ação exibidos sem
+  derrubar a tela. Responsivo: grid desktop → cartão empilhado ≤400px
+  (useMuyEstrecho). Estados loading/erro/vazio no padrão das abas. Rodapé avisa que
+  cadastro/edição vêm na próxima etapa (nota removida na E5).
+- src/App.jsx (modificado): import + rota /planejamento no molde padrão
+  (RequerLogin > ContaAtivaProvider > Layout + index), entre /ponto e /configuracoes;
+  enumeração do comentário-mapa atualizada.
+- src/pages/Dashboard.jsx (modificado): card Planejamento sai de desabilitado/
+  "Em breve" e vira direcionador ativo aoClicar={() => navigate('/planejamento')};
+  comentário E2.6-A atualizado.
+- DIARIO_DE_BORDO.md: este registro (+ registro tardio da E3 acima).
+
+### Escopo respeitado (autorização E4)
+- usePlanejamentos.js, planejamentoCalc.js, semana.js INTACTOS; SQL/RLS intocados.
+- Sem criação/edição (E5); Planejamento FORA dos menus (entrada pelo card da Home);
+  conta_destino NÃO buscada (uuid ignorado nesta etapa).
+- Sem saldos/movimentações/lancamento_id; semana sempre por ano+semana.
+
+### Testes (E4)
+- node scripts/teste_semana.mjs: 12/12 ok.
+- node scripts/teste_reconciliacao.mjs: 17/17 ok.
+- node scripts/teste_planejamentoCalc.mjs: 10/10 ok.
+- npm run build: PASSOU (99 módulos; único aviso chunk >500kB preexistente).
+- git status/diff apresentados ao usuário. SEM commit/push (aguarda revisão).
+
+### Pendente
+- Validação visual desktop/mobile pelo André — incluir o caso ‹ a partir da
+  semana 1 (deve cair na semana 52/53 do ano anterior).
+- Próxima etapa proposta: E5 — formulário criar/editar (inline, padrão
+  ContasCorrentes) + coluna "Conta destino" (exige 1 linha de embedding no select
+  do hook: '*, contas!conta_destino_id(nome)' — decisão pendente do André).
+
+## 24/08/2026 (E5-A → E5-E) — Modelagem, séries parceladas e criação na tela
+
+### E5-A — Modelagem aprovada (Alternativa B refinada)
+Séries parceladas vivem NA MESMA tabela de ocorrências, marcadas por
+serie_id/parcela_numero/total_parcelas. Decisões: D1 divisão inteira em centavos
+com resto nas PRIMEIRAS parcelas; D2 datas ancoradas com clamp de fim de mês
+(31/01→28/02→31/03, âncora preservada); D3 modelo B; D4 regeneração exclui
+fisicamente só 'previsto'; D5 cancelar ocorrência OU série-a-partir-dela;
+D6 efetivação em cartão bloqueada nesta fase; D7 FK lancamento_id REJEITADA
+(coluna existe, sem constraint); D8 fix do bug visual tipo_op da E4.
+
+### E5-B/B.1/B.2 — Migration 09 aplicada
+supabase/09_planejamento_series.sql: serie_id uuid, parcela_numero smallint,
+total_parcelas smallint; CHECKs ck_planejamentos_serie_campos_juntos/_faixa/
+_parcela_exige_serie; índice idx_planejamentos_serie(user_id, serie_id).
+Executado pelo André no SQL Editor e verificado (T0–T3). F1: NUNCA re-executar
+08_planejamentos.sql em produção (tem DROP CASCADE).
+
+### E5-C/E5-D/D.1 — Libs puras + funções de série no hook
+- src/lib/parcelas.js: dividirValorEmParcelas (D1), dataDaParcela (D2),
+  gerarOcorrenciasDaSerie (snake_case, sem semana/lancamento_id).
+- src/lib/planejamentoSerie.js: montarLinhasSerie (+semanaIso+estado previsto),
+  calcularCancelamentoDaquiParaFrente (só previsto >= alvo),
+  calcularRegeneração (preserva realizado/cancelado; bloqueia total < maior
+  realizada; defaults = soma da série / menor data_prevista).
+- usePlanejamentos.js: criarSerieParcelada (crypto.randomUUID + lote único),
+  cancelarSerieAPartirDe (D5; avulsa degrada para cancelarPlanejamento),
+  regenerarSerie (DELETE previstas por id + INSERT lote); ordenação das queries
+  ganhou desempate .order('parcela_numero'); regenerarSerie SEM botão na UI.
+
+### E5-E — Formulário avulsa × parcelada + 3 bugs corrigidos
+- Planejamento.jsx reescrito: toggle Avulsa/Parcelada, radio Entrada/Despesa,
+  valor decimal BR, datas default = início da semana visível, badge n/N,
+  tag derivada "Disponível" (previsto && data<=hoje), botão "Série"
+  (cancelarSerieAPartirDe), fix tipo_op via comparações 'Entrada'/'Saida' (D8).
+- BUG 1 (JS): criarPlanejamento existia no hook mas não era desestruturado
+  ("criarPlanejamento is not defined") — corrigido no destructuring.
+- BUG 2 (RLS): planejamentos.user_id nasceu SEM DEFAULT auth.uid() na migration
+  08 — nenhum insert jamais funcionaria nessa tabela (RLS roda antes do NOT NULL,
+  logo o erro era sempre "violates row-level security policy"). Evidência: todos
+  os outros hooks inserem SEM user_id porque as migrations deles definiram o
+  default. Correção executada pelo André: ALTER TABLE planejamentos ALTER COLUMN
+  user_id SET DEFAULT auth.uid(). Hook revertido ao padrão do projeto (insert
+  limpo, sem injeção manual de user_id/sessão).
+- BUG 3 (navegação): hook guarda a semana em estado interno que ignora props
+  após a montagem; a reescrita da E5-E navegava por estado local + props, então
+  ‹ › não recarregava nada e as parcelas (em outras semanas) pareciam
+  "perdidas". Correção: alvo exposto no retorno do hook e a página navega via
+  listarPorSemana(ano, semana) — contrato documentado. Defeitos latentes da
+  reescrita também removidos: typo RÓLULO_ESTADO (2x) e prop style2 inválido.
+
+### Testes (E5)
+- teste_parcelas 27/27 · teste_planejamentosSerie 22/22 · teste_semana 12/12 ·
+  teste_planejamentoCalc 10/10 · teste_reconciliacao 17/17.
+- npm run build PASSOU (101 módulos; único aviso chunk >500kB preexistente).
+- Validação funcional pelo André: criação avulsa OK, série parcelada gravando,
+  navegação ‹ › e pílula Hoje operantes, parcelas visíveis nas semanas delas.
+- SEM commit/push (aguarda autorização expressa).
+
+### Pendente (próxima etapa)
+- E5-F — Efetivação (botão Lançar): escolha de conta destino; cartões bloqueados
+  (D6); criarMovimentacao + estado='realizado' + lancamento_id; exige nova
+  autorização do André.
+
+## 24/08/2026 — E5-F0→F4: auditoria, infra de períodos e reorganização da tela
+
+### F0–F3 (resumo dos relatórios entregues em sessão)
+- F0 (auditoria da tela): página monolítica com formulário antes do resumo;
+  proposta aprovada de abas internas + seletor de períodos compartilhado.
+- F1: src/lib/periodos.js ({tipo,inicio,fim}+metadados; semana delega 100% a
+  semana.js; mês/tri/semestre por índice civil) e planejamentoAgregado.js
+  (agruparPorMes/agruparPorSemanaISO). teste_periodos 38/38;
+  teste_planejamentoAgregado 20/20.
+- F2: hook ganhou listarPorPeriodo(inicio,fio) ADITIVA (consulta explícita,
+  não mexe no mecanismo da semana) + validarFaixaDePeriodo. teste_listarPorPeriodo 18/18.
+- F3 (auditoria de recorrências, somente leitura): ocorrências já suportam
+  recorrentes HOJE (origem='recorrente' existe sem uso; serie_id serve de
+  vínculo; valor por linha permite variável); falta apenas entidade de REGRA
+  → futura tabela `recorrentes` + RLS própria. Arquitetura: Recorrente→regra→
+  gerador por horizonte idempotente→planejamentos; Ponto Inteligente alimenta
+  via contrato estreito (informarPrevisao), sem acoplamento.
+
+### F4 — Reorganização da página (esta etapa)
+- Planejamento.jsx virou ORQUESTRADOR: SeletorPeriodo (pílulas Semana/Mês/
+  Trimestre/Semestre + ‹ › + Hoje via periodos.js — deslocarSemana local
+  ELIMINADA) e abas internas [Visão geral | Lançamentos] (estado local, sem
+  rotas novas). Ao abrir: VISÃO GERAL primeiro (formulário saiu do topo).
+- Novos componentes em src/components/planejamento/: comum.js (helpers/estilos),
+  SeletorPeriodo.jsx, VisaoGeral.jsx (resumo + contagens + "Por mês" para
+  períodos maiores via agruparPorMes + próximos lançamentos), Lancamentos.jsx
+  (formulário avulsa×parcelada + lista/ações — porto fiel da E5-E).
+- Dados: SEMANA segue pelo caminho único do hook (listarPorSemana; totais/
+  contagens prontos); MÊS/TRI/SEMESTRE via listarPorPeriodo com estado próprio
+  e resumo pela MESMA função pura (calcularResumoPlanejamentos). Trocar tipo
+  volta ao período que contém hoje. Pós-mutação em períodos maiores refaz a
+  faixa visível (erros isolados no estado do período).
+- INTACTOS: usePlanejamentos.js, App/Layout/HomeCard, todas as libs, banco/RLS.
+  Recorrentes e E5-F (Lançar) NÃO implementados. CaberNaTela intocado (abas
+  reduzem conteúdo simultâneo).
+
+### Testes (F4)
+- 164 asserts verdes: parcelas 27 · serie 22 · semana 12 · calc 10 ·
+  reconciliação 17 · periodos 38 · agregado 20 · listarPorPeriodo 18.
+- npm run build PASSOU (aviso chunk >500kB preexistente). git diff --check limpo.
+- Pendente: validação visual do André (checklist Semana/Mês/Tri/Sem × Visão
+  geral/Lançamentos + criação/cancelamento/exclusão/badges n/N).

@@ -10,6 +10,7 @@ import CaixinhaDetalhe from './pages/CaixinhaDetalhe'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
 import Ponto from './pages/Ponto'
+import Planejamento from './pages/Planejamento'
 import Layout from './components/Layout'
 import { ContaAtivaProvider } from './context/ContaAtivaContext'
 
@@ -63,7 +64,8 @@ function SomenteDeslogado({ children }) {
 // - "/" (Home) é protegida e renderiza a tela inicial mobile-first,
 //   sem a moldura escura do Layout — é o cartão de entrada do app
 // - As demais telas (contas, movimentacoes, cartoes, caixinhas,
-//   relatorios, configuracoes) usam o Layout: cabeçalho + menu + Outlet
+//   relatorios, ponto, planejamento, configuracoes) usam o Layout:
+//   cabeçalho + menu + Outlet
 // - O menu do cabeçalho expõe Início | Contas Correntes | Cartões |
 //   Configurações; caixinhas e extrato vivem dentro de Contas Correntes
 // - /caixinhas lista as caixinhas da conta ativa; /caixinhas/:id abre o
@@ -174,6 +176,18 @@ function App() {
         }
       >
         <Route index element={<Ponto />} />
+      </Route>
+      <Route
+        path="/planejamento"
+        element={
+          <RequerLogin>
+            <ContaAtivaProvider>
+              <Layout />
+            </ContaAtivaProvider>
+          </RequerLogin>
+        }
+      >
+        <Route index element={<Planejamento />} />
       </Route>
       <Route
         path="/configuracoes"
