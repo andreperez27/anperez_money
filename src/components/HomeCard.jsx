@@ -1,11 +1,14 @@
 // Card reutilizável da Home (mobile-first). Recebe um ícone (React node),
 // título, descrição opcional e a ação de clique. Quando "desabilitado" é
 // true, o card fica esmaecido com o selo "Em breve" e não responde a clique.
+// "valorVisivel" controla blur+opacity na descrição (toggle de valores).
+// "aoClicarValor" cria uma zona de clique separada na descrição (stopPropagation)
+// para alternar o modo de exibição sem navegar.
 //
 // Ícones: SVGs inline (linhas finas, mesmo estilo visual) — o projeto ainda
 // não tem biblioteca de ícones, e cada ícone aqui é usado uma única vez,
 // então uma dependência nova não se justifica neste momento.
-export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilitado }) {
+export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilitado, valorVisivel = true, aoClicarValor }) {
   if (desabilitado) {
     return (
       <div style={estilos.cardDesabilitado}>
@@ -21,12 +24,28 @@ export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilit
     )
   }
 
+  const estiloDescricao = aoClicarValor
+    ? estilos.descricao
+    : { ...estilos.descricao, filter: valorVisivel ? 'none' : 'blur(5px)', opacity: valorVisivel ? 1 : 0.5 }
+
   return (
     <button type="button" onClick={aoClicar} style={estilos.card}>
       <div style={estilos.icone}>{icone}</div>
       <div>
         <div style={estilos.rotulo}>{titulo}</div>
-        {descricao && <p style={estilos.descricao}>{descricao}</p>}
+        {descricao && (
+          aoClicarValor ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); aoClicarValor() }}
+              style={estilos.botaoDescricao}
+            >
+              {descricao}
+            </button>
+          ) : (
+            <p style={estiloDescricao}>{descricao}</p>
+          )
+        )}
       </div>
     </button>
   )
@@ -36,60 +55,86 @@ const estilos = {
   card: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.75rem',
+    gap: '11px',
     alignItems: 'flex-start',
     textAlign: 'left',
-    background: '#ffffff',
-    border: '1px solid #e5e7eb',
+    background: '#f4f2ec',
+    border: 'none',
     borderRadius: '16px',
-    padding: '1rem',
+    padding: '17px 15px',
+    minHeight: '106px',
     cursor: 'pointer',
-    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
-    fontFamily: 'inherit',
+    fontFamily: "'Space Grotesk', sans-serif",
     width: '100%',
   },
   cardDesabilitado: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.75rem',
+    gap: '11px',
     alignItems: 'flex-start',
-    background: '#ffffff',
-    border: '1px solid #e5e7eb',
+    background: '#f4f2ec',
+    border: 'none',
     borderRadius: '16px',
-    padding: '1rem',
+    padding: '17px 15px',
+    minHeight: '106px',
     opacity: 0.55,
     cursor: 'not-allowed',
     width: '100%',
   },
   icone: {
-    width: '44px',
-    height: '44px',
-    borderRadius: '12px',
+    width: '30px',
+    height: '30px',
+    borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#e8f4fd',
-    color: '#2f7dc4',
+    background: '#e7e2d6',
+    color: '#12181a',
   },
   rotulo: {
-    fontWeight: 'bold',
-    fontSize: '0.95rem',
-    color: '#111827',
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontWeight: 600,
+    fontSize: '13.5px',
+    color: '#12181a',
     display: 'flex',
     alignItems: 'center',
     gap: '0.4rem',
     flexWrap: 'wrap',
   },
   seloEmBreve: {
-    fontSize: '0.65rem',
-    fontWeight: 'bold',
-    color: '#6b7280',
-    background: '#f3f4f6',
-    border: '1px solid #e5e7eb',
-    borderRadius: '999px',
-    padding: '0.1rem 0.5rem',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '8.5px',
+    fontWeight: 500,
+    letterSpacing: '0.08em',
+    color: '#1a1108',
+    background: '#c07a45',
+    borderRadius: '5px',
+    padding: '2px 6px',
   },
-  descricao: { margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#6b7280' },
+  descricao: {
+    margin: '2px 0 0',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '10.5px',
+    fontWeight: 500,
+    color: '#5c6a68',
+    lineHeight: 1.35,
+    transition: 'filter 0.2s, opacity 0.2s',
+  },
+  botaoDescricao: {
+    display: 'block',
+    margin: '2px 0 0',
+    padding: 0,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '10.5px',
+    fontWeight: 500,
+    color: '#5c6a68',
+    lineHeight: 1.35,
+    textAlign: 'left',
+    width: '100%',
+  },
 }
 
 // ---------------------------------------------------------------------------

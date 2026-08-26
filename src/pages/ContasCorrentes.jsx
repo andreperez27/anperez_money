@@ -36,10 +36,13 @@ export default function ContasCorrentes() {
     atualizar: atualizarCaixinhas,
   } = useTodasCaixinhas()
 
-  // Patrimônio = soma dos saldos das contas ativas (todas as contas).
+  // Patrimônio = soma dos saldos das contas ativas + caixinhas ativas.
   const patrimonio = contas
     .filter((c) => c.ativa)
     .reduce((soma, c) => soma + Number(c.saldo_atual), 0)
+    + todasCaixinhas
+      .filter((c) => c.ativa)
+      .reduce((soma, c) => soma + Number(c.saldo), 0)
 
   // Formulário de lançamento
   const [mostrandoLancamento, setMostrandoLancamento] = useState(false)
