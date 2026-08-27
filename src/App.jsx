@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import ContasCorrentes from './pages/ContasCorrentes'
 import Movimentacoes from './pages/Movimentacoes'
 import Cartoes from './pages/Cartoes'
+import FaturaDetalhe from './pages/FaturaDetalhe'
 import Caixinhas from './pages/Caixinhas'
 import CaixinhaDetalhe from './pages/CaixinhaDetalhe'
 import Relatorios from './pages/Relatorios'
@@ -128,6 +129,18 @@ function App() {
         }
       >
         <Route index element={<Cartoes />} />
+      </Route>
+      <Route
+        path="/cartoes/:id"
+        element={
+          <RequerLogin>
+            <ContaAtivaProvider>
+              <Layout />
+            </ContaAtivaProvider>
+          </RequerLogin>
+        }
+      >
+        <Route index element={<FaturaDetalhe />} />
       </Route>
       <Route
         path="/caixinhas"

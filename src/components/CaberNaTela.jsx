@@ -11,7 +11,13 @@ const BREAKPOINT = '(max-width: 640px)'
 //
 // En móvil (< breakpoint) ese encaje se omite: el contenido fluye a tamaño
 // real y la página roe normalmente — no se encogen textos ni botones.
-export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 'flex-start' }) {
+//
+// Prop `rolagem` (bool): quando true, DESLIGA o encolhimento no desktop e
+// abre uma área de rolagem vertical real (largura útil = maxLargura). É o
+// modo para telas longas (ex.: detalhe de fatura de cartão) cujo conteúdo
+// não deve ser espremido na viewport — assim o rodapé (Pagar fatura, ações)
+// nunca fica cortado/inacessível, só rolável.
+export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 'flex-start', rolagem = false }) {
   const esMovil = useMediaQuery(BREAKPOINT)
   const ref = useRef(null)
   const [fator, setFator] = useState(null)
@@ -57,6 +63,16 @@ export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 
     return <div style={{ width: '100%' }}>{children}</div>
   }
 
+  if (rolagem) {
+    // Desktop com rolagem: nada de escala — uma área rolável vertical de
+    // largura útil confortável para o conteúdo longo.
+    return (
+      <div style={estilos.rolagem}>
+        <div style={{ ...estilos.rolagemInner, maxWidth: maxLargura }}>{children}</div>
+      </div>
+    )
+  }
+
   return (
     <div style={estilos.palco}>
       {/* Quando amplía (f > 1), ancorar no topo: centralizar cortaría o
@@ -93,5 +109,20 @@ const estilos = {
     minHeight: 0,
     width: '100%',
     overflow: 'hidden',
+  },
+  // Área rolável vertical real para telas longas (sem escala).
+  rolagem: {
+    flex: 1,
+    minHeight: 0,
+    height: '100%',
+    width: '100%',
+    overflowX: 'hidden',
+    overflowY: 'auto',
+    boxSizing: 'border-box',
+  },
+  rolagemInner: {
+    margin: '0 auto',
+    width: '100%',
+    boxSizing: 'border-box',
   },
 }

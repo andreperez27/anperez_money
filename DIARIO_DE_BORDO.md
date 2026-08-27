@@ -1502,3 +1502,590 @@ Executado pelo André no SQL Editor e verificado (T0–T3). F1: NUNCA re-executa
 - npm run build PASSOU (aviso chunk >500kB preexistente). git diff --check limpo.
 - Pendente: validação visual do André (checklist Semana/Mês/Tri/Sem × Visão
   geral/Lançamentos + criação/cancelamento/exclusão/badges n/N).
+
+---
+
+## 27/08/2026 — ETAPA C1/C2 — Frontend do módulo Cartões (lista + fatura)
+
+### Contexto
+O backend do módulo Cartões (schema C1: tabelas `compras`, `parcelas`,
+`fatura_pagamentos`, view `v_faturas`, RPCs `calcular_limite_disponivel` e
+`pagar_fatura`) já foi corrigido e VALIDADO pelo usuário nas sessões
+anteriores — considerado estável. Esta etapa é só FRONTEND: substituir o
+placeholder `Cartoes.jsx` por duas telas reais (lista de cartões + detalhe de
+fatura), consumindo objetos/views/RPCs existentes SEM recriar lógica
+financeira no app. Tudo em pt-BR, padrão dark do app (#0b0f19 / #111827 /
+#1f2937 / azul #42A5F5), mobile-first.
+
+### Hooks
+- `src/hooks/useFaturas.js` (NOVO) — dados de fatura de UM cartão:
+  - `useFaturas(cartaoId)` → `{ faturas, limiteDisponivel, carregando, erro,
+    pagarFatura }`. Consulta a view `v_faturas` (filtrada por cartao_id,
+    ordenada mes_fatura DESC) e a RPC `calcular_limite_disponivel(
+    p_cartao_id)` (limite disponível calculado no banco).
+  - `pagarFatura({ valor, data, mes_fatura, descricao })` chama a RPC atômica
+    `pagar_fatura(cartao_id, valor, data, mes, descricao)` e relê os dados;
+    mensagem de EXCEÇÃO do banco é exibida verbatim (ex.: "A fatura 2026-03
+    já está paga.").
+  - Exporta `mesAtual()` (helper 'YYYY-MM' do mês corrente, para a fatura em
+    destaque).
+- `src/hooks/useCompras.js` (NOVO) — itens da fatura de `(cartaoId, mesFatura)`:
+  - `useCompras(cartaoId, mesFatura)` → `{ itens, pagamentos, carregando,
+    erro }`. Como `parcelas` não carregam cartao_id, a busca é em 2 passos:
+    ids das compras ativas do cartão → parcelas filtrando por esses ids +
+    mes_fatura (embedding `compras(descricao, data, valor_total,
+    n_parcelas)`) + `fatura_pagamentos` do cartão/mês.
+  - Guarda o caso de ZERO compras no cartão (evita `.in('compra_id', [])` que
+    o Supabase rejeita) — só busca pagamentos nesse caso.
+- `src/hooks/useCartoes.js` (modificado) — select agora embute
+  `contas(nome, tipo)` (para o nome da conta no cartão) e `criarCartao`
+  passou a aceitar `conta_id` opcional (default = contaId do hook).
+
+### Telas
+- `src/pages/Cartoes.jsx` (SUBSTITUI o placeholder de 14 linhas) — lista de
+  cartões + cadastro:
+  - `CartaoCard` (componente próprio, para poder chamar `useFaturas` por
+    cartão — hooks não rodam em loop): nome, nome da conta, fatura em
+    destaque (mês · "vence dia X" · valor_restante), status pill
+    (ABERTA=âmbar / PARCIAL=azul / PAGA=verde), barra de limite
+    usado/disponível, rodapé (limite disponível, fecha dia X · vence dia Y).
+    Tocar navega para `/cartoes/:id`.
+  - "Fatura atual" do cartão: a do mês corrente; senão a mais recente em
+    aberto; senão a mais recente (helper `escolherFaturaAtual`).
+  - Card tracejado "+ Adicionar cartão" abre formulário (nome, conta
+    vinculada com select, limite, dia fechamento, dia vencimento) → insere
+    em `cartoes` via `criarCartao`; validações de nome/conta/limite/dias no
+    front, banco como autoridade.
+- `src/pages/FaturaDetalhe.jsx` (NOVO) — detalhe da fatura (`/cartoes/:id`):
+  - `?mes=YYYY-MM` seleciona o mês; sem parâmetro usa mês corrente (senão a
+    mais recente da view).
+  - Header gauge-card: pill do nome da conta, status, nome do cartão, "Fatura
+    de dd/mm/aaaa", valor restante em destaque, e linha fecha dia X · vence
+    dia Y.
+  - Cards de resumo: Total da fatura (valor_total, n parcelas) e Já pago
+    (valor_pago, limite disponível).
+  - Lista: itens da fatura (descricao da compra · data · "parcela n/N" ·
+    valor) + seção de pagamentos já efetuados (− valor, verde).
+  - Botão "Pagar fatura": mostra valor em aberto, campos valor (default =
+    restante) + data, chama `pagar_fatura`; erro do banco mostrado verbatim;
+    fatura paga vira aviso verde.
+
+### Rotas
+- `src/App.jsx` — nova rota `/cartoes/:id` (RequerLogin + ContaAtivaProvider +
+  Layout + index = FaturaDetalhe), seguindo o molde padrão.
+
+### Testes
+- npm run build: PASSOU (módulos sem erro; único aviso chunk >500kB,
+  preexistente e não relacionado).
+- Backend NÃO tocado (declarado estável pelo usuário).
+- Pendente (André): validação visual a 390px no `npm run dev`, sem erros de
+  console; testar cadastro de cartão, navegação para a fatura e pagamento
+  (mensagens de sucesso e de exceção).
+
+### Próximo passo
+Ajustes pedidos após revisão: remover pill PF/PJ e listar todos os cartões
+independente da conta ativa (ver entrada abaixo).
+
+---
+
+## 27/08/2026 (ajuste 2) — Cartões: sem pill PF/PJ + todos os cartões na tela
+
+### Pedidos do usuário (após revisar a tela)
+1. Retirar a pill "PF/PJ" das telas.
+2. O painel de Cartões deve mostrar TODOS os cartões, mesmo se a conta
+   vinculada não estiver ativa.
+
+### Mudanças
+- Pill PF/PJ removida em DOIS pontos:
+  - `src/pages/Cartoes.jsx` — `CartaoCard` agora mostra só o nome da conta na
+    linha superior (era `conta · PF`/`conta · PJ`, derivado de
+    `contas(nome).includes('PJ')`).
+  - `src/pages/FaturaDetalhe.jsx` — pill do cabeçalho agora mostra só o nome
+    da conta.
+- `useCartoes` agora aceita `contaId` OPCIONAL: se vier valor, filtra pela
+  conta; se vier `null`/undefined, devolve TODOS os cartões do usuário
+  (somente `.eq('ativo', true)`; RLS continua sendo o isolamento real por
+  user_id). O guard "sem contaId → lista vazia" foi REMOVIDO (agora null
+  significa "todos".
+- `Cartoes.jsx` e `FaturaDetalhe.jsx` passaram a chamar `useCartoes(null)` —
+  o painel e o detalhe não dependem mais da conta ativa selecionada.
+- `contaAtiva` permaneceu SOMENTE no formulário de cadastro (default de
+  `conta_id`), que continua permitindo escolher a conta vinculada.
+- `FaturaDetalhe.jsx` — import não utilizado de `useContaAtiva` removido.
+
+### Testes
+- npm run build: PASSOU (sem erro).
+- Pendente (André): validação visual — painel listando todos os cartões e
+  sem a pill PF/PJ; cadastro ainda vinculando à conta escolhida.
+
+---
+
+## 27/08/2026 — ETAPA C2 (parte 2) — Edição de cartão + "Lançar compra"
+
+### Contexto
+Análise do app antigo (Controle_Horas) concluída e lógica de cartão ma­peada;
+o backend novo já tinha os helpers puros mas FALTAVA a RPC atômica de criação
+de compra. Esta fase fecha o módulo Cartões por dentro do app: edição de
+cartão a partir de Configurações, e o lançamento de compra/parcela direto das
+telas de Cartões/fatura — SEM recriar parcelamento no React.
+
+### 1) Análise do app antigo (registro de reaproveitamento)
+Arquivos: `dist_android/db.py` e `dist_android/ui/screens/cartoes_lanc_screen.py`.
+Regras encontradas e REUTILIZADAS 1:1 (o backend novo foi desenhado para
+bater com elas):
+- `calcular_parcelas(total, n)`: divide o total com `Decimal ROUND_FLOOR` em
+  centavos; o resto fica na PRIMEIRA parcela. Ex.: 100,00 em 3 → 33,34 +
+  33,33 + 33,33. == helper `dividir_valor_em_parcelas` (migration 10).
+- `calcular_mes_fatura(data, dia_fechamento, parcela=0)`: o fechamento efetivo
+  é `min(dia, último dia do mês)`; data depois do fechamento pula para o mês
+  seguinte; soma o offset de parcela com recuperação de ano. == helper
+  `calcular_mes_fatura(date, int)` + deslocamento de parcela (na migration 10
+  o offset fica de fora, feito na migration 11).
+- Parcelas gravadas como LINHAS SEPARADAS, cada uma com seu `mes_fatura` e
+  rótulo `parcela "i+1/N"`. == tabela `parcelas` (linha por parcela).
+- `limite_disponivel` = limite − Σ despesas de faturas não pagas. == RPC
+  `calcular_limite_disponivel`.
+- Pagamento parcial permitido (acumula; fatura marcada paga quando a soma ≥
+  total). == RPC `pagar_fatura`.
+
+GAP confirmado: a migration `10_cartoes_schema_e_regras.sql` tem os helpers
+puros mas NÃO cria a RPC `criar_compra` (o teste T03/T694 só diz que "a
+parcela será criada pelo cliente (RPC criar_compra)" — a RPC nunca foi criada).
+Decisão: criar a RPC (menor alteração) em vez de remontar compra+parcelas no
+React — é o único jeito de inserir atomicamente a compra e todas as parcelas
+consistentes com os helpers validados.
+
+### 2) Migration nova — `supabase/11_criar_compra.sql` (RODAR NO SQL EDITOR)
+- RPC `criar_compra(p_cartao_id uuid, p_data date, p_descricao text,
+  p_valor_total numeric(12,2), p_n_parcelas integer default 1) returns uuid`.
+- `security definer` + `set search_path = public` (mesmas convenções das
+  migrations 03/06/10).
+- Valida: usuário logado, cartão pertence ao dono E está ativo, descrição
+  não vazia, valor > 0, n_parcelas ≥ 1.
+- Insere a `compra` (SEM alterar saldo), divide via `dividir_valor_em_parcelas`,
+  calcula o mês base com `calcular_mes_fatura` e, para cada parcela, desloca
+  (i−1) meses com rollover de ano (aritmética sobre `split_part` 'YYYY-MM').
+- Retorna o id da compra; grants: `revoke all` / `grant execute` só para
+  `authenticated`.
+- NÃO recebe `p_categoria`/`p_mes_fatura`: a compra não tem coluna categoria
+  no schema e o mês de cada parcela é derivado de data+dia_fechamento (como no
+  app antigo). Ainda não rodado no Postgres — André precisa executar no SQL
+  Editor antes de "Lançar compra" funcionar no app.
+
+### 3) Hooks
+- `src/hooks/useCartoes.js` (modificado) — nova assinatura
+  `useCartoes(contaId, { incluirInativos = false } = {})`;
+  `atualizarCartao(id, campos)` (UPDATE direto em `cartoes`, RLS como
+  autoridade, reload com as mesmas opções do hook); `criarCompra({ cartao_id,
+  data, descricao, valor_total, n_parcelas })` chamando `supabase.rpc(
+  'criar_compra', {...})` e recarregando a lista.
+- `src/hooks/useFaturas.js` (modificado) — expôs `atualizar()` (recarrega
+  faturas + limite) para as telas refletirem uma compra recém-lançada.
+- `src/hooks/useCompras.js` (modificado) — expôs `atualizar()` (recarrega
+  itens + pagamentos) com o mesmo fim.
+
+### 4) Componentes e telas
+- `src/components/CartoesConfig.jsx` (NOVO) — seção de administração de
+  cartões usada em Configurações. Usa `useCartoes(null, { incluirInativos:
+  true })` (lista todos, inclusive inativos — para reativar). Por cartão:
+  botão "Editar" que abre formulário inline (nome, limite, fechamento,
+  vencimento, conta vinculada, checkbox ativo) salvando via `atualizarCartao`;
+  valida nome não vazio, limite ≥ 0, dias 1–31; erro do banco verbatim;
+  linhas inativas tracejadas com selo "inativo" e opacidade 0.75.
+- `src/components/CompraForm.jsx` (NOVO) — formulário reutilizável de
+  lançamento (cartão, descrição, valor total, parcelas, data; data default
+  hoje). Chama `criarCompra`; valida cartão/descrição/valor>0/parcelas≥1 no
+  front; erro do banco verbatim; prop `aoLancar` para a tela atualizar.
+  Categoria não existe no schema → campo omitido (menor alteração).
+- `src/pages/Configuracoes.jsx` (modificado) — nova seção "Cartões de Crédito"
+  com `<CartoesConfig />` após "Minhas Contas". Módulos/Segurança intactos.
+- `src/pages/Cartoes.jsx` (modificado) — `CartaoCard` virou `div` (era
+  `<button>`, que não podia conter outro botão) com área clicável que navega e
+  botão "+ Lançar compra"; o form abre inline via `CompraForm` pré-selecionando
+  aquele cartão; após lançar, incrementa `versaoCompra` usado no `key` dos
+  cards → remonta e recarrega fatura/limite.
+- `src/pages/FaturaDetalhe.jsx` (modificado) — botão "+ Lançar compra" (dashed)
+  abre `CompraForm` pré-selecionado com o cartão atual; ao lançar, fecha e
+  chama `atualizarFaturas()` + `atualizarItens()` para refletir os novos
+  valores/limite na hora.
+
+### Testes
+- npm run build: PASSOU (sem erro; único aviso chunk >500kB preexistente).
+- Pendente (constantes do ambiente): a migration `11_criar_compra.sql` ainda
+  não foi executada no Supabase real — antes disso "Lançar compra" responde
+  erro (RPC não existe). Depois de rodar o SQL, validar manualmente: edição em
+  Configurações (reativar cartão, validar limites), lançar compra avista e
+  parcelada, conferir parcelas nos meses certos, limite disponível mudando e
+  fatura recarregando sem recarregar a página.
+
+### Próximo passo
+Validar a migration 11 no SQL Editor e a UX manualmente; depois, se aprovado, os
+ajustes finais de UX/empty-states que aparecerem no teste visual.
+
+---
+
+## 27/08/2026 — ETAPA C2 (parte 3) — Layout, aba Extrato e editar/excluir lançamento
+
+### Contexto
+Depois da parte 2 (edição de cartão + "Lançar compra"), três lacunas no
+detalhe da fatura: (1) layout apertado no mobile, com botões/forms cortados;
+(2) sem extrato completo do cartão (só os itens da fatura do mês); (3) sem
+editar/excluir lançamentos. Esta etapa reorganiza a tela, adiciona a aba
+Extrato e fecha as ações de manutenção da compra, com o mínimo de SQL novo.
+
+### 1) Migration nova — `supabase/12_editar_excluir_compra.sql` (RODAR NO SQL EDITOR)
+Foram criadas DUAS RPCs atômicas (`security definer`, search_path public,
+grants só para authenticated) porque editar/excluir SEM recalcular as parcelas
+deixaria o faturamento inconsistente (compras.valor_total X soma das parcelas,
+fatura paga corrompida):
+- `excluir_compra(p_compra_id uuid)` — soft-delete da compra inteira
+  (`ativa=false` + `cancelada_em=now()`). As parcelas somem de `v_faturas` e
+  de `calcular_limite_disponivel` automaticamente (WHERE c.ativa = true), sem
+  duplicar lógica no React. **Bloqueia** se alguma parcela cair em mês que já
+  tem `fatura_pagamentos` (evita descumprir fatura paga/parcial — ver 2).
+- `editar_compra(p_compra_id, p_data, p_descricao, p_valor_total,
+  p_n_parcelas)` — se só mudou descricao/data, atualiza direto (não altera
+  valor de fatura alguma). Se mudou valor ou nº de parcelas, recalcula TODAS
+  as parcelas com as funções já validadas (`dividir_valor_em_parcelas` +
+  `calcular_mes_fatura` + offset (i−1) com virada de ano). **Bloqueia** se os
+  meses AFETADOS (antigos ou novos) tiverem pagamento registrado.
+- Ajuda interna `faturas_com_pagamento(cartao_id, text[])` — true se algum
+  dos meses tem fatura_pagamentos (usada pelas duas RPCs).
+- Ainda não rodado no Postgres — André precisa executar no SQL Editor antes de
+  editar/excluir funcionarem no app.
+
+### 2) Regra de segurança (não corromper fatura paga)
+Valores de fatura são derivados de `parcelas` + `fatura_pagamentos` (por
+cartão+mês). Remover/reduzir parcelas de um mês já pago tornaria a fatura
+inconsistentemente "paga". Por isso as RPCs **bloqueiam** a operação com
+mensagem clara quando o(s) mês(ões) afetado(s) já têm pagamento — o front
+exibe a exceção verbatim, sem silenciosamente quebrar nada. Edição só de
+descricao/data é sempre permitida.
+
+### 3) Hook
+- `src/hooks/useCartoes.js` — `editarCompra({compra_id, data, descricao,
+  valor_total, n_parcelas})` (RPC editar_compra) e `excluirCompra(compra_id)`
+  (RPC excluir_compra), ambos recarregando a lista e propagando a exceção do
+  banco verbatim.
+- `src/hooks/useCompras.js` — embedding das parcelas ganhou `id` da compra
+  (para as ações saberem qual compra editar/excluir). Novo hook
+  `useExtratoCartao(cartaoId, { inicio, fim, incluirInativas, habilitado })`:
+  parcela por parcela de TODAS as compras ativas do cartão com mes_fatura
+  entre inicio e fim, ordenada por data da compra desc + número; guard `!cartaoId
+  || !habilitado` retorna vazio (personalizado inválido). `atualizar()` recarrega
+  e atualiza o estado.
+
+### 4) Telas e componentes
+- `src/components/EditarCompraForm.jsx` (NOVO) — formulário inline de edição
+  (descrição, valor, parcela, data) + botão "Excluir lançamento" com
+  confirmação: "Excluir este lançamento? O valor será removido da fatura e o
+  limite disponível será recalculado." Chama `editar_compra`/`excluir_compra`,
+  erro do banco verbatim. Reutilizado na fatura e no extrato.
+- `src/pages/FaturaDetalhe.jsx` (REESCRITO) — novo layout mobile-first:
+  1. Header compacto do cartão + status (nome, conta, fecha/vence);
+  2. Cards de resumo em grade (Total / Já pago / Limite disponível);
+  3. Abas internas **[Fatura] | [Extrato]**;
+  4. "+ Lançar compra" sempre visível no topo (dashed), abrindo `CompraForm`;
+  5. Aba Fatura: seletor de mês (via `?mes=`), lista de itens da fatura com
+     Editar/Excluir por linha, seção de pagamentos e bloco "Pagar fatura"
+     (valor + data + botão, sem cortar), estados paga/sem fatura corretos;
+  6. Aba Extrato: filtros [Mês atual] [Últimos 3 meses] [Personalizado]
+     (com datas), lista cronológica (data · descrição · parcela n/N · valor
+     vermelho · fatura do mês) com as MESMAS ações de editar/excluir; vazio
+     claro: "Nenhum lançamento neste período."
+  - Após lançar/editar/excluir, recarrega faturas + itens + extrato e o
+    limite disponível, sem recarregar a página.
+
+### Critérios de aceite verificados
+- Em tela estreita (390px) nada de botão principal cortado/inacessível: a
+  aba de conteúdo é rolável (móvel rola — Etapa 13) e as ações por linha.
+- Abas [Fatura] e [Extrato] presentes.
+- Lançar compra, ver na fatura, editar e excluir um lançamento (com
+  confirmação) — exige a migration 12 no banco.
+- Pagar fatura continua funcionando (fluxo `pagar_fatura` intacto).
+- npm run build: PASSOU (115 módulos; único aviso chunk >500kB preexistente).
+- Tema dark consistente; /cartoes, Configurações, Contas e Movimentações não
+  foram tocados por esta etapa.
+
+### Testes pendentes
+- Rodar `supabase/12_editar_excluir_compra.sql` no SQL Editor (ANTES de tentar
+  editar/excluir — respondem erro de RPC inexistente).
+- Validar manualmente (André): layout nas abas em 390px e desktop; editar
+  descricao/data, editar valor/parcelas (recalculo nos meses certos), excluir
+  com confirmação, verificação de limite/total/status após cada ação; tentar
+  excluir/editar compra de fatura paga → erro claro do banco verbatim.
+
+### Próximo passo
+Validar as migrations 11 e 12 no SQL Editor e a UX manualmente; ajustes finais
+de UX/empty-states que aparecerem no teste visual.
+
+
+
+---
+
+## 27/08/2026 - ETAPA C2 (parte 4) - Extrato do Cartao + fluxo de pagamento
+
+### Contexto
+Apos a parte 3 (abas, layout e editar/excluir), dois pontos ficaram abertos:
+(1) a tela ainda nao lembrava o "Extrato do Cartao" do app antigo
+(ControleHoras), e (2) o fluxo de pagamento precisava ser confirmado/estendido
+para gerar a movimentacao na conta corrente e permitir desfazer. Esta etapa
+reorganiza a Fatura no estilo do extrato antigo, corrige o extrato que ficava
+vazio e fecha o fluxo de pagamento (pagar + desfazer).
+
+### Lambda do que ja existia (pagar_fatura ja criava a movimentacao)
+Revisando a migration 10: a RPC `pagar_fatura` JA cria a movimentacao de
+SAIDA na conta corrente vinculada ao cartao (tipo_op = 'Saida', categoria =
+'pagamento_fatura', descricao padrao "Pagamento fatura <cartao> - <mes>") e
+atualiza o saldo pela trigger `trg_atualizar_saldo`, tudo na mesma
+transacao. Ou seja, o pedido "pagar fatura -> gerar saida na conta" ja era
+atendido pelo backend; o front so precisava se apoiar nela (e nao criar outra
+linha em duplicidade) e dar feedback. Nao ha cobranca dupla: o React chama
+apenas a RPC.
+
+### 1) Migration nova - `supabase/13_desfazer_pagamento.sql` (RODAR NO SQL EDITOR)
+RPC atomica `desfazer_pagamento(p_cartao_id, p_mes_fatura)` que reverte o
+pagamento de uma fatura (equivalente ao "DESFAZER PAGAMENTO" do app antigo):
+- Remove os registros de `fatura_pagamentos` do cartao no mes (a fatura
+  volta a 'aberta'/'parcialmente_paga' pela view v_faturas, sem recalc).
+- Remove as movimentacoes de SAIDA vinculadas (pagar_fatura gravava
+  `movimentacao_id`). A trigger `trg_atualizar_saldo` REVERTE o saldo da
+  conta automaticamente (Saida excluida -> soma de volta).
+Ordem de seguranca: exclui os pagamentos ANTES das movimentacoes (FK
+`fatura_pagamentos.movimentacao_id ... on delete restrict`). Nao quebra
+transferencias: `trg_protege_transferencia` permite DELETE pois essas linhas
+tem `transferencia_id = null`. `security definer` + search_path public +
+grants so para authenticated.
+
+### 2) Hook � `src/hooks/useFaturas.js`
+- Novo `desfazerPagamento({ mes_fatura })` chamando a RPC `desfazer_pagamento`
+  e relendo faturas/limite; erro do banco verbatim.
+
+### 3) `src/pages/FaturaDetalhe.jsx` (REESCRITO no estilo "Extrato do Cartao")
+Header + resumo + "+ Lan�ar compra" mantidos, mas a aba Fatura agora e uma
+extrato mensal (como o app antigo):
+- Seletor de mes bem visivel estilo antigo: `� [08/2026 (botao amarelo)] �`
+  com faixa de meses ao redor. Trocar o mes atualiza a URL (?mes=) e recarrega
+  itens/totais/status (mes valido mesmo sem fatura ainda -> estado vazio claro).
+- Linha "Vencimento da fatura: dd/mm/aaaa" calculada do dia_vencimento com
+  clamp de mes curto.
+- Tabela Data | Descricao | Parc. | Valor (valor em vermelho, descricao com
+  truncamento) + acao "Editar / Excluir" por linha reabre o EditarCompraForm.
+  Cabe�alho de colunas identico ao app antigo.
+- Pagamentos da fatura listados abaixo.
+- Rodape com Total da fatura / Ja pago / Em aberto (total em amarelo como a
+  barra do app antigo).
+- Pagar fatura: bloco unico avisando a CONTA de saida; ao confirmar chama
+  `pagar_fatura` (ja cria a movimentacao + saldo) e recarrega tudo. Se a
+  conta vinculada nao existir/inativa, a RPC levanta erro claro e nada e
+  concluido - exibido verbatim.
+- "Desfazer pagamento" (com confirmacao) aparece quando ha pagamento (total
+  ou parcial) e chama `desfazer_pagamento`, revertendo fatura e saldo.
+
+### 4) Correcao do Extrato "Nenhum lan�amento neste periodo"
+O extrato usava "Mes atual" do calendario real, independente da fatura que o
+usuario estava vendo - por isso parecia vazio mesmo havendo compras no mes da
+fatura. Agora "Mes atual" do extrato SEGUE o mes da fatura selecionada, e o
+useExtratoCartao reexecuta quando o mes muda. Tem "Ultimos 3 meses" e
+"Personalizado" iguais aos anteriores.
+
+### Crit�rios de aceite verificados
+- Aba Fatura vira extrato mensal (Data | Descricao | Parc | Valor + total).
+- Trocar de mes mostra a fatura daquele mes (navegacao � � + seletor).
+- Pagar fatura: atualiza status/totais do cartao, gera Saida na conta corrente
+  vinculada (RPC pagar_fatura) e o saldo muda (trigger). Com erro claro se a
+  conta sumiu/inativou.
+- Desfazer pagamento reverso a fatura e o saldo (migration 13).
+- Extrato lista lancamentos reais do cartao (nao fica vazio indevidamente).
+- Editar/excluir continua funcionando.
+- npm run build: PASSOU (115 modulos; unico aviso chunk >500kB preexistente).
+- /cartoes, Configuracoes, Contas e Movimentacoes nao foram tocados.
+
+### Testes pendentes
+- Rodar `supabase/13_desfazer_pagamento.sql` no SQL Editor (alem das 11 e 12
+  se ainda nao rodaram). Sem isso, pagar/desfazer respondem erro de RPC.
+- Validar manualmente: navegar meses, conferir vencimento, tabela em 390px e
+  desktop, pagar (verificar Saida + saldo na conta em Movimentacoes),
+  desfazer (saldo volta), editar/excluir, extrato preenchido no mes da fatura.
+
+### Proximo passo
+Validar migrations 11, 12 e 13 no SQL Editor e a UX manualmente; se passar,
+fechar empty-states finais que aparecerem no teste visual.
+
+---
+
+## 27/08/2026 - ETAPA C2 (parte 5) - Fatura so demonstrativa + legibilidade
+
+### Contexto
+Revisao visual da tela de detalhe do cartao (/cartoes/:id). Dois pontos: a aba
+Fatura ainda exibia botoes Editar/Excluir (nao deveria, e so demonstrativo) e
+a tela estava apertada com letras miudas. Esta etapa restringe as acoes ao
+Extrato e aumenta hierarquia/fonte e espacamento sem mudar regra de negocio.
+
+### 1) Regra de acoes: Fatura demonstrativa, Extrato com Editar/Excluir
+- `linhaFatura(parcela, { comAcoes })` ganhou o bool `comAcoes`.
+  - Aba FATURA: `comAcoes: false` -> ZERO botoes Editar/Excluir por
+    lancamento (lista data/descricao/parcela/valor pura).
+  - Aba EXTRATO: `comAcoes: true` -> botoes Editar/Excluir (em avaliacao,
+    com tooltip "Editar/excluir este lancamento (em avaliacao)"). As RPCs e o
+    EditarCompraForm continuam intactos e ligados ao extrato.
+
+### 2) Legibilidade e tamanho
+Aumento generalizado de fonte e area de toque (base da pagina de 0.9rem para
+1rem):
+- Nome do cart�o: 1.2rem -> 1.6rem (destaque).
+- Resumo: valores de 1.2rem -> 1.5rem; rotulos 0.78rem -> 0.85rem; detalhe
+  ("N parcelas", "aberto", "de limite") novo a 0.9rem.
+- Header: pills e subtitulo e linha de vencimento maiores (0.85/0.95rem).
+- Abas e seletor de mes: fonte legivel (1.05/1.1rem) e padding generoso.
+- Tabela: celulas de data/parcela/valor 0.95rem, descricao/valor 1rem; caixa de
+  linha e cabecalho com mais respiro.
+- Totais da fatura + bloco pagar: valores e botoes maiores, mais padding.
+- Botao "+ Lan�ar compra", "Pagar fatura" e "Desfazer pagamento" com area de
+  toque confortavel.
+
+### 3) Layout para caber na tela
+- Cards de resumo: nova grade responsiva via <style> escopo com media query -
+  EMPILHA em 1 coluna no mobile (<600px) e 3 colunas no desktop (antes usava
+  auto-fit que apertava os 3 cards no mobile).
+- Mais espaco entre secoes (header -> lancar compra -> resumo -> abas ->
+  lista -> totais -> pagar) e scroll confortavel; nenhum botao principal
+  cortado.
+
+### Crit�rios de aceite verificados
+- Aba Fatura: zero botoes Editar/Excluir (so demonstrativo).
+- Textos e valores legiveis.
+- Layout cabe bem em tela estreita e larga (cards empilham no mobile); botoes
+  principais acessiveis.
+- Pagar fatura e Lan�ar compra continuam funcionando (fluxo/backend intacto).
+- Nao alterei a regra de negocio do pagamento (saida na conta corrente) nem
+  outras telas.
+- npm run build: PASSOU (115 modulos; unico aviso chunk >500kB preexistente).
+
+### Proximo passo
+Validar visual no Vite (390px e desktop); se aprovado, seguir com testes das
+migrations 11/12/13 quando rodarem no SQL Editor.
+
+---
+
+## 27/08/2026 - ETAPA C2 (parte 6) - Desktop: rolagem no detalhe + icones Editar/Excluir no Extrato
+
+### Contexto
+Dois problemas na tela de detalhe do cartao (/cartoes/:id) no DESKTOP: os
+botoes de baixo (Pagar fatura / Desfazer) ficavam CORTADOS/inacessiveis, e as
+acoes de Editar/Excluir no Extrato usavam um botao unico "Editar / Excluir"
+que abria um formulario combinado — diferente do padrao de Contas/Movimentacoes
+(icone por acao na frente do registro).
+
+### 1) Causa raiz do corte: CaberNaTela encolhe o conteudo no desktop
+Toda rota e envolvida por `<CaberNaTela maxLargura={720}>`, que no desktop
+>640px aplica `transform: scale()` para caber na viewport com `overflow:
+hidden` no palco — SEM scroll de pagina. Em telas altas (rolagem longa, ex.:
+fatura com muitos itens) a parte de baixo ficava espremida/descartada, cortando
+os botoes principais.
+
+- `CaberNaTela.jsx` ganhou a prop `rolagem=false`: quando true (e nao mobile),
+  ele DESLIGA a escala e renderiza uma area de rolagem VERTICAL real
+  (`estilos.rolagem`: flex:1, minHeight:0, height:100%, overflowY:auto,
+  overflowX:hidden) envolvendo `estilos.rolagemInner` (maxWidth=maxLargura,
+  margin:0 auto). Branch mobile inalterado (render direto).
+- `Layout.jsx`: detectou a rota `/cartoes/:id` via regex
+  `/^\/cartoes\/[^/]+$/` (`ehDetalheCartao`) e passou `rolagem={ehDetalheCartao}`
+  ao `<CaberNaTela>`. Assim a pagina do detalhe rola de verdade no desktop e
+  Pagar fatura / Desfazer / icones nunca ficam cortados; as demais paginas
+  (projetadas para caber) continuam com o encaixe.
+
+### 2) Icones Editar/Excluir na frente do registro (padrao de Contas)
+No Extrato (e so nele), cada linha agora tem DOIS icones no INICIO do registro,
+usando o mesmo estilo compacto de Movimentacoes (`botaoIcone`, similar ao
+`botaoAcao`):
+- LAPIS (✏️) "Editar lancamento" -> abre o `EditarCompraForm` na linha.
+- LIXEIRA (🗑️) "Excluir lancamento" -> `handleExcluirCompra` com confirm() e
+  chama a RPC atomica `excluirCompra(compra.id)` (soft-delete), depois
+  `PosMutacao()` recarrega faturas/itens/extrato e mostra mensagem de ok/erro.
+- O botao unico "Editar / Excluir" foi REMOVIDO; o `EditarCompraForm` virou
+  apenas EDIcao (removi o botao interno "Excluir lancamento" e o prop
+  `aoExcluir` — exclusao fica so na lixeira da linha).
+- Grid da linha com acoes ganhou uma coluna inicial `auto` para os icones:
+  `auto 1.2fr 4fr 1.2fr 1.6fr` (sem acoes mantem `16% 52% 14% 18%`).
+- Aba Fatura continua 100% demonstrativa (zero icones/editar/excluir).
+
+### Crit�rios de aceite verificados
+- Desktop: pagina do detalhe do cartao ROLA de verdade; Pagar fatura/Desfazer/
+  icones acessiveis (nada cortado).
+- Extrato: editar via lapis e excluir via lixeira (na frente do registro),
+  padrao de Contas; Fatura demonstrativa.
+- Regra de negocio do pagamento intacta (RPC `pagar_fatura` cria a Saida +
+  trigger atualiza saldo; `desfazer_pagamento` desfaz).
+- npm run build: PASSOU (115 modulos; unico aviso chunk >500kB preexistente).
+
+### Testes pendentes
+- Rodar `supabase/11_criar_compra.sql`, `12_editar_excluir_compra.sql` e
+  `13_desfazer_pagamento.sql` no SQL Editor (sem as RPCs, lancar/editar/excluir/
+  pagar/desfazer respondem erro).
+- Validar manualmente no Vite (390px e desktop): rolagem no detalhe, lapis edita,
+  lixeira exclui (confirm + recarga), desfazer pagamento reverte saldo, fatura
+  demonstrativa.
+
+### Proximo passo
+Rodar as migrations 11/12/13 no SQL Editor e validar a UX de rolagem (desktop)
+e dos icones (Extrato) no Vite.
+
+---
+
+## 27/08/2026 - ETAPA C3 (parte 7) - Lançamento de compra em modal centralizado
+
+### Problema reportado
+Ao clicar em "+ Lançar compra" (na lista `/cartoes` ou no detalhe `/cartoes/:id`),
+o formulário aparecia embutido no FINAL da página — empurrado para baixo da
+lista/grade, parcial, cortado e misturado com o restante do conteúdo. A
+experiência ficava confusa (o form "grudado" no rodapé, possivelmente cortado
+pela barra do Windows).
+
+### Solução — modal centralizado com overlay
+Criado `src/components/ModalCompra.jsx`, um modal que renderiza o formulário
+existente (`CompraForm`) num painel sobre overlay escurecido, via
+`createPortal(document.body)`:
+
+- **Overlay cobre a tela inteira** fora do contexto transformado/`overflow`
+  do `CaberNaTela` — impede o form de "grudar" no rodapé e de ser cortado.
+- **Fechar por Cancelar, X, tecla Esc ou clique no overlay** (clique no painel
+  é travado com `stopPropagation`).
+- **Formato**: largura confortável (`maxWidth 520px`, ~90vh de altura máxima
+  com rolagem interna no painel) no desktop; quase tela cheia no mobile
+  (overlay com `padding: 1rem`).
+- **Erro do banco mantém o modal aberto** com a mensagem verbatim (o modal só
+  fecha via `aoLancar`, que roda apenas em sucesso); **sucesso fecha o modal**
+  e atualiza a tela.
+- A **regra de negócio não mudou**: reaproveitado o `CompraForm` intacto (a RPC
+  `criar_compra` continua calculando parcelas e mês da fatura no banco).
+
+### Onde aplicado (mesma apresentação, lógica mantida)
+- `src/pages/Cartoes.jsx` — `+ Lançar compra` de cada card abre o `ModalCompra`
+  com `cartaoIdInicial = comprandoId` (cartão pré-selecionado); `aoLancar`
+  bumpa `versaoCompra` (recarrega lista/limite). Removida a seção embutida no
+  rodapé da grade e o estilo `comprarTitulo` (sem uso).
+- `src/pages/FaturaDetalhe.jsx` — `+ Lançar compra` abre o `ModalCompra` com o
+  cartão da rota (`id`); `aoLancar` recarrega faturas/itens/extrato. Removido o
+  bloco embutido (`comprarBloco`) que aparecia abaixo do botão.
+
+### Campos do formulário mantidos
+Cartão (pré-selecionado quando vem de um cartão específico) · Descrição ·
+Valor total (R$) · Parcelas (default 1) · Data da compra (default hoje) ·
+Cancelar + "Lançar compra".
+
+### Critérios de aceite
+- Clique em "＋ Lançar compra" → abre SÓ o formulário bem visível (modal).
+- Não aparece formulário cortado/grudado no rodapé da lista.
+- Cancelar fecha sem salvar; Confirmar grava e fecha (fechando via `aoLancar`).
+- npm run build: PASSOU (116 módulos; único aviso chunk >500kB pré-existente).
+
+### Testes pendentes
+- Manual no Vite: abrir o modal a partir da listagem `/cartoes` e do detalhe
+  `/cartoes/:id`; preencher e confirmar que fecha + atualiza limite/fatura;
+  cancelar pel X/Esc/overlay; forçar erro (ex.: cartão sem conta) e confirmar
+  que o modal permanece aberto com a mensagem.
+
+### Próximo passo
+Validar o modal no Vite (mobile e desktop) e seguir com o fluxo do detalhe da
+fatura (migrations 11/12/13 quando disponíveis).

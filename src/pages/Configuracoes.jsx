@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Contas from './Contas'
+import CartoesConfig from '../components/CartoesConfig'
 import { supabase } from '../lib/supabaseClient'
 import { estilosComuns } from '../lib/compartilhados'
 
@@ -105,6 +106,16 @@ export default function Configuracoes() {
       <section style={estilosComuns.secao}>
         <h2>Minhas Contas</h2>
         <Contas />
+      </section>
+
+      <CartoesConfig />
+
+      <section style={estilosComuns.secao}>
+        <h2>Sessão</h2>
+        <p style={estilosComuns.mensagem}>
+          Você está logado(a). Use o botão <strong>Sair</strong> no cabeçalho para encerrar a
+          sessão.
+        </p>
       </section>
     </div>
   )
