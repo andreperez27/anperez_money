@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANPEREZ — Cartões v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c1210;
+    --bg-grid: rgba(196,138,86,0.045);
+    --surface:#f4f2ec;
+    --ink:#12181a;
+    --ink-soft:#5c6a68;
+    --copper:#c07a45;
+    --copper-soft:#e0a877;
+    --teal:#3fb3a3;
+    --teal-deep:#1f6e63;
+    --amber:#d1a13f;
+    --neg:#c1573f;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:radial-gradient(circle at 20% -10%, rgba(63,179,163,0.15), transparent 40%),var(--bg);
+    font-family:'Space Grotesk', sans-serif;color:var(--ink);padding:40px 16px 80px;display:flex;flex-direction:column;align-items:center;}
+  .intro{max-width:440px;color:#dce8e4;text-align:center;margin-bottom:24px;}
+  .intro .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--copper-soft);margin-bottom:8px;}
+  .intro h1{font-size:21px;margin:0 0 8px;color:#f4f2ec;}
+  .intro p{font-size:13.5px;line-height:1.55;color:#a9bdb8;margin:0;}
+
+  .tabs{display:flex;gap:6px;background:rgba(0,0,0,0.25);padding:5px;border-radius:12px;margin-bottom:24px;border:1px solid rgba(255,255,255,0.08);}
+  .tabs button{font-family:'JetBrains Mono',monospace;font-size:11.5px;background:transparent;border:none;color:#8fa39e;padding:8px 14px;border-radius:8px;cursor:pointer;}
+  .tabs button.active{background:var(--copper);color:#1a1108;font-weight:600;}
+
+  .phone{width:390px;max-width:92vw;border-radius:34px;background:var(--bg);border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 40px 80px -30px rgba(0,0,0,0.7), inset 0 0 0 6px #05100d;overflow:hidden;position:relative;}
+  .phone::before{content:"";position:absolute;inset:0;
+    background-image:linear-gradient(var(--bg-grid) 1px, transparent 1px),linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+    background-size:22px 22px;pointer-events:none;}
+  .statusbar{display:flex;justify-content:space-between;padding:14px 22px 4px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#6b7a76;position:relative;}
+  .screen{display:none;padding:6px 18px 30px;position:relative;min-height:680px;}
+  .screen.active{display:block;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 2px 16px;}
+  .topbar-left{display:flex;align-items:center;gap:10px;}
+  .back{width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;color:#a9bdb8;font-size:14px;}
+  .topbar h2{font-size:15px;color:#f2f0ea;margin:0;font-weight:600;}
+  .period-pill{
+    display:flex;align-items:center;gap:6px;
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#cfe4de;
+    background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);
+    padding:6px 10px;border-radius:9px;
+  }
+
+  /* HERO CONSOLIDADO */
+  .hero{background:linear-gradient(155deg,#12211e,#0c1a17);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:18px;margin-bottom:16px;position:relative;overflow:hidden;}
+  .hero::after{content:"";position:absolute;right:-30px;top:-30px;width:130px;height:130px;border-radius:50%;border:1px solid rgba(63,179,163,0.15);}
+  .hero-tag{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);}
+  .hero-row{display:flex;gap:10px;margin-top:12px;}
+  .hero-stat{flex:1;}
+  .hero-stat .l{font-size:9.5px;color:#7f938d;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.03em;}
+  .hero-stat .v{font-family:'JetBrains Mono',monospace;font-size:15.5px;font-weight:600;margin-top:4px;}
+  .hero-stat.limite .v{color:#f4f2ec;}
+  .hero-stat.disp .v{color:var(--teal);}
+  .hero-stat.gasto .v{color:#e08a6f;}
+
+  .usage-bar{height:8px;border-radius:5px;background:rgba(255,255,255,0.08);margin-top:16px;overflow:hidden;position:relative;}
+  .usage-fill{height:100%;border-radius:5px;transition:width .3s;}
+  .usage-fill.ok{background:var(--teal);}
+  .usage-fill.warn{background:var(--amber);}
+  .usage-fill.high{background:var(--neg);}
+  .usage-labels{display:flex;justify-content:space-between;margin-top:7px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#7f938d;}
+
+  .section-label{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#7f938d;margin:18px 2px 10px;}
+
+  /* CARDS INDIVIDUAIS */
+  .cc-card{background:var(--surface);border-radius:16px;padding:15px 16px;margin-bottom:10px;position:relative;}
+  .cc-top{display:flex;justify-content:space-between;align-items:center;}
+  .cc-nome{font-size:13.5px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:7px;}
+  .cc-pill{font-family:'JetBrains Mono',monospace;font-size:9px;background:var(--teal-deep);color:#d9f2ee;padding:2px 6px;border-radius:5px;letter-spacing:.05em;}
+  .cc-pill.pj{background:#3a2c17;color:#f0d3ae;}
+  .cc-usopct{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;}
+  .cc-usopct.ok{color:var(--teal-deep);}
+  .cc-usopct.warn{color:#a3760f;}
+  .cc-usopct.high{color:var(--neg);}
+  .cc-meta{display:flex;gap:14px;margin-top:10px;}
+  .cc-meta div{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);}
+  .cc-meta strong{display:block;color:var(--ink);font-size:11.5px;margin-top:2px;}
+  .cc-bar{height:5px;border-radius:3px;background:rgba(0,0,0,0.08);margin-top:10px;overflow:hidden;}
+  .cc-bar-fill{height:100%;border-radius:3px;}
+
+  .add-card{border:1.5px dashed rgba(255,255,255,0.15);border-radius:16px;padding:16px;display:flex;align-items:center;justify-content:center;gap:8px;color:#8fa39e;font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:6px;}
+
+  .footnote{max-width:440px;color:#7d9089;font-size:12px;text-align:center;margin-top:26px;line-height:1.6;}
+  .footnote b{color:#cfe4de;}
+</style>
+</head>
+<body>
+
+  <div class="intro">
+    <div class="eyebrow">Direção visual — Cartões, proposta 02</div>
+    <h1>Visão consolidada, com seletor de mês e alerta de uso por cor</h1>
+    <p>Trouxe do painel antigo o que era realmente bom: total combinado no topo, seletor de mês de referência, e barra de uso mudando de cor (verde → âmbar → vermelho) conforme o cartão aperta. Tirei os quatro ícones de atalho, já cobertos pela Home.</p>
+  </div>
+
+  <div class="tabs">
+    <button class="active" onclick="showScreen('lista', this)">Visão geral</button>
+    <button onclick="showScreen('fatura', this)">Fatura</button>
+  </div>
+
+  <div class="phone">
+    <div class="statusbar"><span>13:27</span><span>ANPEREZ</span><span>72%</span></div>
+
+    <div class="screen active" id="lista">
+      <div class="topbar">
+        <div class="topbar-left"><div class="back">←</div><h2>Cartões</h2></div>
+        <div class="period-pill">📅 SET/2026</div>
+      </div>
+
+      <div class="hero">
+        <div class="hero-tag">Visão consolidada · todos os cartões</div>
+        <div class="hero-row">
+          <div class="hero-stat limite"><div class="l">Limite total</div><div class="v">10.988,05</div></div>
+          <div class="hero-stat disp"><div class="l">Disponível</div><div class="v">5.970,58</div></div>
+          <div class="hero-stat gasto"><div class="l">Gastos no mês</div><div class="v">1.933,10</div></div>
+        </div>
+        <div class="usage-bar"><div class="usage-fill warn" style="width:45.7%;"></div></div>
+        <div class="usage-labels"><span>45,7% usado</span><span>54,3% livre</span></div>
+      </div>
+
+      <div class="section-label">Resumo por cartão</div>
+
+      <div class="cc-card">
+        <div class="cc-top">
+          <div class="cc-nome">Nu PF <span class="cc-pill">PF</span></div>
+          <span class="cc-usopct ok">35% usado</span>
+        </div>
+        <div class="cc-meta">
+          <div>Limite<strong>R$ 4.688,05</strong></div>
+          <div>Disponível<strong>R$ 3.033,80</strong></div>
+          <div>Gasto no mês<strong>R$ 415,70</strong></div>
+        </div>
+        <div class="cc-bar"><div class="cc-bar-fill" style="width:35%;background:var(--teal);"></div></div>
+      </div>
+
+      <div class="cc-card">
+        <div class="cc-top">
+          <div class="cc-nome">Nu PJ <span class="cc-pill pj">PJ</span></div>
+          <span class="cc-usopct warn">53% usado</span>
+        </div>
+        <div class="cc-meta">
+          <div>Limite<strong>R$ 6.300,00</strong></div>
+          <div>Disponível<strong>R$ 2.936,78</strong></div>
+          <div>Gasto no mês<strong>R$ 1.517,40</strong></div>
+        </div>
+        <div class="cc-bar"><div class="cc-bar-fill" style="width:53%;background:var(--amber);"></div></div>
+      </div>
+
+      <div class="add-card">+ Adicionar cartão</div>
+    </div>
+
+    <div class="screen" id="fatura">
+      <div class="topbar">
+        <div class="topbar-left"><div class="back">←</div><h2>Nubank · PJ</h2></div>
+      </div>
+      <div class="hero">
+        <div class="hero-tag">Fatura de setembro/2026</div>
+        <div class="hero-row">
+          <div class="hero-stat limite"><div class="l">Total</div><div class="v">580,20</div></div>
+          <div class="hero-stat disp"><div class="l">Já pago</div><div class="v">200,00</div></div>
+          <div class="hero-stat gasto"><div class="l">Restante</div><div class="v">380,20</div></div>
+        </div>
+      </div>
+      <div class="section-label">Compras, recorrentes e pagamentos</div>
+      <div class="cc-card"><div class="cc-top"><div class="cc-nome">Seguro do carro 3/10</div><span class="cc-usopct" style="color:var(--ink);">R$ 141,00</span></div></div>
+      <div class="cc-card"><div class="cc-top"><div class="cc-nome">Fatura Vivo</div><span class="cc-usopct" style="color:var(--ink);">R$ 89,90</span></div></div>
+      <div class="cc-card"><div class="cc-top"><div class="cc-nome">Posto Ipiranga</div><span class="cc-usopct" style="color:var(--ink);">R$ 149,30</span></div></div>
+      <div class="cc-card"><div class="cc-top"><div class="cc-nome">Pagamento parcial (24/08)</div><span class="cc-usopct ok">− R$ 200,00</span></div></div>
+    </div>
+
+  </div>
+
+  <div class="footnote">
+    Cor da barra muda por faixa: verde até ~50%, âmbar de 50 a 80%, vermelho acima disso. O card individual e o resumo consolidado seguem a mesma régua de cor.
+  </div>
+
+<script>
+function showScreen(id, btn){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>
