@@ -8,6 +8,17 @@ export function mesAtual(data = new Date()) {
   return `${ano}-${mes}`
 }
 
+// A PRÓXIMA fatura a vencer: a de menor mês ainda NÃO paga (em aberto). As
+// `faturas` vêm ordenadas da mais recente para a mais antiga, então a próxima
+// em aberto é a última do subconjunto das não pagas. Se não houver nenhuma em
+// aberto (tudo pago), devolve a mais recente como referência (ou null se vazio).
+export function proximaFaturaEmAberto(faturas) {
+  if (!faturas || !faturas.length) return null
+  const emAberto = faturas.filter((f) => f && f.status !== 'paga')
+  if (emAberto.length) return emAberto[emAberto.length - 1]
+  return faturas[0]
+}
+
 // Dados de fatura de UM cartão + limite disponível calculado no banco.
 //
 // - faturas: linhas de v_faturas do cartão ordenadas da mais recente para a

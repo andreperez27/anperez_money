@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCartoes } from '../hooks/useCartoes'
-import { useFaturas, mesAtual } from '../hooks/useFaturas'
+import { useFaturas, proximaFaturaEmAberto } from '../hooks/useFaturas'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import ModalCompra from '../components/ModalCompra'
+import ModalFormulario from '../components/ModalFormulario'
 import { estilosComuns, formatoReal } from '../lib/compartilhados'
 
 const ROTULO_STATUS = {
@@ -19,17 +20,25 @@ const COR_STATUS = {
   paga: '#4ade80',
 }
 
-// Fatura "atual" de um cartão para a lista: a do mês corrente; se não
-// houver, a última fatura aberta (mais recente em aberto); senão a mais
-// recente qualquer (para mostrar um valor de referência).
+// Cor da barra de uso por faixa, usando os tokens de cor já existentes no
+// projeto (verde = ok, amarelo = atenção, vermelho = crítico).
+// Abaixo de 50% verde; entre 50% e 80% amarelo; acima de 80% vermelho.
+function corBarra(pct) {
+  if (pct < 50) return '#4ade80'
+  if (pct <= 80) return '#fbbf24'
+  return '#f87171'
+}
+
+// Percentual com uma casa decimal e separador de milhar brasileiro (ex.: "45,7").
+function formatarPct(n) {
+  return String(Number(n.toFixed(1))).replace('.', ',')
+}
+
+// Fatura em destaque em cada card da lista e no resumo: SEMPRE a próxima fatura
+// em aberto (a menor mês ainda não paga — ex.: 2026-09). Assim o cartão mostra
+// o valor que de fato será pago a seguir, e não a do mês corrente já liquidada.
 function escolherFaturaAtual(faturas) {
-  if (!faturas.length) return null
-  const mes = mesAtual()
-  const doMes = faturas.find((f) => f.mes_fatura === mes)
-  if (doMes) return doMes
-  const emAberto = faturas.find((f) => f.status !== 'paga')
-  if (emAberto) return emAberto
-  return faturas[0]
+  return proximaFaturaEmAberto(faturas)
 }
 
 // Um cartão da lista. Componente próprio para conseguir chamar useFaturas
@@ -79,8 +88,12 @@ function CartaoCard({ cartao, aoLancar }) {
         )}
 
         <div style={estilos.barraArea}>
+          <div style={estilos.barraPercentualLinha}>
+            <span style={estilos.percentualEmUso}>{formatarPct(pctUsado)}% usado</span>
+            <span style={estilos.percentualLivre}>{formatarPct(100 - pctUsado)}% livre</span>
+          </div>
           <div style={estilos.barra}>
-            <div style={{ ...estilos.barraPreenchida, width: `${pctUsado}%` }} />
+            <div style={{ ...estilos.barraPreenchida, width: `${pctUsado}%`, background: corBarra(pctUsado) }} />
           </div>
           <span style={estilos.barraTexto}>
             {formatoReal.format(usado)} usados de {formatoReal.format(limite)}
@@ -97,6 +110,101 @@ function CartaoCard({ cartao, aoLancar }) {
         + Lançar compra
       </button>
     </div>
+  )
+}
+
+// Consome useFaturas por cartão (hooks não rodam em loop) e reporta ao painel
+// de resumo os três valores agregados: limite, limite disponível e gasto no mês
+// (valor restante da fatura atual). Renderiza vazio — só alimenta o agregado.
+function ResumoCartao({ cartao, aoCalcular }) {
+  const { faturas, limiteDisponivel } = useFaturas(cartao.id)
+  const fatura = escolherFaturaAtual(faturas)
+
+  useEffect(() => {
+    aoCalcular(cartao.id, {
+      limite: Number(cartao.limite) || 0,
+      disponivel: Number(limiteDisponivel ?? cartao.limite) || 0,
+      gasto: fatura ? Number(fatura.valor_restante) || 0 : 0,
+    })
+  }, [cartao.id, cartao.limite, limiteDisponivel, fatura, aoCalcular])
+
+  return null
+}
+
+// Painel agregado no topo: soma todos os cartões ativos (Limite Total,
+// Disponível e Gasto no Mês) + barra única com o percentual global usado/livre
+// nas duas pontas. Só consome os hooks/dados existentes — sem recálculo.
+function ResumoCartoes({ cartoes }) {
+  const [valores, setValores] = useState({})
+
+  const aoCalcular = useCallback((id, v) => {
+    setValores((prev) => {
+      const atual = prev[id]
+      if (
+        atual &&
+        atual.limite === v.limite &&
+        atual.disponivel === v.disponivel &&
+        atual.gasto === v.gasto
+      ) {
+        return prev
+      }
+      return { ...prev, [id]: v }
+    })
+  }, [])
+
+  const limiteTotal = cartoes.reduce((s, c) => s + (Number(c.limite) || 0), 0)
+  const disponivelTotal = Object.values(valores).reduce((s, v) => s + (v.disponivel || 0), 0)
+  const gastoTotal = Object.values(valores).reduce((s, v) => s + (v.gasto || 0), 0)
+  const usadoTotal = limiteTotal - disponivelTotal
+  const pctUsado =
+    limiteTotal > 0 ? Math.min(100, Math.max(0, (usadoTotal / limiteTotal) * 100)) : 0
+  const pctLivre = 100 - pctUsado
+
+  return (
+    <>
+      {cartoes.map((c) => (
+        <ResumoCartao key={c.id} cartao={c} aoCalcular={aoCalcular} />
+      ))}
+
+      <div style={estilos.resumo}>
+        <div style={estilos.resumoValores}>
+          <div style={estilos.resumoItem}>
+            <span style={estilos.resumoRotulo}>Limite Total</span>
+            <strong style={{ ...estilos.resumoNumero, color: '#e5e7eb' }}>
+              {formatoReal.format(limiteTotal)}
+            </strong>
+          </div>
+          <div style={estilos.resumoItem}>
+            <span style={estilos.resumoRotulo}>Disponível</span>
+            <strong style={{ ...estilos.resumoNumero, color: '#4ade80' }}>
+              {formatoReal.format(disponivelTotal)}
+            </strong>
+          </div>
+          <div style={estilos.resumoItem}>
+            <span style={estilos.resumoRotulo}>Gasto no Mês</span>
+            <strong style={{ ...estilos.resumoNumero, color: '#f87171' }}>
+              {formatoReal.format(gastoTotal)}
+            </strong>
+          </div>
+        </div>
+
+        <div style={estilos.barraArea}>
+          <div style={estilos.barraPercentualLinha}>
+            <span style={estilos.percentualEmUso}>{formatarPct(pctUsado)}% usado</span>
+            <span style={estilos.percentualLivre}>{formatarPct(pctLivre)}% livre</span>
+          </div>
+          <div style={estilos.barra}>
+            <div
+              style={{
+                ...estilos.barraPreenchida,
+                width: `${pctUsado}%`,
+                background: corBarra(pctUsado),
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -175,7 +283,7 @@ export default function Cartoes() {
   }
 
   return (
-    <div style={{ ...estilosComuns.conteudo, fontSize: '0.9rem' }}>
+    <div style={estilosComuns.conteudo}>
       <h2 style={{ margin: '0.25rem 0 0.25rem' }}>Cartões de Crédito</h2>
       <p style={estilosComuns.mensagem}>Acompanhe faturas e limite por cartão.</p>
 
@@ -183,7 +291,10 @@ export default function Cartoes() {
       {erro && <p style={estilosComuns.erro}>Não foi possível carregar: {erro}</p>}
 
       {!carregando && !erro && (
-        <div style={estilos.grade}>
+        <>
+          {cartoes.length > 0 && <ResumoCartoes cartoes={cartoes} />}
+
+          <div style={estilos.grade}>
           {cartoes.map((c) => (
             <CartaoCard
               key={`${c.id}-${versaoCompra}`}
@@ -195,10 +306,11 @@ export default function Cartoes() {
             />
           ))}
 
-          <button type="button" onClick={() => (mostrandoForm ? setMostrandoForm(false) : abrirForm())} style={estilos.adicionar}>
-            {mostrandoForm ? 'Cancelar' : '+ Adicionar cartão'}
+          <button type="button" onClick={abrirForm} style={estilos.adicionar}>
+            + Adicionar cartão
           </button>
-        </div>
+          </div>
+        </>
       )}
 
       {comprandoId && (
@@ -211,62 +323,70 @@ export default function Cartoes() {
       )}
 
       {mostrandoForm && (
-        <form onSubmit={handleCriar} style={{ ...estilosComuns.form, maxWidth: '100%', marginTop: '1rem' }}>
-          <input
-            type="text"
-            placeholder="Nome do cartão (ex.: Nubank PJ)"
-            value={form.nome}
-            onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            style={estilosComuns.input}
-          />
-          <select
-            value={form.conta_id}
-            onChange={(e) => setForm({ ...form, conta_id: e.target.value })}
-            style={estilosComuns.input}
-          >
-            <option value="">Selecione a conta vinculada</option>
-            {contas.filter((c) => c.ativa).map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="Limite (R$)"
-            value={form.limite}
-            onChange={(e) => setForm({ ...form, limite: e.target.value })}
-            style={estilosComuns.input}
-          />
-          <div style={estilos.diasLinha}>
+        <ModalFormulario
+          titulo="Novo cartão"
+          aoFechar={() => {
+            setMostrandoForm(false)
+            setMensagem(null)
+          }}
+        >
+          <form onSubmit={handleCriar} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
             <input
-              type="number"
-              min="1"
-              max="31"
-              placeholder="Fechamento (dia)"
-              value={form.dia_fechamento}
-              onChange={(e) => setForm({ ...form, dia_fechamento: e.target.value })}
+              type="text"
+              placeholder="Nome do cartão (ex.: Nubank PJ)"
+              value={form.nome}
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
               style={estilosComuns.input}
             />
+            <select
+              value={form.conta_id}
+              onChange={(e) => setForm({ ...form, conta_id: e.target.value })}
+              style={estilosComuns.input}
+            >
+              <option value="">Selecione a conta vinculada</option>
+              {contas.filter((c) => c.ativa).map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
             <input
               type="number"
-              min="1"
-              max="31"
-              placeholder="Vencimento (dia)"
-              value={form.dia_vencimento}
-              onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
+              step="0.01"
+              min="0.01"
+              placeholder="Limite (R$)"
+              value={form.limite}
+              onChange={(e) => setForm({ ...form, limite: e.target.value })}
               style={estilosComuns.input}
             />
-          </div>
-          <button type="submit" disabled={enviando} style={estilos.botaoCriar}>
-            {enviando ? 'Cadastrando...' : 'Cadastrar cartão'}
-          </button>
+            <div style={estilos.diasLinha}>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                placeholder="Fechamento (dia)"
+                value={form.dia_fechamento}
+                onChange={(e) => setForm({ ...form, dia_fechamento: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="number"
+                min="1"
+                max="31"
+                placeholder="Vencimento (dia)"
+                value={form.dia_vencimento}
+                onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
+                style={estilosComuns.input}
+              />
+            </div>
+            <button type="submit" disabled={enviando} style={estilos.botaoCriar}>
+              {enviando ? 'Cadastrando...' : 'Cadastrar cartão'}
+            </button>
+          </form>
           {mensagem && (
             <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
               {mensagem.texto}
             </p>
           )}
-        </form>
+        </ModalFormulario>
       )}
 
       {!carregando && !erro && cartoes.length === 0 && !mostrandoForm && (
@@ -330,6 +450,32 @@ const estilos = {
     transition: 'width 0.3s ease',
   },
   barraTexto: { display: 'block', color: '#6b7280', fontSize: '0.78rem', marginTop: '0.35rem' },
+  barraPercentualLinha: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginBottom: '0.3rem',
+  },
+  percentualEmUso: { color: '#e5e7eb', fontSize: '0.78rem', fontWeight: 'bold' },
+  percentualLivre: { color: '#9ca3af', fontSize: '0.78rem' },
+  resumo: {
+    background: '#111827',
+    border: '1px solid #1f2937',
+    borderRadius: '14px',
+    padding: '1rem 1.1rem',
+    marginTop: '1rem',
+  },
+  resumoValores: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '0.75rem',
+    flexWrap: 'wrap',
+    marginBottom: '0.9rem',
+  },
+  resumoItem: { display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: '0' },
+  resumoRotulo: { color: '#9ca3af', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  resumoNumero: { fontSize: '1.25rem' },
   cartaoRodape: {
     display: 'flex',
     justifyContent: 'space-between',

@@ -144,11 +144,19 @@ export function useExtratoCartao(cartaoId, { inicio, fim, incluirInativas = fals
     const { data: parcelas, error: errParcelas } = await queryParcelas
     if (errParcelas) throw new Error(errParcelas.message)
 
-    // Ordena por data da compra desc e número da parcela asc.
+    // Ordena por VENCIMENTO da parcela (mes_fatura), do mais próximo do
+    // vencimento ao mais distante — comportamento de extrato de fatura de
+    // cartão real, onde parcelas futuras da mesma compra aparecem nos meses
+    // corretos (não agrupadas pelas mais recentes). Dentro do mesmo mês,
+    // agrupa a mesma compra pela data de origem (mais antiga primeiro) e
+    // pela ordem da parcela (1/3, 2/3, 3/3).
     const ordenadas = (parcelas || []).sort((a, b) => {
+      if (a.mes_fatura !== b.mes_fatura) {
+        return a.mes_fatura < b.mes_fatura ? -1 : 1
+      }
       const da = a.compras?.data ?? ''
       const db = b.compras?.data ?? ''
-      if (da !== db) return da < db ? 1 : -1
+      if (da !== db) return da < db ? -1 : 1
       return (a.numero ?? 0) - (b.numero ?? 0)
     })
 

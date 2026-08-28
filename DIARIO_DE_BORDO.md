@@ -2089,3 +2089,335 @@ Cancelar + "Lançar compra".
 ### Próximo passo
 Validar o modal no Vite (mobile e desktop) e seguir com o fluxo do detalhe da
 fatura (migrations 11/12/13 quando disponíveis).
+
+---
+
+## 28/08/2026 - ETAPA C4 - Desktop sem escala (rolagem uniforme) + ordem do extrato do cartão
+
+### Objetivo (Problema 1)
+Desde a Etapa 09 o app encolhia cada tela no DESKTOP com `transform: scale()`
+no `CaberNaTela` para caber na viewport sem rolagem de página. Isso fazia cada
+tela escalar de forma diferente conforme seu conteúdo → fontes de tamanhos
+inconsistentes entre telas e páginas que não preenchiam o espaço. A Etapa 13 já
+tinha movido o MÓVEL para rolagem normal; faltava unificar o desktop no mesmo
+comportamento. Agora o desktop se comporta como o mobile: rolagem de página
+normal, fonte base fixa e consistente, e rolagem interna (max-height) só dentro
+de listas longas.
+
+### Mudanças (Problema 1)
+- `src/styles/global.css` — `html, body` ganharam `font-size: 1rem`,
+  `min-height: 100vh` e `line-height: 1.4` (fonte base única do app). O
+  `.tela-inteira` passou a `min-height` + `overflow: visible` em TODAS as
+  resoluções (a página rola quando o conteúdo excede a viewport). A media
+  query `@media (max-width: 640px)` foi removida — não havia mais por que
+  limitar a rolagem só ao mobile.
+- `src/components/CaberNaTela.jsx` — deixou de medir o conteúdo e aplicar
+  scale(). Virou um container simples que centraliza `{children}` com
+  `maxWidth` (margin auto). Mantida a API (`maxLargura`, `alinhamento`,
+  `rolagem`, `children`) para não quebrar imports existentes; `alinhamento` e
+  `rolagem` são aceitos mas não alteram mais o comportamento. Removidos o
+  ResizeObserver/medição/transform e o modo "palco" com overflow.
+- `src/components/Layout.jsx` — removida a lógica especial da rota do detalhe
+  do cartão (`ehDetalheCartao`/`rolagem`) e o `minHeight: 0` que só existiam
+  para o palco com overflow do CaberNaTela antigo. O `<main>` continua
+  centralizando o conteúdo via `<CaberNaTela maxLargura={720}>`; sem altura
+  fixa — o conteúdo flui e a página rola.
+- Fontes ajustadas por página (que compensavam a escala variável) removidas,
+  voltando a herdar `1rem` do body: `ContasCorrentes` (0.9rem), `Caixinhas`
+  (0.9rem), `CaixinhaDetalhe` (0.9rem) e `Cartoes` (0.9rem). O `Dashboard`
+  já não tinha o 1.05rem do diário (foi redesenhado com design próprio em px).
+
+### Objetivo (Problema 2)
+No `useExitratoCartao` (hook `useCompras.js`) a lista do extrato estava
+ordenada por DATA DA COMPRA (mais recente primeiro) e número da parcela —
+parcelas futuras de uma mesma compra apareciam agrupadas pela fatura mais
+recente em vez de nos meses corretos de vencimento.
+
+### Mudanças (Problema 2)
+- `src/hooks/useCompras.js` (`useExtratoCartao`) — passou a ordenar por
+  VENCIMENTO da parcela (`mes_fatura`, 'YYYY-MM', crescente = mais próximo do
+  vencimento ao mais distante); dentro do mesmo mês, por data da compra
+  (mais antiga primeiro) e número da parcela (1/3, 2/3, 3/3). Nenhum cálculo
+  (`dividir_valor_em_parcelas`, `calcular_mes_fatura`) nem RPC foi tocado —
+  é só ordenação de exibição no front.
+- `src/pages/FaturaDetalhe.jsx` (aba Extrato) — não precisou de mudança: a
+  lista consome os `itens` já ordenados pelo hook, mostrando a faixa do mês
+  de cada parcela (`extraTexto: Fatura mm/aaaa`).
+
+### Build
+- `npm run build`: PASSOU (116 módulos; único aviso chunk >500kB pré-existente).
+
+### Testes pendentes (validação visual do André, no Chrome desktop)
+- Confirmar fonte do mesmo tamanho relativo em Dashboard, Contas Correntes e
+  Fatura do Cartão (sem escala por tela).
+- Confirmar que a página rola normalmente quando o conteúdo excede a viewport
+  (ex.: fatura com muitos itens e extrato longo), e que o rodapé (Pagar
+  fatura, Desfazer, ações) fica acessível.
+- Confirmar o extrato de um cartão com compra parcelada mostrando as parcelas
+  na ordem de vencimento, não agrupadas pela fatura mais recente.
+- Conferir que Login/contas/caixinhas/movimentações continuam corretos com a
+  fonte base única.
+
+### Próximo passo
+Após a validação visual, commitar e publicar (a pedido, NÃO commitado ainda).
+
+## 28/08/2026 — ETAPA C5 — Padronização dos formulários em modal centralizado
+
+### Objetivo
+Padronizar os formulários de lançamento/criação/edição do app no padrão visual
+do modal aprovado do `CompraForm` (overlay escurecido, janela centralizada,
+cabeçalho com título + "X", ações em destaque e "Cancelar" abaixo), sem alterar
+nenhuma regra financeira, RPC, hook, RLS, trigger ou schema — apenas o invólucro
+de apresentação.
+
+### Infraestrutura nova
+- Novo componente genérico `src/components/ModalFormulario.jsx`: extrai o padrão
+  visual do `ModalCompra` (portal no `<body>`, overlay, painel centralizado,
+  cabeçalho X, botão Cancelar, fecha com Esc/clique no overlay). Props:
+  `aberto`, `titulo`, `aoFechar`, `children`, `mostrarCancelar`. Fecha só quando
+  o chamador chama `aoFechar` (mantém aberto em erro, fecha no sucesso).
+- `src/components/ModalCompra.jsx` refatorado para usar o `ModalFormulario`
+  como base, mantendo a API externa (`aberto`, `cartaoIdInicial`, `aoFechar`,
+  `aoLancar`, `titulo`) — sem mudança para as telas que o usam.
+
+### Formulários migrados para modal
+- `src/pages/Movimentacoes.jsx` (Extrato): o formulário de nova/editar
+  movimentação (aberto pelo botão flutuante) virou `ModalFormulario`; em sucesso
+  fecha, em erro permanece aberto com a mensagem.
+- `src/pages/ContasCorrentes.jsx`: os quatro formulários viraram modal centralizado:
+  1. Lançamento rápido de movimentação ("Lançar");
+  2. Nova Caixinha ("+ Nova Caixinha");
+  3. Transferência entre contas / para terceiros — um único modal "Transferir" que
+     primeiro mostra a escolha do modo e depois o formulário correspondente (com
+     botão "← Trocar tipo de transferência" para voltar). Removido o `esMovil`
+     (só era usado nos formulários inline) e o import de `useMediaQuery`;
+     `estilosResumo.gradeLancamento` passou a 2 colunas para caber no modal.
+- `src/pages/CaixinhaDetalhe.jsx`: as ações da caixinha (Guardar / Resgatar /
+  Taxa / Rendimento) abrem em `ModalFormulario` com o título da ação; o botão
+  Cancelar inline foi substituído pelo do modal. Removido `estilos.botoesForm`.
+
+Nos handlers onde o form era inline e mostrava mensagem de sucesso abaixo do
+form, o sucesso agora apenas fecha o modal (a tela ao fundo já reflete o
+resultado); a mensagem de erro continua aparecendo dentro do modal, que
+permanece aberto.
+
+### Formulários do módulo Cartões migrados (por solicitação do usuário)
+- `src/pages/Cartoes.jsx`: o cadastro de novo cartão ("+ Adicionar cartão")
+  virou `ModalFormulario` "Novo cartão".
+- `src/components/CartoesConfig.jsx` (Configurações): a edição de cada cartão
+  (nome, limite, dias, conta, ativo) virou `ModalFormulario` "Editar cartão";
+  o botão "Editar" da linha agora apenas abre o modal.
+- `src/components/EditarCompraForm.jsx` (edição de compra na fatura/extrato):
+  o componente passou a renderizar o próprio `ModalFormulario` "Editar compra"
+  (via portal ao `<body>`), então pode continuar montado dentro da linha da
+  lista — o portal o exibe centralizado. Fecha em sucesso chamando `aoCancelar`;
+  em erro permanece aberto com a mensagem. Nenhuma mudança necesária na
+  `FaturaDetalhe.jsx` (que continua chamando o componente com `compra`,
+  `aoSalvar`, `aoCancelar`).
+- Ajuste genérico no `ModalFormulario`: o gate agora é `aberto !== false`, pois
+  os novos usos montam/desmontam o modal condicionalmente sem passar `aberto`
+  (enquanto o `ModalCompra` da FaturaDetalhe o mantém montado com `aberto`).
+
+### Build
+- `npm run build`: PASSOU (117 módulos; único aviso chunk >500kB pré-existente).
+
+### Testes pendentes (validação visual do André, no Chrome desktop)
+- Abrir "Lançar" em Contas Correntes e confiar que o modal abre centralizado,
+  com X/Cancelar/Esc fechando e o erro aparecendo dentro do modal.
+- Criar caixinha, lançar movimentação, transferir (entre contas e para terceiro)
+  e executar Guardar/Resgatar da caixinha — confiar no fechamento em sucesso.
+- Verificar que o fluxo de "Editar transferência" vindo do extrato ainda abre o
+  modal de transferência pré-preenchido (uso do `location.state.prefillTransferencia`).
+- Em Cartões, cadastrar um novo cartão — confiar que o modal "Novo cartão" abre e
+  fecha corretamente.
+- Em Configurações → Cartões de Crédito, editar um cartão — o modal "Editar cartão"
+  abre centralizado e fecha no sucesso.
+- Na aba Extrato do cartão, editar uma compra pelo lápis — o modal "Editar compra"
+  abre centralizado, fecha no sucesso e mantém aberto com a mensagem em erro.
+
+## 28/08/2026 — ETAPA C5 (parte 2) — Planejamento em modal + regra padrão de formulários
+
+### Objetivo
+Aplicar o mesmo padrão de formulário em modal centralizado ao módulo de
+Planejamento e firmar o `ModalFormulario` como REGRA padrão para todos os
+formulários criados daqui em diante.
+
+### Mudanças
+- `src/components/planejamento/Lancamentos.jsx`: o formulário de criação
+  (avulsa × parcelada), que ficava sempre visível no topo da aba, virou um
+  `ModalFormulario` "Novo planejamento", aberto pelo botão "+ Novo lançamento".
+  Conservou-se o toggle interno Avulsa/Parcelada, os radios Entrada/Despesa e a
+  validação. Em sucesso o modal fecha e limpa o form; em erro permanece aberto
+  com a mensagem visível. Removido o estilo `estilos.form` (o card virou o próprio
+  modal); adicionado `estilos.topoAcoes` para o botão.
+  Nenhuma RPC/hook de planejamento foi tocada — só o invólucro de apresentação.
+
+### Regra padrão de formulários (validade para o restante do projeto)
+- TODO formulário de lançamento/criação/edição DEVE usar o componente
+  `src/components/ModalFormulario.jsx` (portal no `<body>`, overlay escurecido,
+  janela centralizada, cabeçalho com título + "X", botão de ação em destaque e
+  "Cancelar" abaixo).
+- Fechamento: em SUCESSO o modal fecha (a tela ao fundo reflete o resultado);
+  em ERRO permanece aberto com a mensagem visível dentro.
+- Para montar condicionalmente, use `{mostrandoX && <ModalFormulario ...>}` — o
+  gate interno é `aberto !== false`, então não é obrigatório passar `aberto`.
+
+### Build
+- `npm run build`: PASSOU (117 módulos; único aviso chunk >500kB pré-existente).
+
+### Testes pendentes (validação visual do André, no Chrome desktop)
+- Em Planejamento → abrir "+ Novo lançamento", criar um avulso e uma série
+  parcelada — confiar que o modal abre centralizado, fecha no sucesso e mantém
+  a mensagem em erro.
+
+## 28/08/2026 — ETAPA C7 — Melhoria visual da tela de Cartões de Crédito
+
+### Objetivo
+Melhorar o visual de `src/pages/Cartoes.jsx` (lista de cartões) sem tocar em
+nenhuma regra financeira, RPC, hook de dados ou schema — somente apresentação,
+consumindo os dados já existentes em `useCartoes`/`useFaturas`.
+
+### Mudanças
+1. **Painel de resumo agregado no topo** (`ResumoCartoes` + `ResumoCartao`):
+   - Somatório de TODOS os cartões ativos (o hook `useCartoes(null)` já devolve
+     só os ativos), com três valores lado a lado: **Limite Total** (soma do
+     `limite`), **Disponível** (soma do `limiteDisponivel`) e **Gasto no Mês**
+     (soma do `valor_restante` da fatura atual de cada cartão — mesma lógica do
+     card, `escolherFaturaAtual`).
+   - Como `useFaturas` é por cartão (hooks não rodam em loop), um sub-componente
+     `ResumoCartao` consome o hook por cartão e reporta `{limite, disponivel,
+     gasto}` ao painel via callback estável (`useCallback`), que acumula num mapa
+     de estado.
+   - Barra única logo abaixo: percentual global = soma usada / soma total, com
+     "X% usado" numa ponta e "Y% livre" na outra.
+   - Mesma paleta escura do resto da página (card `#111827`/`#1f2937`); sem o
+     azul vibrante de painel antigo.
+2. **Cor da barra por faixa de uso** (cada card): `corBarra(pct)` com os tokens
+   já existentes — verde `#4ade80` (<50%), amarelo `#fbbf24` (50–80%), vermelho
+   `#f87171` (>80%). Aplicada à `barraPreenchida` de cada card e também à barra
+   do resumo agregado.
+3. **Percentual visível em cada card**: linha acima da barra com "X% usado" e
+   "Y% livre" (uma casa decimal, vírgula pt-BR via `formatarPct`), mantendo o
+   texto em reais "R$ usados de R$ limite" abaixo.
+
+### Escopo respeitado
+- Botão "+ Lançar compra" de cada card intacto.
+- Nenhum ícone de ação rápida (Configurar/Extrato/Sincronizar) no painel.
+- Nenhuma RPC/hook/schema alterado — só consumo dos dados existentes.
+
+### Build
+- `npm run build`: PASSOU (117 módulos; único aviso chunk >500kB pré-existente).
+
+### Testes pendentes (validação visual do André, no Chrome desktop)
+- Painel de resumo aparece no topo somando os dois cartões existentes.
+- Cor da barra de cada card reflete a faixa real (Nu PF ~35% verde; Nu PJ ~53%
+  amarelo).
+- Percentuais aparecem no painel agregado e em cada card.
+
+
+
+
+
+
+
+## 28/08/2026 � ETAPA C8 � Migra��o do hist�rico de Cart�es de Cr�dito (app antigo ? Supabase)
+
+### Objetivo
+Migrar o hist�rico de cart�es de cr�dito do banco SQLite antigo
+(`C:\Users\andre\Desktop\contas\contabilidade total\App financeiro\dados.db`,
+somente leitura) para o m�dulo de cart�es do Supabase (app novo), **sem tocar
+em contas, movimenta��es ou saldos** de conta corrente.
+
+### Decis�es de modelagem
+- **Faturas J� PAGAS** do hist�rico entram com `movimentacao_id = null`,
+  `origem_pagamento = 'migracao_sem_conta'` e `conta_origem_id` = conta de
+  origem (Nu PJ ? Nubank PJ; Nu PF ? Nubank PF). O `movimentacao_id` fica null
+  de prop�sito: NET vez que um pagamento de fatura movimentaria saldo via
+  `pagar_fatura` � proibido aqui. `conta_origem_id` � s� rastreio informativo
+  (n�o altera saldo).
+- **Faturas ABERTAS** (sem pagamento no app antigo) entram como `aberta`,
+  geridas pelo app novo daqui pra frente.
+- **Seguro Mapfre** (`Seguro do carro (Mapfre)`): as 7 parcelas ABERTAS
+  (09/2026..03/2027) foram EXCLU�DAS da migra��o (viram planejamento parcelado
+  j� existente na aba planejamento); as j� pagas (06,07,08/2026) permanecem no
+  hist�rico p/ as faturas pagas fecharem.
+- **Estornos/cr�ditos de fatura** (7 lan�amentos negativos: "Pagamento recebido
+  antecipado" e "Encerramento de d�vida"): o app novo n�o aceita compras com
+  valor negativo (`ck_compras_valor_positivo`). Exclu�mos cada cr�dito E a
+  compra positiva que ele anula no mesmo m�s (ex.: -599,98 ? "Lojas Mel Shop
+  Abc" +599,98; "Encerramento de d�vida" ? "Juros de d�vida encerrada"). Assim
+  as 50 faturas pagas continuam 100% consistentes com o valor pago real.
+
+### Migrations aplicadas (SQL Editor do Supabase)
+- `supabase/14_origem_pagamento.sql`: coluna `origem_pagamento` em
+  `fatura_pagamentos` (default `'app'`; aceita `'migracao_sem_conta'`).
+- `supabase/15_conta_origem_fatura.sql`: coluna `conta_origem_id` em
+  `fatura_pagamentos` (FK p/ `contas`, `on delete set null` � informativo).
+
+### Script
+`scripts/migrar_cartoes.py` (dry-run/apply):
+- Modos: `--dry-run` (padr�o, s� relat�rio) e `--aplicar --sim`.
+- Corre��es aplicadas p/ fechar a migra��o:
+  1. `Prefer: return=representation` no POST de compras p/ capturar o `id`
+     (sem isso o PostgREST retorna 201 vazio e as parcelas n�o eram criadas).
+  2. `excluir_estornos()` � remove cr�ditos negativos + a compra que anulam.
+  3. `agrupar_compras` separa compras "� vista" (denom=1) iguais por data+loja,
+     evitando violar `uq_parcelas_compra_numero`.
+
+### Resultado verificado (Supabase)
+- Compras: **330** (228 Nu PJ + 102 Nu PF)
+- Parcelas: **508**
+- Faturas pagas: **50**, todas `origem_pagamento='migracao_sem_conta'`,
+  `movimentacao_id=null` e `conta_origem_id` preenchido.
+- Inconsist�ncias de valor: **0**.
+- **Nenhuma movimenta��o criada / nenhum saldo alterado** (verificado por REST:
+  faturas com `movimentacao_id=null` = 50; `movimentacao_id` n�o null = 0).
+- Backups em `scripts/backups/backup_cartoes_<ts>.json`.
+
+### Observa��es
+- Cadastro do cart�o Nu PF **n�o alterado** (limite 3700 / fecha 16). O limite
+  antigo (4688,05) foi inflado artificialmente s� p/ acomodar o seguro Mapfre;
+  mantivemos o cadastro novo e reportamos a diverg�ncia.
+- Backup manual do estado ANTES da migra��o feito em
+  `scripts/backups/backup_cartoes_20260828_*` (versoes das rodadas).
+
+### Build
+- Sem mudan�a de c�digo frontend nesta etapa (apenas scripts de migra��o e
+  SQL). `npm run build` segue passando.
+
+### Testes pendentes (valida��o visual do Andr�)
+- Abrir Cart�es: conferir faturas abertas (Nu PJ 2026-09..2027-04; Nu PF
+  2026-09..2026-12), limites dispon�veis e hist�rico de faturas pagas do
+  app antigo.
+
+---
+
+## 28/08/2026 · ETAPA C8.1 — Fatura em aberto em destaque + rodapé só com total
+
+### Ajustes visuais (frontend)
+- **Fatura em destaque = próxima em aberto** (menor mês ainda não pago; hoje
+  `2026-09`), não o mês corrente (2026-08, que migrou como paga). Aplicado:
+  - `src/hooks/useFaturas.js`: nova função exportada **`proximaFaturaEmAberto(faturas)`**
+    (as faturas vêm ordenadas descrescente; pega a última do subconjunto das
+    não pagas; fallback p/ a mais recente se tudo pago; `null` se vazio).
+  - `src/pages/Cartoes.jsx`: `escolherFaturaAtual` agora é um thin wrapper p/
+    `proximaFaturaEmAberto` (card do cartão E resumo "Gasto no Mês").
+  - `src/pages/FaturaDetalhe.jsx`: seleção do mês inicial (sem `?mes=`) prioriza
+    a próxima fatura em aberto; `mesAtual` vira só fallback.
+- **Rodapé da fatura** (`FaturaDetalhe.jsx`): removidos os itens "Já pago" e
+  "Em aberto" — ficou **somente "Total da fatura"**. Já-pago/Em-aberto só farão
+  sentido quando existir pagamento parcial/antecipado.
+
+### Estudo planejado (próxima atualização do diário)
+**Função de pagamento antecipado/parcial de fatura** — vínculo com o rodapé:
+- Hoje `fatura_pagamentos` registra pagamento de fatura **inteira** via
+  `pagar_fatura` (que movimenta saldo e marca a fatura como `paga`).
+- Estudo: permitir pagar **antecipado** (antes do vencimento) e/ou **parcial**
+  (valor menor que o total), mantendo o restante em aberto.
+- Pontos a desenhar: como registrar o valor parcial em `fatura_pagamentos` sem
+  marcar a fatura como `paga` cedo demais; como "Já pago"/"Em aberto" do rodapé
+  reapareceriam baseados na soma dos pagamentos parciais; interação com o RPC
+  `pagar_fatura`/`desfazer_pagamento`; e como o movimento de saldo (parcial) é
+  refletido em conta corrente.
+- **Decisão atual (em vigor):** rodapé mostra só o total, porque o recurso de
+  pagamento parcial/antecipado ainda não existe no app.

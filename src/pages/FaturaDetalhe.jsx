@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useCartoes } from '../hooks/useCartoes'
-import { useFaturas, mesAtual } from '../hooks/useFaturas'
+import { useFaturas, mesAtual, proximaFaturaEmAberto } from '../hooks/useFaturas'
 import { useCompras, useExtratoCartao } from '../hooks/useCompras'
 import ModalCompra from '../components/ModalCompra'
 import EditarCompraForm from '../components/EditarCompraForm'
@@ -100,13 +100,16 @@ export default function FaturaDetalhe() {
   const mesCorrenteAtual = mesAtual()
 
   // Mês selecionado: usa ?mes= quando é um mês válido (mesmo sem fatura);
-  // senão cai no corrente ou no mais recente com fatura.
+  // senão abre na PRÓXIMA fatura em aberto (menor mês ainda não paga — ex.
+  // 2026-09), que é a que o usuário precisa ver/pagar. Se não houver nada em
+  // aberto (tudo pago), cai no mês corrente (com fatura) ou no mais recente.
   const mes =
     ehMes(mesConsulta)
       ? mesConsulta
-      : faturas.some((f) => f.mes_fatura === mesCorrenteAtual)
-        ? mesCorrenteAtual
-        : faturas[0]?.mes_fatura ?? mesCorrenteAtual
+      : (proximaFaturaEmAberto(faturas)?.mes_fatura) ??
+        (faturas.some((f) => f.mes_fatura === mesCorrenteAtual)
+          ? mesCorrenteAtual
+          : faturas[0]?.mes_fatura ?? mesCorrenteAtual)
   const faturaMeses = faturas.map((f) => f.mes_fatura)
   const fatura = faturas.find((f) => f.mes_fatura === mes) ?? null
 
@@ -454,19 +457,11 @@ export default function FaturaDetalhe() {
             )}
           </section>
 
-          {/* Rodapé: totais da fatura */}
+          {/* Rodapé: total da fatura */}
           <section style={estilos.totalRodape}>
             <div style={estilos.totalLinha}>
               <span>Total da fatura</span>
               <strong style={estilos.totalValor}>{formatoReal.format(total)}</strong>
-            </div>
-            <div style={estilos.totalLinha}>
-              <span style={estilosComuns.mensagem}>Já pago</span>
-              <span style={estilosComuns.valorEntrada}>{formatoReal.format(jaPago)}</span>
-            </div>
-            <div style={estilos.totalLinha}>
-              <span style={estilosComuns.mensagem}>Em aberto</span>
-              <span style={estilosComuns.valorSaida}>{formatoReal.format(restante)}</span>
             </div>
           </section>
 

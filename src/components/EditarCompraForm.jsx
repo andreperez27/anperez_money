@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useCartoes } from '../hooks/useCartoes'
 import { estilosComuns, dataCivil } from '../lib/compartilhados'
+import ModalFormulario from './ModalFormulario'
 
-// Formulário de EDIÇÃO de uma compra do cartão (aberto pelo lápis da linha).
+// Formulário de EDIÇÃO de uma compra do cartão (aberto pelo lápis da linha),
+// apresentado em modal centralizado (padrão aprovado).
 //
 // As linhas da fatura e do extrato são PARCELAS; a compra (dados a editar)
 // vem embutida em `parcela.compras`. Aqui abrimos o formulário com esses
@@ -12,7 +14,7 @@ import { estilosComuns, dataCivil } from '../lib/compartilhados'
 // Props:
 //   - compra: { id, descricao, data, valor_total, n_parcelas } da compra.
 //   - aoSalvar: callback após sucesso (a tela atualiza os dados).
-//   - aoCancelar: fecha o formulário.
+//   - aoCancelar: fecha o formulário (X, Cancelar, Esc ou overlay).
 export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
   const { editarCompra } = useCartoes(null)
 
@@ -51,6 +53,7 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
         n_parcelas: qtd,
       })
       if (aoSalvar) aoSalvar()
+      aoCancelar()
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: err.message })
     } finally {
@@ -59,7 +62,7 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
   }
 
   return (
-    <div style={estilos.corpo}>
+    <ModalFormulario titulo="Editar compra" aoFechar={aoCancelar}>
       <form onSubmit={handleSalvar} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
         <input
           type="text"
@@ -106,22 +109,11 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
           </p>
         )}
       </form>
-
-      <div style={estilos.acoes}>
-        <button type="button" onClick={aoCancelar} style={estilos.botaoCancelar}>
-          Cancelar
-        </button>
-      </div>
-    </div>
+    </ModalFormulario>
   )
 }
 
 const estilos = {
-  corpo: {
-    marginTop: '0.6rem',
-    padding: '0.6rem 0',
-    borderTop: '1px dashed #374151',
-  },
   grade: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' },
   botaoSalvar: {
     padding: '0.6rem',
@@ -130,17 +122,6 @@ const estilos = {
     background: '#42A5F5',
     color: '#0b0f19',
     fontWeight: 'bold',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
-  acoes: { display: 'flex', gap: '0.6rem', marginTop: '0.6rem' },
-  botaoCancelar: {
-    flex: 1,
-    padding: '0.55rem',
-    borderRadius: '8px',
-    border: '1px solid #374151',
-    background: '#0b0f19',
-    color: '#e5e7eb',
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
