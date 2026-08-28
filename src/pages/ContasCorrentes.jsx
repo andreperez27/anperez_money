@@ -6,7 +6,7 @@ import { useCaixinhas, useTodasCaixinhas } from '../hooks/useCaixinhas'
 import { useMovimentacoes } from '../hooks/useMovimentacoes'
 import { useTransferencias } from '../hooks/useTransferencias'
 import { useResumoMes } from '../hooks/useResumoMes'
-import useMediaQuery from '../hooks/useMediaQuery'
+import ModalFormulario from '../components/ModalFormulario'
 import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
 
 // "Contas Correntes" — referência de design da tela "Gestão de Contas
@@ -26,7 +26,6 @@ export default function ContasCorrentes() {
   const location = useLocation()
   const { contas, carregando: contasCarregando, erro: contasErro, atualizar } = useContas()
   const { contaAtiva, setContaAtiva } = useContaAtiva()
-  const esMovil = useMediaQuery('(max-width: 640px)')
   const { entradas, saidas, carregando: resumoCarregando, erro: resumoErro, atualizar: atualizarResumo } = useResumoMes()
   const { criarCaixinha } = useCaixinhas(contaAtiva?.id)
   const {
@@ -182,10 +181,7 @@ export default function ContasCorrentes() {
       setTransfEntre({ origemId: contaAtiva?.id || '', destinoId: '', valor: '', data: hoje, descricao: '' })
       setModoTransferencia(null)
       setMostrandoTransferencia(false)
-      setMensagem({
-        tipo: 'ok',
-        texto: `Transferência de ${formatoReal.format(Number(transfEntre.valor))} de ${origemNome} para ${destinoNome} concluída.`,
-      })
+      setMensagem(null)
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: `Não foi possível transferir: ${err.message}` })
     } finally {
@@ -219,10 +215,7 @@ export default function ContasCorrentes() {
       setTransfTerceiro({ origemId: contaAtiva?.id || '', destinatario: '', valor: '', data: hoje, categoria: '', descricao: '' })
       setModoTransferencia(null)
       setMostrandoTransferencia(false)
-      setMensagem({
-        tipo: 'ok',
-        texto: `Saída de ${formatoReal.format(Number(transfTerceiro.valor))} registrada (transferência para ${destinatario}).`,
-      })
+      setMensagem(null)
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: `Não foi possível registrar: ${err.message}` })
     } finally {
@@ -257,10 +250,7 @@ export default function ContasCorrentes() {
       setDescricao('')
       setCategoria('')
       setMostrandoLancamento(false)
-      setMensagem({
-        tipo: 'ok',
-        texto: `${tipoOp === 'Entrada' ? 'Entrada' : 'Saída'} de ${formatoReal.format(Number(valor))} lançada em ${contaAtiva.nome}.`,
-      })
+      setMensagem(null)
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: `Não foi possível lançar: ${err.message}` })
     } finally {
@@ -298,7 +288,7 @@ export default function ContasCorrentes() {
       await atualizarCaixinhas() // atualiza também a lista consolidada
       setNovaCaixinha({ nome: '', saldo: '', objetivo: '' })
       setMostrandoNovaCaixinha(false)
-      setMensagem({ tipo: 'ok', texto: `Caixinha "${novaCaixinha.nome.trim()}" criada em ${contaAtiva.nome}.` })
+      setMensagem(null)
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: `Não foi possível criar: ${err.message}` })
     } finally {
@@ -307,7 +297,7 @@ export default function ContasCorrentes() {
   }
 
   return (
-    <div style={{ ...estilosComuns.conteudo, fontSize: '0.9rem', paddingBottom: '3.5rem' }}>
+    <div style={{ ...estilosComuns.conteudo, paddingBottom: '3.5rem' }}>
       {/* Resumo do mês (todas as contas) */}
       <section style={estilosComuns.secao}>
         <h2>Resumo do mês</h2>
@@ -384,13 +374,19 @@ export default function ContasCorrentes() {
       <section style={estilosComuns.secao}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>Investimentos &amp; Caixinhas</h2>
-          <button type="button" onClick={() => setMostrandoNovaCaixinha(!mostrandoNovaCaixinha)} style={estilosComuns.botaoCriar}>
-            {mostrandoNovaCaixinha ? 'Cancelar' : '+ Nova Caixinha'}
+          <button type="button" onClick={() => setMostrandoNovaCaixinha(true)} style={estilosComuns.botaoCriar}>
+            + Nova Caixinha
           </button>
         </div>
 
         {mostrandoNovaCaixinha && (
-          <form onSubmit={handleCriarCaixinha} style={{ ...estilosComuns.form, marginTop: '0.75rem' }}>
+          <ModalFormulario
+            titulo="Nova caixinha"
+            aoFechar={() => {
+              setMostrandoNovaCaixinha(false)
+              setMensagem(null)
+            }}
+          >
             {!contaAtiva && (
               <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
             )}
@@ -399,28 +395,36 @@ export default function ContasCorrentes() {
                 Vinculada à conta: <strong>{contaAtiva.nome}</strong>
               </p>
             )}
-            <input
-              type="text" required placeholder="Nome (ex.: Reserva de Emergência)"
-              value={novaCaixinha.nome}
-              onChange={(e) => setNovaCaixinha({ ...novaCaixinha, nome: e.target.value })}
-              style={estilosComuns.input}
-            />
-            <input
-              type="number" step="0.01" min="0" placeholder="Saldo inicial (R$)"
-              value={novaCaixinha.saldo}
-              onChange={(e) => setNovaCaixinha({ ...novaCaixinha, saldo: e.target.value })}
-              style={estilosComuns.input}
-            />
-            <input
-              type="number" step="0.01" min="0" placeholder="Objetivo (R$, opcional)"
-              value={novaCaixinha.objetivo}
-              onChange={(e) => setNovaCaixinha({ ...novaCaixinha, objetivo: e.target.value })}
-              style={estilosComuns.input}
-            />
-            <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
-              {enviando ? 'Criando...' : 'Criar caixinha'}
-            </button>
-          </form>
+            <form onSubmit={handleCriarCaixinha} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
+              <input
+                type="text" required placeholder="Nome (ex.: Reserva de Emergência)"
+                value={novaCaixinha.nome}
+                onChange={(e) => setNovaCaixinha({ ...novaCaixinha, nome: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="number" step="0.01" min="0" placeholder="Saldo inicial (R$)"
+                value={novaCaixinha.saldo}
+                onChange={(e) => setNovaCaixinha({ ...novaCaixinha, saldo: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <input
+                type="number" step="0.01" min="0" placeholder="Objetivo (R$, opcional)"
+                value={novaCaixinha.objetivo}
+                onChange={(e) => setNovaCaixinha({ ...novaCaixinha, objetivo: e.target.value })}
+                style={estilosComuns.input}
+              />
+              <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
+                {enviando ? 'Criando...' : 'Criar caixinha'}
+              </button>
+            </form>
+
+            {mensagem && (
+              <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+                {mensagem.texto}
+              </p>
+            )}
+          </ModalFormulario>
         )}
 
         {caixinhasCarregando && <p style={estilosComuns.mensagem}>Carregando caixinhas...</p>}
@@ -468,8 +472,8 @@ export default function ContasCorrentes() {
       {/* Ações rápidas */}
       <section style={estilosComuns.secao}>
         <div style={estilosResumo.grupo}>
-          <button type="button" onClick={() => setMostrandoLancamento(!mostrandoLancamento)} style={estilosComuns.botaoCriar}>
-            {mostrandoLancamento ? 'Fechar lançamento' : 'Lançar'}
+          <button type="button" onClick={() => setMostrandoLancamento(true)} style={estilosComuns.botaoCriar}>
+            Lançar
           </button>
           <button type="button" onClick={alternarPainelTransferencia} style={estilosAcao.ativo}>
             {mostrandoTransferencia ? 'Fechar' : 'Transferir'}
@@ -480,254 +484,260 @@ export default function ContasCorrentes() {
         </div>
 
         {mostrandoLancamento && (
-          <form
-            onSubmit={handleLancar}
-            style={{ ...estilosComuns.form, marginTop: '0.75rem', marginBottom: '3.5rem', maxWidth: '480px' }}
+          <ModalFormulario
+            titulo="Lançar movimentação"
+            aoFechar={() => {
+              setMostrandoLancamento(false)
+              setMensagem(null)
+            }}
           >
-            {!contaAtiva ? (
-              <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
-            ) : (
-              <p style={estilosComuns.mensagem}>
-                Conta: <strong>{contaAtiva.nome}</strong> —{' '}
-                {formatoReal.format(Number(contaAtiva.saldo_atual))}
+            <form onSubmit={handleLancar} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
+              {!contaAtiva ? (
+                <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
+              ) : (
+                <p style={estilosComuns.mensagem}>
+                  Conta: <strong>{contaAtiva.nome}</strong> —{' '}
+                  {formatoReal.format(Number(contaAtiva.saldo_atual))}
+                </p>
+              )}
+              <div style={estilosResumo.gradeLancamento}>
+                <select
+                  value={tipoOp}
+                  onChange={(e) => setTipoOp(e.target.value)}
+                  style={{ ...estilosComuns.input, background: '#111827' }}
+                >
+                  <option value="Entrada">Entrada</option>
+                  <option value="Saida">Saída</option>
+                </select>
+                <input
+                  type="date" required value={data} onChange={(e) => setData(e.target.value)}
+                  style={estilosComuns.input}
+                />
+                <input
+                  type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
+                  value={valor} onChange={(e) => setValor(e.target.value)}
+                  style={estilosComuns.input}
+                />
+                <input
+                  type="text" required placeholder="Descrição"
+                  value={descricao} onChange={(e) => setDescricao(e.target.value)}
+                  style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
+                />
+                <input
+                  type="text" placeholder="Categoria"
+                  value={categoria} onChange={(e) => setCategoria(e.target.value)}
+                  style={estilosComuns.input}
+                />
+              </div>
+              <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
+                {enviando ? 'Lançando...' : 'Lançar'}
+              </button>
+            </form>
+
+            {mensagem && (
+              <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+                {mensagem.texto}
               </p>
             )}
-            <div style={esMovil ? { ...estilosResumo.gradeLancamento, gridTemplateColumns: '1fr' } : estilosResumo.gradeLancamento}>
-              <select
-                value={tipoOp}
-                onChange={(e) => setTipoOp(e.target.value)}
-                style={{ ...estilosComuns.input, background: '#111827' }}
-              >
-                <option value="Entrada">Entrada</option>
-                <option value="Saida">Saída</option>
-              </select>
-              <input
-                type="date" required value={data} onChange={(e) => setData(e.target.value)}
-                style={estilosComuns.input}
-              />
-              <input
-                type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
-                value={valor} onChange={(e) => setValor(e.target.value)}
-                style={estilosComuns.input}
-              />
-              <input
-                type="text" required placeholder="Descrição"
-                value={descricao} onChange={(e) => setDescricao(e.target.value)}
-                style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
-              />
-              <input
-                type="text" placeholder="Categoria"
-                value={categoria} onChange={(e) => setCategoria(e.target.value)}
-                style={estilosComuns.input}
-              />
-            </div>
-            <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
-              {enviando ? 'Lançando...' : 'Lançar'}
-            </button>
-          </form>
+          </ModalFormulario>
         )}
 
         {/* Painel Transferir: escolha do modo → formulário correspondente.
-            Em ≤640px tudo vira uma coluna (padrão esMovil do app). */}
-        {mostrandoTransferencia && !modoTransferencia && (
-          <div
-            style={{
-              display: 'grid',
-              gap: '0.6rem',
-              gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
-              marginTop: '0.75rem',
-              marginBottom: '3.5rem',
+            Tudo dentro de um único modal centralizado (padrão aprovado). */}
+        {mostrandoTransferencia && (
+          <ModalFormulario
+            titulo="Transferir"
+            aoFechar={() => {
+              setMostrandoTransferencia(false)
+              setModoTransferencia(null)
+              setMensagem(null)
             }}
           >
-            <button type="button" onClick={() => setModoTransferencia('entreContas')} style={estilosAcao.opcao}>
-              <strong>Entre minhas contas</strong>
-              <span style={estilosComuns.mensagem}>
-                Movimentar dinheiro entre minhas próprias contas.
-              </span>
-            </button>
-            <button type="button" onClick={() => setModoTransferencia('terceiro')} style={estilosAcao.opcao}>
-              <strong>Para outra pessoa</strong>
-              <span style={estilosComuns.mensagem}>
-                Registrar uma transferência/pagamento para um terceiro.
-              </span>
-            </button>
-          </div>
-        )}
+            {!modoTransferencia ? (
+              <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: '1fr 1fr' }}>
+                <button type="button" onClick={() => setModoTransferencia('entreContas')} style={estilosAcao.opcao}>
+                  <strong>Entre minhas contas</strong>
+                  <span style={estilosComuns.mensagem}>
+                    Movimentar dinheiro entre minhas próprias contas.
+                  </span>
+                </button>
+                <button type="button" onClick={() => setModoTransferencia('terceiro')} style={estilosAcao.opcao}>
+                  <strong>Para outra pessoa</strong>
+                  <span style={estilosComuns.mensagem}>
+                    Registrar uma transferência/pagamento para um terceiro.
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <button type="button" onClick={() => setModoTransferencia(null)} style={estilosAcao.voltar}>
+                  ← Trocar tipo de transferência
+                </button>
 
-        {/* Fluxo A — Entre minhas contas */}
-        {mostrandoTransferencia && modoTransferencia === 'entreContas' && (
-          <form
-            onSubmit={handleTransferirEntreContas}
-            style={{ ...estilosComuns.form, marginTop: '0.75rem', marginBottom: '3.5rem', maxWidth: '480px' }}
-          >
-            {!contaAtiva && (
-              <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
-            )}
-            <div
-              style={{
-                display: 'grid',
-                gap: '0.6rem',
-                gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
-              }}
-            >
-              <select
-                value={transfEntre.origemId}
-                onChange={(e) => setTransfEntre({ ...transfEntre, origemId: e.target.value })}
-                style={{ ...estilosComuns.input, background: '#111827' }}
-              >
-                <option value="">Conta de origem...</option>
-                {contasAtivas.map((conta) => (
-                  <option key={conta.id} value={conta.id}>
-                    {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={transfEntre.destinoId}
-                onChange={(e) => setTransfEntre({ ...transfEntre, destinoId: e.target.value })}
-                style={{ ...estilosComuns.input, background: '#111827' }}
-              >
-                <option value="">Conta de destino...</option>
-                {contasAtivas
-                  .filter((conta) => conta.id !== transfEntre.origemId)
-                  .map((conta) => (
-                    <option key={conta.id} value={conta.id}>
-                      {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
-                    </option>
-                  ))}
-              </select>
-              <input
-                type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
-                value={transfEntre.valor}
-                onChange={(e) => setTransfEntre({ ...transfEntre, valor: e.target.value })}
-                style={estilosComuns.input}
-              />
-              <input
-                type="date" required
-                value={transfEntre.data}
-                onChange={(e) => setTransfEntre({ ...transfEntre, data: e.target.value })}
-                style={estilosComuns.input}
-              />
-              <input
-                type="text" placeholder="Descrição (opcional)"
-                value={transfEntre.descricao}
-                onChange={(e) => setTransfEntre({ ...transfEntre, descricao: e.target.value })}
-                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
-              />
-            </div>
-            {contaOrigemTransf && (
-              <p style={estilosComuns.mensagem}>
-                Disponível na origem: {formatoReal.format(Number(contaOrigemTransf.saldo_atual))}
-              </p>
-            )}
-            {errosTransfEntre.length > 0 && (
-              <ul style={estilosAcao.avisoLista}>
-                {errosTransfEntre.map((aviso) => (
-                  <li key={aviso}>{aviso}</li>
-                ))}
-              </ul>
-            )}
-            <button
-              type="submit"
-              disabled={enviandoTransferencia || errosTransfEntre.length > 0}
-              style={estilosComuns.botaoCriar}
-            >
-              {enviandoTransferencia ? 'Transferindo...' : 'Transferir'}
-            </button>
-          </form>
-        )}
+                {modoTransferencia === 'entreContas' && (
+                  <form
+                    onSubmit={handleTransferirEntreContas}
+                    style={{ ...estilosComuns.form, maxWidth: '100%' }}
+                  >
+                    {!contaAtiva && (
+                      <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
+                    )}
+                    <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: '1fr 1fr' }}>
+                      <select
+                        value={transfEntre.origemId}
+                        onChange={(e) => setTransfEntre({ ...transfEntre, origemId: e.target.value })}
+                        style={{ ...estilosComuns.input, background: '#111827' }}
+                      >
+                        <option value="">Conta de origem...</option>
+                        {contasAtivas.map((conta) => (
+                          <option key={conta.id} value={conta.id}>
+                            {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={transfEntre.destinoId}
+                        onChange={(e) => setTransfEntre({ ...transfEntre, destinoId: e.target.value })}
+                        style={{ ...estilosComuns.input, background: '#111827' }}
+                      >
+                        <option value="">Conta de destino...</option>
+                        {contasAtivas
+                          .filter((conta) => conta.id !== transfEntre.origemId)
+                          .map((conta) => (
+                            <option key={conta.id} value={conta.id}>
+                              {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                            </option>
+                          ))}
+                      </select>
+                      <input
+                        type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
+                        value={transfEntre.valor}
+                        onChange={(e) => setTransfEntre({ ...transfEntre, valor: e.target.value })}
+                        style={estilosComuns.input}
+                      />
+                      <input
+                        type="date" required
+                        value={transfEntre.data}
+                        onChange={(e) => setTransfEntre({ ...transfEntre, data: e.target.value })}
+                        style={estilosComuns.input}
+                      />
+                      <input
+                        type="text" placeholder="Descrição (opcional)"
+                        value={transfEntre.descricao}
+                        onChange={(e) => setTransfEntre({ ...transfEntre, descricao: e.target.value })}
+                        style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
+                      />
+                    </div>
+                    {contaOrigemTransf && (
+                      <p style={estilosComuns.mensagem}>
+                        Disponível na origem: {formatoReal.format(Number(contaOrigemTransf.saldo_atual))}
+                      </p>
+                    )}
+                    {errosTransfEntre.length > 0 && (
+                      <ul style={estilosAcao.avisoLista}>
+                        {errosTransfEntre.map((aviso) => (
+                          <li key={aviso}>{aviso}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={enviandoTransferencia || errosTransfEntre.length > 0}
+                      style={estilosComuns.botaoCriar}
+                    >
+                      {enviandoTransferencia ? 'Transferindo...' : 'Transferir'}
+                    </button>
+                  </form>
+                )}
 
-        {/* Fluxo B — Para outra pessoa (saída comum; sem PIX, sem integração) */}
-        {mostrandoTransferencia && modoTransferencia === 'terceiro' && (
-          <form
-            onSubmit={handleTransferirParaTerceiro}
-            style={{ ...estilosComuns.form, marginTop: '0.75rem', marginBottom: '3.5rem', maxWidth: '480px' }}
-          >
-            {!contaAtiva && (
-              <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
-            )}
-            <div
-              style={{
-                display: 'grid',
-                gap: '0.6rem',
-                gridTemplateColumns: esMovil ? '1fr' : '1fr 1fr',
-              }}
-            >
-              <select
-                value={transfTerceiro.origemId}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, origemId: e.target.value })}
-                style={{ ...estilosComuns.input, background: '#111827', gridColumn: esMovil ? 'auto' : 'span 2' }}
-              >
-                <option value="">Conta de origem...</option>
-                {contasAtivas.map((conta) => (
-                  <option key={conta.id} value={conta.id}>
-                    {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text" required placeholder="Destinatário (para quem vai)"
-                value={transfTerceiro.destinatario}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, destinatario: e.target.value })}
-                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
-              />
-              <input
-                type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
-                value={transfTerceiro.valor}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, valor: e.target.value })}
-                style={estilosComuns.input}
-              />
-              <input
-                type="date" required
-                value={transfTerceiro.data}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, data: e.target.value })}
-                style={estilosComuns.input}
-              />
-              <input
-                type="text" list="categorias-transferencia" placeholder="Categoria (opcional)"
-                value={transfTerceiro.categoria}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, categoria: e.target.value })}
-                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
-              />
-              {/* Datalist = só sugestões sobre o input livre de sempre;
-                  o mecanismo de categorias (texto livre/NULL) não muda. */}
-              <datalist id="categorias-transferencia">
-                <option value="pagamento" />
-                <option value="aluguel" />
-                <option value="servico" />
-                <option value="presente" />
-                <option value="devolucao" />
-                <option value="emprestimo" />
-                <option value="outro" />
-              </datalist>
-              <input
-                type="text" placeholder="Descrição (opcional)"
-                value={transfTerceiro.descricao}
-                onChange={(e) => setTransfTerceiro({ ...transfTerceiro, descricao: e.target.value })}
-                style={{ ...estilosComuns.input, gridColumn: esMovil ? 'auto' : 'span 2' }}
-              />
-            </div>
-            {errosTransfTerceiro.length > 0 && (
-              <ul style={estilosAcao.avisoLista}>
-                {errosTransfTerceiro.map((aviso) => (
-                  <li key={aviso}>{aviso}</li>
-                ))}
-              </ul>
-            )}
-            <button
-              type="submit"
-              disabled={enviandoTransferencia || errosTransfTerceiro.length > 0}
-              style={estilosComuns.botaoCriar}
-            >
-              {enviandoTransferencia ? 'Registrando...' : 'Registrar saída'}
-            </button>
-          </form>
-        )}
+                {modoTransferencia === 'terceiro' && (
+                  <form
+                    onSubmit={handleTransferirParaTerceiro}
+                    style={{ ...estilosComuns.form, maxWidth: '100%' }}
+                  >
+                    {!contaAtiva && (
+                      <p style={estilosComuns.erro}>Selecione a conta ativa primeiro (toque no card dela).</p>
+                    )}
+                    <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: '1fr 1fr' }}>
+                      <select
+                        value={transfTerceiro.origemId}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, origemId: e.target.value })}
+                        style={{ ...estilosComuns.input, background: '#111827', gridColumn: 'span 2' }}
+                      >
+                        <option value="">Conta de origem...</option>
+                        {contasAtivas.map((conta) => (
+                          <option key={conta.id} value={conta.id}>
+                            {conta.nome} — {formatoReal.format(Number(conta.saldo_atual))}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text" required placeholder="Destinatário (para quem vai)"
+                        value={transfTerceiro.destinatario}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, destinatario: e.target.value })}
+                        style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
+                      />
+                      <input
+                        type="number" step="0.01" min="0.01" required placeholder="Valor (R$)"
+                        value={transfTerceiro.valor}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, valor: e.target.value })}
+                        style={estilosComuns.input}
+                      />
+                      <input
+                        type="date" required
+                        value={transfTerceiro.data}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, data: e.target.value })}
+                        style={estilosComuns.input}
+                      />
+                      <input
+                        type="text" list="categorias-transferencia" placeholder="Categoria (opcional)"
+                        value={transfTerceiro.categoria}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, categoria: e.target.value })}
+                        style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
+                      />
+                      {/* Datalist = só sugestões sobre o input livre de sempre;
+                          o mecanismo de categorias (texto livre/NULL) não muda. */}
+                      <datalist id="categorias-transferencia">
+                        <option value="pagamento" />
+                        <option value="aluguel" />
+                        <option value="servico" />
+                        <option value="presente" />
+                        <option value="devolucao" />
+                        <option value="emprestimo" />
+                        <option value="outro" />
+                      </datalist>
+                      <input
+                        type="text" placeholder="Descrição (opcional)"
+                        value={transfTerceiro.descricao}
+                        onChange={(e) => setTransfTerceiro({ ...transfTerceiro, descricao: e.target.value })}
+                        style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
+                      />
+                    </div>
+                    {errosTransfTerceiro.length > 0 && (
+                      <ul style={estilosAcao.avisoLista}>
+                        {errosTransfTerceiro.map((aviso) => (
+                          <li key={aviso}>{aviso}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={enviandoTransferencia || errosTransfTerceiro.length > 0}
+                      style={estilosComuns.botaoCriar}
+                    >
+                      {enviandoTransferencia ? 'Registrando...' : 'Registrar saída'}
+                    </button>
+                  </form>
+                )}
 
-        {mensagem && (
-          <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
-            {mensagem.texto}
-          </p>
+                {mensagem && (
+                  <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+                    {mensagem.texto}
+                  </p>
+                )}
+              </>
+            )}
+          </ModalFormulario>
         )}
       </section>
     </div>
@@ -740,7 +750,7 @@ const estilosResumo = {
   // Categoria. Formulário compacto para o botão nunca ficar fora da tela.
   gradeLancamento: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
+    gridTemplateColumns: '1fr 1fr',
     gap: '0.6rem',
   },
   card: {
@@ -834,5 +844,16 @@ const estilosAcao = {
     margin: 0,
     paddingLeft: '1.1rem',
     color: '#ef4444',
+  },
+  voltar: {
+    width: '100%',
+    padding: '0.55rem',
+    borderRadius: '8px',
+    border: '1px solid #374151',
+    background: '#0b0f19',
+    color: '#9ca3af',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.85rem',
   },
 }

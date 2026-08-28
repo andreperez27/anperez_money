@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useCaixinhas, useCaixinhaMovimentos } from '../hooks/useCaixinhas'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
+import ModalFormulario from '../components/ModalFormulario'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 
 const ROTULOS_TIPO = {
@@ -95,10 +96,7 @@ export default function CaixinhaDetalhe() {
       setValor('')
       setDescricao('')
       setAcao(null)
-      setMensagem({
-        tipo: 'ok',
-        texto: `${ROTULOS_TIPO[acao]} ${formatoReal.format(valorNum)} na caixinha ${caixinha.nome}.`,
-      })
+      setMensagem(null)
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: err.message })
     } finally {
@@ -125,7 +123,7 @@ export default function CaixinhaDetalhe() {
   const saldo = Number(caixinha.saldo)
 
   return (
-    <div style={{ ...estilosComuns.conteudo, fontSize: '0.9rem' }}>
+    <div style={estilosComuns.conteudo}>
       <Link to="/caixinhas" style={estilosComuns.link}>← Caixinhas</Link>
 
       <section style={estilosComuns.secao}>
@@ -181,53 +179,53 @@ export default function CaixinhaDetalhe() {
         </div>
 
         {acao && (
-          <form onSubmit={handleConfirmar} style={{ ...estilosComuns.form, marginTop: '0.75rem' }}>
-            <p style={estilosComuns.mensagem}>
-              {acao === 'guardar'
-                ? `Da conta corrente ${contaAtiva?.nome ?? ''} — saldo ${formatoReal.format(Number(contaAtiva?.saldo_atual ?? 0))}`
-                : acao === 'resgatar'
-                  ? `Caixinha ${caixinha.nome} — saldo ${formatoReal.format(saldo)}`
-                  : `Só na caixinha ${caixinha.nome} — não mexe na conta corrente`}
-            </p>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              required
-              autoFocus
-              placeholder="Valor (R$)"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              style={estilosComuns.input}
-            />
-            <input
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              style={estilosComuns.input}
-            />
-            <input
-              type="text"
-              placeholder="Descrição (opcional)"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              style={estilosComuns.input}
-            />
-            <div style={estilos.botoesForm}>
+          <ModalFormulario
+            titulo={ROTULOS_TIPO[acao]}
+            aoFechar={() => { setAcao(null); setMensagem(null) }}
+          >
+            <form onSubmit={handleConfirmar} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
+              <p style={estilosComuns.mensagem}>
+                {acao === 'guardar'
+                  ? `Da conta corrente ${contaAtiva?.nome ?? ''} — saldo ${formatoReal.format(Number(contaAtiva?.saldo_atual ?? 0))}`
+                  : acao === 'resgatar'
+                    ? `Caixinha ${caixinha.nome} — saldo ${formatoReal.format(saldo)}`
+                    : `Só na caixinha ${caixinha.nome} — não mexe na conta corrente`}
+              </p>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                autoFocus
+                placeholder="Valor (R$)"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                style={estilosComuns.input}
+              />
+              <input
+                type="date"
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                style={estilosComuns.input}
+              />
+              <input
+                type="text"
+                placeholder="Descrição (opcional)"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                style={estilosComuns.input}
+              />
               <button type="submit" disabled={enviando} style={acao === 'resgatar' || acao === 'taxa' ? estilos.botaoResgatar : estilos.botaoGuardar}>
                 {enviando ? 'Aguarde...' : ROTULOS_TIPO[acao]}
               </button>
-              <button type="button" onClick={() => { setAcao(null); setMensagem(null) }} style={estilos.botaoSecundario}>
-                Cancelar
-              </button>
-            </div>
-          </form>
-        )}
+            </form>
 
-        {mensagem && (
-          <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
-            {mensagem.texto}
-          </p>
+            {mensagem && (
+              <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+                {mensagem.texto}
+              </p>
+            )}
+          </ModalFormulario>
         )}
       </section>
 
@@ -309,5 +307,4 @@ const estilos = {
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
-  botoesForm: { display: 'flex', gap: '0.6rem' },
 }

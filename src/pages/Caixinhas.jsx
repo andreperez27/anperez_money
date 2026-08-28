@@ -12,7 +12,7 @@ export default function Caixinhas() {
   const { caixinhas, carregando, erro } = useCaixinhas(contaAtiva?.id)
 
   return (
-    <div style={{ ...estilosComuns.conteudo, fontSize: '0.9rem' }}>
+    <div style={estilosComuns.conteudo}>
       <h2 style={{ margin: '0 0 0.75rem' }}>
         Caixinhas{contaAtiva ? ` · ${contaAtiva.nome}` : ''}
       </h2>

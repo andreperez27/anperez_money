@@ -6,8 +6,15 @@ html,
 body {
   margin: 0;
   height: auto;
+  min-height: 100vh;
   background-color: #0b0f19;
   color: #e5e7eb;
+  /* Fonte base única e consistente para o app inteiro. As páginas
+     herdam este tamanho (hierarquia normal de headings); os antigos
+     ajustes finos por página (0.9rem / 1.05rem) que compensavam a
+     escala variável do CaberNaTela foram removidos. */
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 * {
@@ -20,32 +27,15 @@ svg {
   height: auto;
 }
 
-/* Desktop / tablet (>= breakpoint móvil): la pantalla "ocupa" la
-   viewport y NO rueda la página — quien encaja el contenido es
-   CaberNaTela con transform: scale() (con su margen de seguridad). */
+/* Todas as resoluções rolam normalmente: o conteúdo flui a tamanho real
+   (fonte base 1rem) e a página rola quando excede a viewport. Quem rola
+   internamente são apenas as listas longas (max-height + overflow-y:
+   auto, padrão estilosComuns.lista). O CaberNaTela não aplica scale()
+   em nenhuma resolução — comportamento unificado, sem escala variável. */
 .tela-inteira {
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
   display: flex;
   flex-direction: column;
-}
-
-/* Móvil (< 640px): la página SÍ puede rodar. El contenido fluye a
-   tamaño real (CaberNaTela no lo encoge); el header queda fijo arriba
-   y la navegación inferior queda fija abajo. */
-@media (max-width: 640px) {
-  html,
-  body {
-    height: auto;
-    min-height: 100vh;
-  }
-
-  .tela-inteira {
-    min-height: 100vh;
-    min-height: 100dvh;
-    overflow: visible;
-    display: flex;
-    flex-direction: column;
-  }
 }

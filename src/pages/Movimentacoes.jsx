@@ -13,6 +13,7 @@ import { useTransferencias } from '../hooks/useTransferencias'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import useMediaQuery from '../hooks/useMediaQuery'
 import SeletorPeriodo from '../components/SeletorPeriodo'
+import ModalFormulario from '../components/ModalFormulario'
 import { estilosComuns, formatarData, formatoReal, hoje, dataCivil } from '../lib/compartilhados'
 import { resumirMovimentacoes, saldoNoFimDoPeriodo, saldosProgressivos } from '../lib/extratoCalc'
 
@@ -289,6 +290,9 @@ export default function Movimentacoes() {
           ? 'Movimentação editada (saldo ajustado automaticamente).'
           : `${tipoOp === 'Entrada' ? 'Entrada' : 'Saída'} de ${formatoReal.format(Number(valor))} lançada em ${contaAtiva.nome}.`,
       })
+      // Em sucesso, fecha o modal (padrão aprovado); em erro permanece aberto.
+      setMostrandoNova(false)
+      setMovEmEdicao(null)
     } catch (err) {
       setMensagem({
         tipo: 'erro',
@@ -484,7 +488,7 @@ export default function Movimentacoes() {
                       </div>
                     )}
 
-                    <ul style={estilosComuns.lista}>
+                    <ul style={estilos.listaExtrato}>
                       {/* Linha do topo: SALDO FINAL DO PERÍODO — valor JÁ
                           validado pela reconciliação; nunca recalculado. No
                           extrato "mais recente primeiro" ele abre a lista.
@@ -706,25 +710,18 @@ export default function Movimentacoes() {
       )}
 
       {/* Formulário: nova movimentação OU edição (mesmo formulário,
-        pré-preenchido via iniciarEdicao). Aberto pelo FAB; lança na conta ativa. */}
+        pré-preenchido via iniciarEdicao). Aberto pelo FAB; lança na conta
+        ativa. Em modal centralizado (padrão aprovado). */}
       {mostrandoNova && contaAtiva && (
-        <section style={{ ...estilosComuns.secao, maxWidth: '340px', marginBottom: '3.5rem' }}>
-          <div style={estilos.topo}>
-            <h3 style={{ margin: 0, fontSize: '0.95rem' }}>
-              {movEmEdicao ? 'Editar movimentação' : 'Nova movimentação'}
-            </h3>
-            {movEmEdicao && (
-              <button
-                type="button"
-                onClick={abrirFormularioNova}
-                style={estilos.botaoCancelar}
-                title="Cancelar edição"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <form onSubmit={handleSalvarMovimentacao} style={{ ...estilosComuns.form, maxWidth: '360px' }}>
+        <ModalFormulario
+          titulo={movEmEdicao ? 'Editar movimentação' : 'Nova movimentação'}
+          aoFechar={() => {
+            setMostrandoNova(false)
+            setMovEmEdicao(null)
+            setMensagem(null)
+          }}
+        >
+          <form onSubmit={handleSalvarMovimentacao} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
             <p style={estilosComuns.mensagem}>
               Conta: <strong>{contaAtiva.nome}</strong> —{' '}
               {formatoReal.format(Number(contaAtiva.saldo_atual))}
@@ -779,7 +776,7 @@ export default function Movimentacoes() {
               {mensagem.texto}
             </p>
           )}
-        </section>
+        </ModalFormulario>
       )}
 
       {contaAtiva &&
@@ -815,6 +812,15 @@ function corDoSaldo(valor) {
 }
 
 const estilos = {
+  // Lista do extrato: herda o padrão estilosComuns.lista mas SEM o teto de
+  // 30vh — a página inteira rola, então os lançamentos nunca ficam cortados.
+  // Margem inferior garante folga até o fim da página.
+  listaExtrato: {
+    ...estilosComuns.lista,
+    maxHeight: 'none',
+    overflowY: 'visible',
+    paddingBottom: '2rem',
+  },
   topo: {
     display: 'flex',
     alignItems: 'center',
@@ -962,16 +968,6 @@ const estilos = {
     borderRadius: '999px',
     padding: '0.05rem 0.45rem',
     whiteSpace: 'nowrap',
-  },
-  botaoCancelar: {
-    background: 'transparent',
-    border: 'none',
-    color: '#9ca3af',
-    fontFamily: 'inherit',
-    fontWeight: 'bold',
-    fontSize: '0.9rem',
-    cursor: 'pointer',
-    padding: '0.1rem 0.3rem',
   },
   // Linha 1: Tipo | Data | Valor — lado a lado. Linha 2: Descrição (2
   // colunas) + Categoria. Formulário compacto para o botão nunca ficar

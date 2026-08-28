@@ -129,12 +129,9 @@ export default function Layout() {
     )
   }
 
-  // Rota de detalhe de fatura de cartão (/cartoes/:id): é uma página longa
-  // (header, compra, resumo, abas, lista, totais, pagar). No desktop ela NÃO
-  // deve ser espremida para caber na viewport — precisa de rolagem real para
-  // que o rodapé (Pagar fatura, Desfazer, ações) nunca fique cortado.
-  const euRota = localizacao.pathname
-  const ehDetalheCartao = /^\/cartoes\/[^/]+$/.test(euRota)
+  // Página de detalhe da fatura (/cartoes/:id) é longa, mas com a rolagem
+  // de página em TODAS as resoluções o rodapé (Pagar fatura, Desfazer,
+  // ações) flui naturalmente — não precisa de tratamento especial aqui.
 
   return (
     <div className="tela-inteira" style={estilos.pagina}>
@@ -189,7 +186,7 @@ export default function Layout() {
       {/* Contenido de la ruta. En móvil la página roe (ver global.css:
           .tela-inteira muda a overflow visible bajo 640px). */}
       <main style={ehMobile ? { ...estilos.principal, paddingBottom: '4.5rem' } : estilos.principal}>
-        <CaberNaTela maxLargura={720} rolagem={ehDetalheCartao}>
+        <CaberNaTela maxLargura={720}>
           <Outlet />
         </CaberNaTela>
       </main>
@@ -225,12 +222,6 @@ const estilos = {
   },
   principal: {
     flex: 1,
-    // minHeight 0 deixa o flex item encolher até a área disponível; sem isso
-    // ele cresce até o conteúdo (mais alto que a viewport) e o overflow do
-    // `.tela-inteira` corta o rodapé (Pagar fatura, Desfazer, ações) sem
-    // permitir rolagem. Com minHeight 0, a área de rolagem interna do
-    // CaberNaTela (modo `rolagem`) passa a rolar de fato no desktop.
-    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     width: '100%',

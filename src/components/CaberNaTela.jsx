@@ -1,128 +1,23 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import useMediaQuery from '../hooks/useMediaQuery'
-
-// Breakpoint móvil: por debajo de esta anchura el contenido NO se escala
-// (la página roe y CaberNaTela renderiza os hijos directos, sin envolver).
-const BREAKPOINT = '(max-width: 640px)'
-
-// Envuelve el contenido de una tela para OCUPAR la viewport en desktop:
-// mide el contenido real (scrollWidth/Height) y aplica transform: scale()
-// para que entre sin rolag de página, con margen de seguridad calculada.
+// Envuelve el contenido de una tela.
 //
-// En móvil (< breakpoint) ese encaje se omite: el contenido fluye a tamaño
-// real y la página roe normalmente — no se encogen textos ni botones.
+// ANTES (Etapas 09/13): en desktop medía el contenido real y aplicaba
+// transform: scale() para caber la viewport sin rolag de página. Eso
+// hacía cada tela escalar de forma distinta según su contenido → fuentes
+// de tamaños inconsistentes y páginas que no llenaban el espacio.
 //
-// Prop `rolagem` (bool): quando true, DESLIGA o encolhimento no desktop e
-// abre uma área de rolagem vertical real (largura útil = maxLargura). É o
-// modo para telas longas (ex.: detalhe de fatura de cartão) cujo conteúdo
-// não deve ser espremido na viewport — assim o rodapé (Pagar fatura, ações)
-// nunca fica cortado/inacessível, só rolável.
-export default function CaberNaTela({ children, maxLargura = 480, alinhamento = 'flex-start', rolagem = false }) {
-  const esMovil = useMediaQuery(BREAKPOINT)
-  const ref = useRef(null)
-  const [fator, setFator] = useState(null)
-
-  useLayoutEffect(() => {
-    const no = ref.current
-    if (!no) return
-
-    let fatorActual = null
-
-    function medir() {
-      const { innerHeight: alturaTela, innerWidth: larguraTela } = window
-      const alturaDoConteudo = no.scrollHeight
-      const larguraDoConteudo = no.scrollWidth
-      // fAlto: preencher a altura (sobe acima de 1 em telas grandes).
-      // fLargo: jamais passar da largura da tela — limita o ampliar quando
-      // a tela é menor que maxLargura.
-      // Margen de segurança de 4px na altura: a última linha não é cortada.
-      const f = Math.min(
-        (alturaTela - 4) / alturaDoConteudo,
-        larguraDoConteudo ? larguraTela / larguraDoConteudo : 1,
-      )
-      // floor (nunca arredonda para cima): evita que 0.9996 passe a 1.
-      const redondeado = Math.floor(f * 1000) / 1000
-      if (fatorActual !== redondeado) {
-        fatorActual = redondeado
-        setFator(redondeado)
-      }
-    }
-
-    medir()
-    const ro = new ResizeObserver(medir)
-    ro.observe(no)
-    window.addEventListener('resize', medir)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', medir)
-    }
-  }, [maxLargura])
-
-  if (esMovil) {
-    // Móvil: render direto, sin escala — a página roe.
-    return <div style={{ width: '100%' }}>{children}</div>
-  }
-
-  if (rolagem) {
-    // Desktop com rolagem: nada de escala — uma área rolável vertical de
-    // largura útil confortável para o conteúdo longo.
-    return (
-      <div style={estilos.rolagem}>
-        <div style={{ ...estilos.rolagemInner, maxWidth: maxLargura }}>{children}</div>
-      </div>
-    )
-  }
-
+// AHORA: el comportamiento es UNIFORME en todas las resoluciones, igual
+// al móvil desde la Etapa 13 — sin scale(). El contenido fluye a tamaño
+// real (fonte base 1rem) y la página rola cuando excede la viewport; las
+// listas largas son las que rolan internamente (max-height + overflow).
+//
+// Se mantiene la API (props maxLargura / alinhamento / rolagem / children)
+// para no quebrar los imports existentes. `maxLargura` centraliza el
+// contenido con esa anchura máxima (margin auto); `alinhamento` y
+// `rolagem` quedan aceptados pero ya no cambian el comportamiento.
+export default function CaberNaTela({ children, maxLargura = 480 }) {
   return (
-    <div style={estilos.palco}>
-      {/* Quando amplía (f > 1), ancorar no topo: centralizar cortaría o
-          cartón. Quando encaixa (f <= 1), vale o alineamento pedido. */}
-      <div
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: fator > 1 ? 'flex-start' : alinhamento,
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          ref={ref}
-          style={{
-            width: '100%',
-            maxWidth: maxLargura,
-            transformOrigin: 'top center',
-            transform: fator ? `scale(${fator})` : 'none',
-          }}
-        >
-          {children}
-        </div>
-      </div>
+    <div style={{ width: '100%', maxWidth: maxLargura, margin: '0 auto' }}>
+      {children}
     </div>
   )
-}
-
-const estilos = {
-  // O palco ES a tela (largura total): o contido ampliado nunca cortado
-  // porque f <= largura da tela.
-  palco: {
-    flex: 1,
-    minHeight: 0,
-    width: '100%',
-    overflow: 'hidden',
-  },
-  // Área rolável vertical real para telas longas (sem escala).
-  rolagem: {
-    flex: 1,
-    minHeight: 0,
-    height: '100%',
-    width: '100%',
-    overflowX: 'hidden',
-    overflowY: 'auto',
-    boxSizing: 'border-box',
-  },
-  rolagemInner: {
-    margin: '0 auto',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
 }

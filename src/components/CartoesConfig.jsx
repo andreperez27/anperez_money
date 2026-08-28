@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCartoes } from '../hooks/useCartoes'
 import { useContas } from '../hooks/useContas'
+import ModalFormulario from './ModalFormulario'
 import { estilosComuns, formatoReal } from '../lib/compartilhados'
 
 // Seção de administração dos cartões (usada em Configurações).
@@ -79,7 +80,6 @@ export default function CartoesConfig() {
         ativo: form.ativo,
       })
       cancelar()
-      setMensagem({ tipo: 'ok', texto: 'Cartão atualizado com sucesso.' })
     } catch (err) {
       setMensagem({ tipo: 'erro', texto: err.message })
     } finally {
@@ -128,80 +128,85 @@ export default function CartoesConfig() {
                       {formatoReal.format(Number(cartao.limite))} · fecha dia {cartao.dia_fechamento} · vence dia {cartao.dia_vencimento}
                     </span>
                   </div>
-                  <button type="button" onClick={() => (editando ? cancelar() : abrirEdicao(cartao))} style={estilosLinha.botaoEditar}>
-                    {editando ? 'Cancelar' : 'Editar'}
+                  <button type="button" onClick={() => abrirEdicao(cartao)} style={estilosLinha.botaoEditar}>
+                    Editar
                   </button>
                 </div>
 
                 {editando && (
-                  <form onSubmit={handleSalvar} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.75rem' }}>
-                    <input
-                      type="text"
-                      placeholder="Nome do cartão"
-                      value={form.nome}
-                      onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                      style={estilosComuns.input}
-                    />
-                    <div style={estilosLinha.grid}>
+                  <ModalFormulario
+                    titulo="Editar cartão"
+                    aoFechar={cancelar}
+                  >
+                    <form onSubmit={handleSalvar} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Limite (R$)"
-                        value={form.limite}
-                        onChange={(e) => setForm({ ...form, limite: e.target.value })}
+                        type="text"
+                        placeholder="Nome do cartão"
+                        value={form.nome}
+                        onChange={(e) => setForm({ ...form, nome: e.target.value })}
                         style={estilosComuns.input}
                       />
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        placeholder="Fechamento (dia)"
-                        value={form.dia_fechamento}
-                        onChange={(e) => setForm({ ...form, dia_fechamento: e.target.value })}
-                        style={estilosComuns.input}
-                      />
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        placeholder="Vencimento (dia)"
-                        value={form.dia_vencimento}
-                        onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
-                        style={estilosComuns.input}
-                      />
-                      <select
-                        value={form.conta_id}
-                        onChange={(e) => setForm({ ...form, conta_id: e.target.value })}
-                        style={estilosComuns.input}
-                      >
-                        {contasCarregando && <option value="">Carregando contas...</option>}
-                        <option value="">Sem conta vinculada</option>
-                        {contasAtivas.map((c) => (
-                          <option key={c.id} value={c.id}>{c.nome}</option>
-                        ))}
-                      </select>
-                    </div>
+                      <div style={estilosLinha.grid}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Limite (R$)"
+                          value={form.limite}
+                          onChange={(e) => setForm({ ...form, limite: e.target.value })}
+                          style={estilosComuns.input}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          placeholder="Fechamento (dia)"
+                          value={form.dia_fechamento}
+                          onChange={(e) => setForm({ ...form, dia_fechamento: e.target.value })}
+                          style={estilosComuns.input}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          placeholder="Vencimento (dia)"
+                          value={form.dia_vencimento}
+                          onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
+                          style={estilosComuns.input}
+                        />
+                        <select
+                          value={form.conta_id}
+                          onChange={(e) => setForm({ ...form, conta_id: e.target.value })}
+                          style={estilosComuns.input}
+                        >
+                          {contasCarregando && <option value="">Carregando contas...</option>}
+                          <option value="">Sem conta vinculada</option>
+                          {contasAtivas.map((c) => (
+                            <option key={c.id} value={c.id}>{c.nome}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                    <label style={estilosLinha.checkbox}>
-                      <input
-                        type="checkbox"
-                        checked={form.ativo}
-                        onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
-                      />
-                      Ativo
-                    </label>
+                      <label style={estilosLinha.checkbox}>
+                        <input
+                          type="checkbox"
+                          checked={form.ativo}
+                          onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
+                        />
+                        Ativo
+                      </label>
 
-                    <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
-                      {enviando ? 'Salvando...' : 'Salvar alterações'}
-                    </button>
+                      <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
+                        {enviando ? 'Salvando...' : 'Salvar alterações'}
+                      </button>
+                    </form>
 
                     {mensagem && (
                       <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
                         {mensagem.texto}
                       </p>
                     )}
-                  </form>
+                  </ModalFormulario>
                 )}
               </li>
             )

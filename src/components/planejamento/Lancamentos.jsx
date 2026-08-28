@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMuyEstrecho } from '../../hooks/useMediaQuery'
+import ModalFormulario from '../ModalFormulario'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
 import {
   RÓTULO_ESTADO,
@@ -59,6 +60,7 @@ export default function Lancamentos({
   })
   const [formMsg, setFormMsg] = useState({ tipo: '', texto: '' })
   const [criando, setCriando] = useState(false)
+  const [mostrandoForm, setMostrandoForm] = useState(false)
 
   function campo(campoO) {
     setForm((f) => ({ ...f, ...campoO }))
@@ -143,8 +145,7 @@ export default function Lancamentos({
           totalParcelas,
           dataPrimeiraParcela: form.data_primeira_parcela || dataPadrao,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '' }))
-        setFormMsg({ tipo: 'ok', texto: `Série criada (${totalParcelas} parcela(s)).` })
+        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '', data_primeira_parcela: '' }))
       } else {
         const valor = lerValor(form.valor)
         if (!Number.isFinite(valor) || valor <= 0) {
@@ -157,10 +158,11 @@ export default function Lancamentos({
           valor,
           data_prevista: form.data_prevista || dataPadrao,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '' }))
-        setFormMsg({ tipo: 'ok', texto: 'Planejamento criado.' })
+        setForm((f) => ({ ...f, descricao: '', valor: '', data_prevista: '' }))
       }
       await aoPosMutacao?.()
+      setMostrandoForm(false)
+      setFormMsg({ tipo: '', texto: '' })
     } catch (err) {
       setFormMsg({ tipo: 'erro', texto: `Não foi possível criar: ${err.message}` })
     } finally {
@@ -173,8 +175,22 @@ export default function Lancamentos({
 
   return (
     <section>
-      {/* Formulário de criação — avulsa × parcelada */}
-      <form onSubmit={aoCriar} style={estilos.form} noValidate>
+      {/* Criação de planejamento (avulsa × parcelada) em modal centralizado */}
+      <div style={estilos.topoAcoes}>
+        <button type="button" onClick={() => setMostrandoForm(true)} style={estilosComuns.botaoCriar}>
+          + Novo lançamento
+        </button>
+      </div>
+
+      {mostrandoForm && (
+        <ModalFormulario
+          titulo="Novo planejamento"
+          aoFechar={() => {
+            setMostrandoForm(false)
+            setFormMsg({ tipo: '', texto: '' })
+          }}
+        >
+          <form onSubmit={aoCriar} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }} noValidate>
         <div style={estilos.toggle}>
           <button
             type="button"
@@ -282,7 +298,9 @@ export default function Lancamentos({
         <button type="submit" disabled={criando} style={criando ? estilos.botaoCriando : estilosComuns.botaoCriar}>
           {criando ? 'Criando...' : modo === 'parcelada' ? 'Criar série' : 'Criar planejamento'}
         </button>
-      </form>
+        </form>
+        </ModalFormulario>
+      )}
 
       {erroAcao && <p style={{ ...estilosComuns.mensagemErro, marginTop: '1rem' }}>{erroAcao}</p>}
 
@@ -387,15 +405,7 @@ export default function Lancamentos({
 }
 
 const estilos = {
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.6rem',
-    padding: '1rem',
-    borderRadius: '12px',
-    background: '#111827',
-    border: '1px solid #1f2937',
-  },
+  topoAcoes: { display: 'flex', justifyContent: 'flex-start', marginBottom: '0.75rem' },
   toggle: { display: 'flex', gap: '0.5rem' },
   pilhaModo: {
     padding: '0.35rem 0.9rem',
