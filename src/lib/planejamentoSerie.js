@@ -51,6 +51,8 @@ export function montarLinhasSerie(dados) {
     }
     if (o.origem !== undefined) linha.origem = o.origem
     if (o.conta_destino_id !== undefined) linha.conta_destino_id = o.conta_destino_id
+    if (o.destino_padrao !== undefined) linha.destino_padrao = o.destino_padrao
+    if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id
     if (o.observacao !== undefined) linha.observacao = o.observacao
     return linha
   })
@@ -158,11 +160,23 @@ export function calcularRegeneração(serie, alteracoes) {
     totalCentavos: novoTotalCentavos,
     totalParcelas: novoTotalParcelas,
     dataPrimeiraParcela: dataPrimeira,
+    periodicidade:
+      alteracoes?.periodicidade !== undefined
+        ? alteracoes.periodicidade
+        : ref.periodicidade,
     origem: ref.origem,
     contaDestinoId:
       alteracoes?.conta_destino_id !== undefined
         ? alteracoes.conta_destino_id
         : ref.conta_destino_id,
+    destinoPadrao:
+      alteracoes?.destino_padrao !== undefined
+        ? alteracoes.destino_padrao
+        : ref.destino_padrao,
+    cartaoPadraoId:
+      alteracoes?.cartao_padrao_id !== undefined
+        ? alteracoes.cartao_padrao_id
+        : ref.cartao_padrao_id,
     observacao:
       alteracoes?.observacao !== undefined
         ? alteracoes.observacao

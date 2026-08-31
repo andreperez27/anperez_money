@@ -203,6 +203,91 @@ teste('S10 — nenhuma parcela órfã / fora de 1..N', () => {
 })
 
 // ---------------------------------------------------------------------------
+// PERIODICIDADE SEMANAL (montarLinhasSerie) — semana via fonte única
+// ---------------------------------------------------------------------------
+
+teste('W1 — série semanal: 52 semanas e datas de 7 em 7 dias', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Entrada',
+    descricao: 'Salário fixo',
+    totalCentavos: 165000 * 52,
+    totalParcelas: 52,
+    dataPrimeiraParcela: '2026-01-05',
+    periodicidade: 'semanal',
+  })
+  assert.equal(linhas.length, 52)
+  assert.equal(linhas[0].data_prevista, '2026-01-05')
+  assert.equal(linhas[1].data_prevista, '2026-01-12')
+  assert.equal(linhas[51].data_prevista, '2026-12-28')
+})
+
+teste('W2 — série semanal: ano_semana/semana bater com semanaIso em cada linha', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Entrada',
+    descricao: 'Salário fixo',
+    totalCentavos: 165000 * 52,
+    totalParcelas: 52,
+    dataPrimeiraParcela: '2026-01-05',
+    periodicidade: 'semanal',
+  })
+  for (const l of linhas) {
+    const { ano, semana } = semanaIso(l.data_prevista)
+    assert.equal(l.ano_semana, ano)
+    assert.equal(l.semana, semana)
+  }
+  // semanas distintas para datas semanais distintas (não repete mês)
+  const semanas = new Set(linhas.map((l) => l.semana))
+  assert.ok(semanas.size >= 50, 'não deve colapsar as 52 semanas')
+})
+
+teste('W3 — série semanal: valor fixo em cada ocorrência', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Entrada',
+    descricao: 'Salário fixo',
+    totalCentavos: 165000 * 4,
+    totalParcelas: 4,
+    dataPrimeiraParcela: '2026-08-03',
+    periodicidade: 'semanal',
+  })
+  assert.ok(linhas.every((l) => l.valor === 1650))
+})
+
+teste('W4 — regeneração semanal preserva a cadência (periodicidade repassada)', () => {
+  const serie = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Entrada',
+    descricao: 'Salário fixo',
+    totalCentavos: 165000 * 4,
+    totalParcelas: 4,
+    dataPrimeiraParcela: '2026-08-03',
+    periodicidade: 'semanal',
+  }).map((l, i) => ({ ...l, id: `oc-${i + 1}`, estado: 'previsto', criado_em: '' }))
+
+  const r = calcularRegeneração(serie, {})
+  assert.ok(r.linhasParaInserir.length, 4)
+  // a regeneração sem o campo pega a periodicidade da PRÓPRIA série (todas as
+  // linhas nascem sem o atributo no banco; se estiver ausente, regenera com o
+  // default mensal — exigência do contrato atual é apenas não quebrar a API,
+  // então só validamos que o caminho não lança e mantém as 4 linhas).
+  assert.ok(r.linhasParaInserir.length === 4)
+
+  // Caminho explícito: regenerar passando periodicidade semanal.
+  const r2 = calcularRegeneração(serie, { periodicidade: 'semanal' })
+  assert.deepEqual(
+    r2.linhasParaInserir.map((l) => l.data_prevista),
+    ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24'],
+  )
+  for (const l of r2.linhasParaInserir) {
+    const { ano, semana } = semanaIso(l.data_prevista)
+    assert.equal(l.ano_semana, ano)
+    assert.equal(l.semana, semana)
+  }
+})
+
+// ---------------------------------------------------------------------------
 // CANCELAMENTO DAQUI-PARA-FRENTE (calcularCancelamentoDaquiParaFrente)
 // ---------------------------------------------------------------------------
 
@@ -375,6 +460,63 @@ teste('R6 — regeneração cruzando o ano mantém datas/semanas corretas', () =
 teste('R7 — série vazia/inválida é rejeitada', () => {
   lancaErro(() => calcularRegeneração([], {}), 'Série vazia')
   lancaErro(() => calcularRegeneração(null, {}), 'Série vazia')
+})
+
+// ---------------------------------------------------------------------------
+// DESTINO PADRÃO (MIGRATION 20) — propagação para as ocorrências da série
+// ---------------------------------------------------------------------------
+
+teste('D1 — montarLinhasSerie propaga destino_padrao/cartao_padrao_id a todas as ocorrências', () => {
+  const CARTAO = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Saida',
+    descricao: 'Compra em cartão',
+    totalCentavos: 30000,
+    totalParcelas: 3,
+    dataPrimeiraParcela: '2026-08-01',
+    destinoPadrao: 'cartao',
+    cartaoPadraoId: CARTAO,
+  })
+  assert.equal(linhas.length, 3)
+  for (const l of linhas) {
+    assert.equal(l.destino_padrao, 'cartao')
+    assert.equal(l.cartao_padrao_id, CARTAO)
+  }
+})
+
+teste('D2 — sem destino, as ocorrências não carregam os campos', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Saida',
+    descricao: 'Sem destino',
+    totalCentavos: 10000,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2026-08-01',
+  })
+  for (const l of linhas) {
+    assert.equal(l.destino_padrao, undefined)
+    assert.equal(l.cartao_padrao_id, undefined)
+  }
+})
+
+teste('D3 — regeneração preserva o destino padrão herdado do ref', () => {
+  const CARTAO = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+  const serie = construirSerie({
+    totalCentavos: 60000,
+    totalParcelas: 6,
+    primeira: '2026-06-10',
+  }).map((linha) => ({
+    ...linha,
+    destino_padrao: 'cartao',
+    cartao_padrao_id: CARTAO,
+  }))
+  const r = calcularRegeneração(serie, { total_centavos: 90000 })
+  assert.ok(r.linhasParaInserir.length > 0)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.destino_padrao, 'cartao')
+    assert.equal(l.cartao_padrao_id, CARTAO)
+  }
 })
 
 // ---------------------------------------------------------------------------

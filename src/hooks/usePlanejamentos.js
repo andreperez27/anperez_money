@@ -174,7 +174,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // payload quando não informados — os DEFAULTs do banco prevalecem
   // (mesma convenção do criarCaixinha com objetivo opcional).
   async function criarPlanejamento(dados) {
-    const { tipo_op, data_prevista, estado, origem, conta_destino_id, observacao } = dados
+    const { tipo_op, data_prevista, estado, origem, conta_destino_id, destino_padrao, cartao_padrao_id, observacao } = dados
     const validos = validarCriacao(dados)
 
     const payload = {
@@ -189,6 +189,10 @@ export function usePlanejamentos({ ano, semana } = {}) {
     if (origem !== undefined) payload.origem = origem
     if (conta_destino_id !== undefined && conta_destino_id !== null && conta_destino_id !== '') {
       payload.conta_destino_id = conta_destino_id
+    }
+    if (destino_padrao !== undefined) payload.destino_padrao = destino_padrao
+    if (cartao_padrao_id !== undefined && cartao_padrao_id !== null && cartao_padrao_id !== '') {
+      payload.cartao_padrao_id = cartao_padrao_id
     }
     if (observacao !== undefined && observacao !== null && observacao !== '') {
       payload.observacao = observacao
@@ -207,7 +211,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const payload = {}
     const {
       tipo_op, descricao, valor, data_prevista, estado, origem,
-      conta_destino_id, observacao,
+      conta_destino_id, destino_padrao, cartao_padrao_id, observacao,
     } = alteracoes
 
     if (tipo_op !== undefined) {
@@ -251,6 +255,16 @@ export function usePlanejamentos({ ano, semana } = {}) {
       payload.conta_destino_id =
         conta_destino_id === '' || conta_destino_id === null ? null : conta_destino_id
     }
+    if (destino_padrao !== undefined) {
+      if (destino_padrao !== null && !['conta', 'cartao'].includes(destino_padrao)) {
+        throw new Error('Destino padrão inválido (conta, cartao ou null).')
+      }
+      payload.destino_padrao = destino_padrao
+    }
+    if (cartao_padrao_id !== undefined) {
+      payload.cartao_padrao_id =
+        cartao_padrao_id === '' || cartao_padrao_id === null ? null : cartao_padrao_id
+    }
     if (observacao !== undefined) {
       payload.observacao = observacao === '' ? null : observacao
     }
@@ -281,6 +295,47 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // EXCLUIR). A confirmação visual fica na UI.
   async function excluirPlanejamento(id) {
     const { error } = await supabase.from('planejamentos').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
+  // Realizar (Efetivação — ETAPA 06/E5-F): transforma UMA previsão 'previsto'
+  // em lançamento real de CONTA via RPC atômica no banco (migration 16). O
+  // Postgres faz INSERT em movimentacoes + UPDATE para 'realizado' na mesma
+  // transação — a trigger trg_atualizar_saldo ajusta o saldo da conta sozinha.
+  // Só destinos em CONTA (movimentacoes); Cartão/compra fica para etapa futura.
+  // A RPC valida propriedade/estado no servidor (nada confiado ao cliente);
+  // após o sucesso, atualizar() recarrega a semana (previsão some do montante
+  // 'previsto' e passa a 'realizado' — mesma convenção dos demais métodos).
+  async function realizarPlanejamento(id, { conta_id, valor_real, data_realizacao } = {}) {
+    const params = { p_planejamento_id: id, p_conta_id: conta_id }
+    if (valor_real !== undefined && valor_real !== null && valor_real !== '') {
+      params.p_valor_real = Number(valor_real)
+    }
+    if (data_realizacao) params.p_data_realizacao = data_realizacao
+
+    const { error } = await supabase.rpc('realizar_planejamento', params)
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
+  // Realizar em CARTÃO (Efetivação Cartão — migration 19): transforma UMA
+  // previsão 'previsto' (de DESPESA) em COMPRA no cartão de crédito via RPC
+  // atômica. O banco valida estado/posse do cartão no servidor e reutiliza a
+  // RPC criar_compra com n_parcelas=1 (à vista) — a compra gera UMA parcela na
+  // fatura sem mexer no saldo da conta (só o pagamento da fatura o faz). O
+  // registro fica 'realizado' com lancamento_tipo='compra' e lancamento_id
+  // apontando para compras.id. Após o sucesso, atualizar() recarrega a semana.
+  async function realizarPlanejamentoCartao(id, { cartao_id, valor_real, data_compra } = {}) {
+    const params = { p_planejamento_id: id, p_cartao_id: cartao_id }
+    if (valor_real !== undefined && valor_real !== null && valor_real !== '') {
+      params.p_valor_real = Number(valor_real)
+    }
+    if (data_compra) params.p_data_compra = data_compra
+
+    const { error } = await supabase.rpc('realizar_planejamento_cartao', params)
     if (error) throw new Error(error.message)
 
     await atualizar()
@@ -380,6 +435,26 @@ export function usePlanejamentos({ ano, semana } = {}) {
     await atualizar()
   }
 
+  // Consulta EXPLÍCITA de TODOS os planejamentos 'previsto' com destino
+  // Cartão, sem janela de período (fonte da PROJEÇÃO da fatura). A fatura
+  // projetada respeita o dia_fechamento do cartão e cai no mês do VENCIMENTO
+  // (que pode ser diferente do mês da data_prevista da compra). Para projetá-la
+  // em qualquer período em que o vencimento caia, precisamos conhecer o previsto
+  // mesmo fora do período visível — daí esta consulta ampla. Retorna a MESMA
+  // forma de item de select('*') (compatível com calcularMesFatura/montarProjecao).
+  // Sem filtro user_id: a RLS isola o usuário no banco (como nos demais métodos).
+  async function listarPrevistosCartao() {
+    const { data, error } = await supabase
+      .from('planejamentos')
+      .select('*')
+      .eq('estado', 'previsto')
+      .eq('destino_padrao', 'cartao')
+      .not('cartao_padrao_id', 'is', null)
+      .order('data_prevista')
+    if (error) throw new Error(error.message)
+    return data ?? []
+  }
+
   // Período da semana vigente, SEMPRE pela fonte única semana.js.
   const periodo = useMemo(() => {
     if (!alvo) return null
@@ -407,10 +482,13 @@ export function usePlanejamentos({ ano, semana } = {}) {
     atualizar,
     listarPorSemana,
     listarPorPeriodo,
+    listarPrevistosCartao,
     criarPlanejamento,
     editarPlanejamento,
     cancelarPlanejamento,
     excluirPlanejamento,
+    realizarPlanejamento,
+    realizarPlanejamentoCartao,
     criarSerieParcelada,
     cancelarSerieAPartirDe,
     regenerarSerie,

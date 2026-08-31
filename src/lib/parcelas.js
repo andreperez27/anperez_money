@@ -79,16 +79,41 @@ export function dividirValorEmParcelas(totalCentavos, quantidade) {
 }
 
 // ----------------------------------------------------------------------------
+// 2. PERIODICIDADE VÁLIDA — 'mensal' (padrão) ou 'semanal'
+// ----------------------------------------------------------------------------
+const PERIODICIDADES = ['mensal', 'semanal']
+
+function validarPeriodicidade(periodicidade) {
+  if (periodicidade === undefined || periodicidade === null) return 'mensal'
+  if (!PERIODICIDADES.includes(periodicidade)) {
+    throw new Error(
+      `Periodicidade inválida ("${periodicidade}"): use mensal ou semanal.`,
+    )
+  }
+  return periodicidade
+}
+
+// ----------------------------------------------------------------------------
 // 2. DATA DA PARCELA — ancorada no dia original, clamp no fim do mês (D2)
 // ----------------------------------------------------------------------------
-// Parcela 1 devolve a própria dataPrimeiraParcela. As demais avançam meses
+// Parcela 1 devolve a própria dataPrimeiraParcela. As demais avançam MESES
 // inteiros por componentes UTC; quando o mês-alvo não tem o dia âncora,
 // usa-se o ÚLTIMO dia dele — sem perder a âncora para os meses seguintes.
-export function dataDaParcela(dataPrimeiraISO, numeroParcela) {
+//
+// Periodicidade 'semanal': parcela N = dataPrimeiraISO + 7*(N-1) dias
+// corridos. Não há clamp de fim de mês (não se aplica a semanas). O
+// resultado continua um dia CIVIL válido via aritmética UTC.
+export function dataDaParcela(dataPrimeiraISO, numeroParcela, periodicidade = 'mensal') {
   if (!Number.isInteger(numeroParcela) || numeroParcela < 1) {
     throw new Error(`Número da parcela inválido (${numeroParcela}).`)
   }
   const { ano, mes, dia } = lerDataCivil(dataPrimeiraISO)
+  const per = validarPeriodicidade(periodicidade)
+
+  if (per === 'semanal') {
+    const ts0 = Date.UTC(ano, mes - 1, dia)
+    return isoDe(ts0 + (numeroParcela - 1) * 7 * 86_400_000)
+  }
 
   const indiceMes = mes - 1 + (numeroParcela - 1)
   const anoAlvo = ano + Math.floor(indiceMes / 12)
@@ -115,8 +140,11 @@ export function gerarOcorrenciasDaSerie(dados) {
     totalCentavos,
     totalParcelas,
     dataPrimeiraParcela,
+    periodicidade,
     origem,
     contaDestinoId,
+    destinoPadrao,
+    cartaoPadraoId,
     observacao,
   } = dados ?? {}
 
@@ -143,11 +171,15 @@ export function gerarOcorrenciasDaSerie(dados) {
       // Centavos -> reais só NA SAÍDA (exibição/payload); o cálculo foi todo
       // em inteiro. Ex.: 15000 -> 150 (representação exata até 2 decimais).
       valor: centavos / 100,
-      data_prevista: dataDaParcela(dataPrimeiraParcela, numero),
+      data_prevista: dataDaParcela(dataPrimeiraParcela, numero, periodicidade),
     }
     if (origem !== undefined) ocorrencia.origem = origem
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
       ocorrencia.conta_destino_id = contaDestinoId
+    }
+    if (destinoPadrao !== undefined) ocorrencia.destino_padrao = destinoPadrao
+    if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
+      ocorrencia.cartao_padrao_id = cartaoPadraoId
     }
     if (observacao !== undefined && observacao !== null && observacao !== '') {
       ocorrencia.observacao = observacao

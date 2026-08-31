@@ -41,6 +41,8 @@ export function rotuloTitulo(periodo) {
   if (periodo.tipo === 'semana') return `Semana ${periodo.semana} / ${periodo.ano}`
   if (periodo.tipo === 'mes') return `${NOME_MES[periodo.mes - 1]} / ${periodo.ano}`
   if (periodo.tipo === 'trimestre') return `${periodo.trimestre}º trimestre / ${periodo.ano}`
+  if (periodo.tipo === 'semestre') return `${periodo.semestre}º semestre / ${periodo.ano}`
+  if (periodo.tipo === 'ano') return `Ano ${periodo.ano}`
   return `${periodo.semestre}º semestre / ${periodo.ano}`
 }
 
@@ -99,8 +101,20 @@ export const estilosItem = {
   valor: { fontWeight: 'bold', whiteSpace: 'nowrap' },
   acoes: { display: 'flex', gap: '0.25rem' },
   botaoAcaoNeutro: { background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
+  botaoAcaoRealizar: { background: 'transparent', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
+  botaoAcaoFatura: { background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
   botaoAcaoSerie: { background: 'transparent', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   botaoAcaoExcluir: { background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   badgeParcela: { padding: '0.15rem 0.5rem', borderRadius: '6px', background: '#1f2937', color: '#9ca3af', fontSize: '0.72rem', whiteSpace: 'nowrap' },
+  // Item de FATURA automática (projeção dinâmica do cartão, não persistida) —
+  // tom VIOLETA para distinguir de 'previsto' (azul) e de 'Disponível' (amarelo).
+  badgeFatura: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(167, 139, 250, 0.15)', color: '#a78bfa', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Fatura PROJETADA (mês futuro com/por previstos de destino cartão): tom
+  // VERDE-LIMÃO, sem botão de pagar (só a fatura REAL paga).
+  badgeProjecao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(163, 230, 53, 0.15)', color: '#a3e635', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
   badgeDisponivel: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Destino padrão planejado (cartão) em item ainda PREVISTO — tom AZUL, para
+  // deixar claro que é intenção (não efetivado), diferente do badge de compra
+  // já lançada e do "Disponível" (amarelo).
+  badgeDestinoCartao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(66, 165, 245, 0.15)', color: '#42A5F5', fontSize: '0.7rem', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
 }

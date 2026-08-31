@@ -296,6 +296,74 @@ teste('TESTE S9 — inválidos na série: série/tipo/descrição/quantidade/tot
 })
 
 // ---------------------------------------------------------------------------
+// TESTES DE PERIODICIDADE SEMANAL (ETAPA — pré-requisito da série semanal)
+// ---------------------------------------------------------------------------
+// dataDaParcela com periodicidade='semanal': parcela N = primeira + 7*(N-1)
+// dias corridos. Sem clamp de fim de mês (não se aplica). O default continua
+// 'mensal' — estes testes confirmam a separação dos dois caminhos.
+
+teste('W1 — semanal: datas avançam 7 dias corridos', () => {
+  assert.deepEqual(
+    [
+      dataDaParcela('2026-01-05', 1, 'semanal'),
+      dataDaParcela('2026-01-05', 2, 'semanal'),
+      dataDaParcela('2026-01-05', 3, 'semanal'),
+      dataDaParcela('2026-01-05', 4, 'semanal'),
+    ],
+    ['2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26'],
+  )
+})
+
+teste('W2 — semanal: semanal cruza mês e ano sem clamp de fim de mês', () => {
+  // 31/12/2026 + 1 semana = 07/01/2027 (virada; sem clamp para 31)
+  assert.equal(dataDaParcela('2026-12-31', 2, 'semanal'), '2027-01-07')
+  // 28/02/2026 + 1 semana = 07/03/2026 (fevereiro não "segura" repetir o 28)
+  assert.equal(dataDaParcela('2026-02-28', 2, 'semanal'), '2026-03-07')
+})
+
+teste('W3 — semanal: mesma data, periodicidade inválida é rejeitada', () => {
+  lancaErro(() => dataDaParcela('2026-01-05', 1, 'quinzenal'), 'mensal ou semanal')
+  lancaErro(() => dataDaParcela('2026-01-05', 1, ''), 'mensal ou semanal')
+})
+
+teste('W4 — gerarOcorrenciasDaSerie semanal: 4 semanas exatas', () => {
+  const ocorrencias = gerarOcorrenciasDaSerie({
+    serieId: 's-semanal',
+    tipoOp: 'Entrada',
+    descricao: 'Salário fixo',
+    totalCentavos: 165000,
+    totalParcelas: 4,
+    dataPrimeiraParcela: '2026-08-03',
+    periodicidade: 'semanal',
+  })
+  assert.equal(ocorrencias.length, 4)
+  assert.deepEqual(
+    ocorrencias.map((o) => o.data_prevista),
+    ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24'],
+  )
+  // valor por parcela = 165000/4 = 41250 centavos = 412,50
+  assert.ok(ocorrencias.every((o) => o.valor === 412.5))
+  assert.equal(somaCentavos(ocorrencias.map((o) => o.valor)), 165000)
+})
+
+teste('W5 — default continua mensal (periodicidade omitida)', () => {
+  // Sem passar periodicidade, o comportamento mensal é intocado.
+  assert.equal(dataDaParcela('2026-01-31', 2), '2026-02-28')
+  const ocorrencias = gerarOcorrenciasDaSerie({
+    serieId: 's-mensal',
+    tipoOp: 'Saida',
+    descricao: 'Seguro',
+    totalCentavos: 30000,
+    totalParcelas: 3,
+    dataPrimeiraParcela: '2026-07-10',
+  })
+  assert.deepEqual(
+    ocorrencias.map((o) => o.data_prevista),
+    ['2026-07-10', '2026-08-10', '2026-09-10'],
+  )
+})
+
+// ---------------------------------------------------------------------------
 
 console.log(`\n${ok} ok, ${falhou} falharam`)
 if (falhou > 0) process.exitCode = 1

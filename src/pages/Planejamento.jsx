@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { usePlanejamentos } from '../hooks/usePlanejamentos'
+import { useFaturasPlanejamento } from '../hooks/useFaturasPlanejamento'
+import { montarProjecao } from '../lib/faturaProjecao'
 import { estilosComuns, hoje } from '../lib/compartilhados'
 import { definirPeriodo, deslocarPeriodo, ehPeriodoAtual } from '../lib/periodos'
 import { calcularResumoPlanejamentos } from '../lib/planejamentoCalc'
@@ -25,12 +27,21 @@ import Lancamentos from '../components/planejamento/Lancamentos'
 //   • Lançamentos.jsx concentra formulário e ações (comportamento E5-E intacto);
 //   • VisaoGeral.jsx exibe resumo, contagens, divisão por mês e próximos.
 //
+// Em 31/08/2026 as abas superiores dedicadas Condomínio e DAS-MEI foram
+// REMOVIDAS (decisão com André): os formulários foram consolidados DENTRO do
+// modal "Novo planejamento" de Lancamentos.jsx, nas opções [Recorrente] e
+// [Condomínio]. Os geradores (GeradorCondominio.jsx, GeradorRecorrenciaMensal.jsx)
+// e a lib de média móvel (mediaMovelCalc.js) foram REATIVADOS no modal. Ver
+// DIARIO_DE_BORDO.md.
+//
 // Ao trocar o TIPO de período, a tela volta para o período que contém HOJE
 // (previsível e igual à semântica do botão Hoje). "Hoje" nunca desloca dia
 // civil por timezone: hoje() é data civil YYYY-MM-DD e periodos.js opera em UTC.
 //
-// FORA de escopo nesta etapa: Recorrentes (aba/migration/gerador) e efetivação
-// E5-F (botão Lançar). O hook usePlanejamentos permanece INTACTO.
+// Realização ("Lançar") cobre CONTAS (RPC realizar_planejamento via
+// movimentacoes) e CARTÃO (RPC realizar_planejamento_cartao à vista via
+// criar_compra, migration 19). O hook usePlanejamentos permanece INTACTO em
+// comportamento (novos métodos somam, não alteram os existentes).
 // ============================================================================
 
 export default function Planejamento() {
@@ -47,19 +58,35 @@ export default function Planejamento() {
     itens,
     alvo,
     periodo: periodoSemana,
-    totais,
-    contagens,
     listarPorSemana,
     listarPorPeriodo,
+    listarPrevistosCartao,
     cancelarPlanejamento,
     excluirPlanejamento,
+    realizarPlanejamento,
+    realizarPlanejamentoCartao,
     criarPlanejamento,
     criarSerieParcelada,
+    editarPlanejamento,
     cancelarSerieAPartirDe,
+    atualizar,
   } = usePlanejamentos({ ano: semanaInicial.ano, semana: semanaInicial.semana })
+
+  // Fatura automática: as faturas reais de todos os meses de cada cartão ativo
+  // entram como itens sintéticos (não gravados no banco). Projeção = real +
+  // previstos de destino cartão. pagarFatura chama a RPC pagar_fatura do módulo
+  // Cartões (sempre só sobre dado real).
+  const faturasPlanejamento = useFaturasPlanejamento()
+  const { faturasReais, cartoes, pagarFatura, recarregar: recarregarFaturas } = faturasPlanejamento
 
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
   const [aba, setAba] = useState('visao') // 'visao' | 'lancamentos'
+
+  // Todos os planejamentos 'previsto' de destino Cartão (sem janela). Fonte da
+  // PROJEÇÃO da fatura: permite projetar o VENCIMENTO em qualquer período em que
+  // ele caia, respeitando o dia_fechamento, mesmo que a compra prevista tenha
+  // data_prevista noutra faixa (evita o furo compra/vencimento em períodos distintos).
+  const [previstosCartaoTotal, setPrevistosCartaoTotal] = useState([])
 
   // Período corrente das visões MÊS/TRIMESTRE/SEMESTRE (estado da página).
   const [periodo, setPeriodo] = useState(() => definirPeriodo('mes', hoje()))
@@ -113,18 +140,61 @@ export default function Planejamento() {
     // muda), sem nenhum dado novo.
   }, [modoSemana, periodo]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Recarrega os PREVISTOS de destino cartão sempre que o período visível muda
+  // (após navegação ou mutação), garantindo que a projeção da fatura esteja atual.
+  useEffect(() => {
+    let ativo = true
+    listarPrevistosCartao()
+      .then((dados) => {
+        if (ativo) setPrevistosCartaoTotal(dados)
+      })
+      .catch(() => {
+        if (ativo) setPrevistosCartaoTotal([])
+      })
+    return () => {
+      ativo = false
+    }
+    // listarPrevistosCartao é uma função do hook cuja identidade muda a cada
+    // render; incluí-la nas dependências dispararia recarga sem dado novo.
+  }, [periodoVisivel]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const carregandoVisivel = modoSemana ? carregando : carregandoPeriodo
   const erroVisivel = modoSemana ? erro : erroPeriodo
-  const itensVisiveis = modoSemana ? itens : itensPeriodo
+  const itensBase = modoSemana ? itens : itensPeriodo
 
-  // Resumo: na SEMANA vêm PRONTOS do hook (caminho validado); nos períodos
-  // maiores, a MESMA função pura do domínio sobre a faixa buscada.
-  const resumoPeriodo = useMemo(
-    () => calcularResumoPlanejamentos(itensPeriodo),
-    [itensPeriodo],
+  // Projeção da FATURA: faz a união do dado real de v_faturas com os
+  // planejamentos 'previsto' de destino Cartão (por mês de fatura calculado),
+  // gerando um item de fatura por (cartão, mês) dentro do período visível.
+  // Retorna os dois arrays:
+  //   • itensVisiveis     — timeline/lista (previstos de cartão continuam como
+  //                         linha própria + as faturas projetadas).
+  //   • itensParaSomatorio — o array que passa em calcularResumoPlanejamentos,
+  //                         sem o previsto de cartão absorvido (evita a
+  //                         dupla contagem: a fatura já carrega esse valor).
+  const { itensVisiveis, itensParaSomatorio } = useMemo(() => {
+    if (!periodoVisivel) {
+      return { itensVisiveis: itensBase, itensParaSomatorio: itensBase }
+    }
+    const res = montarProjecao({
+      itensBase,
+      cartoes,
+      faturasReais,
+      inicioISO: periodoVisivel.inicio,
+      fimISO: periodoVisivel.fim,
+      previstosCartaoExternos: previstosCartaoTotal,
+    })
+    return res
+  }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal])
+
+  // Resumo: SEMPRE via a função pura do domínio sobre o array PARA SOMATÓRIO
+  // (que exclui os previstos de cartão absorvidos pela fatura, evitando contar
+  // o mesmo valor duas vezes). O array visível (timeline) é só para listar.
+  const resumoVisivel = useMemo(
+    () => calcularResumoPlanejamentos(itensParaSomatorio),
+    [itensParaSomatorio],
   )
-  const totaisVisiveis = modoSemana ? totais : resumoPeriodo.totais
-  const contagensVisiveis = modoSemana ? contagens : resumoPeriodo.contagens
+  const totaisVisiveis = resumoVisivel.totais
+  const contagensVisiveis = resumoVisivel.contagens
 
   const unidadeAtual =
     !!periodoVisivel && ehPeriodoAtual(tipoPeriodo, periodoVisivel, hoje())
@@ -181,12 +251,27 @@ export default function Planejamento() {
     }
   }
 
+  // Efetivação de um item de FATURA (real): chama a RPC pagar_fatura do módulo
+  // Cartões pagando SOMENTE o valor real (valor_real = o que está em v_faturas
+  // / fatura_pagamentos), nunca previstos. Depois relê as faturas (a paga sai da
+  // projeção e a próxima entra) e os planejamentos.
+  async function aoPagarFatura(item) {
+    await pagarFatura({
+      cartao_id: item.fatura_cartao_id,
+      valor: item.valor_real,
+      mes_fatura: item.fatura_mes,
+      descricao: item.descricao,
+    })
+    await recarregarFaturas()
+    await atualizar()
+  }
+
   return (
     <div style={estilosComuns.conteudo}>
       <header style={{ marginBottom: '1.25rem' }}>
         <h2 style={estilos.titulo}>Planejamentos</h2>
         <p style={estilos.subtitulo}>
-          Entradas e despesas planejadas — visão por semana, mês, trimestre ou semestre.
+          Entradas e despesas planejadas — visão por semana, mês, trimestre, semestre ou ano.
         </p>
       </header>
 
@@ -242,13 +327,19 @@ export default function Planejamento() {
             cancelar: cancelarPlanejamento,
             cancelarSerie: cancelarSerieAPartirDe,
             excluir: excluirPlanejamento,
+            editar: editarPlanejamento,
+            realizar: realizarPlanejamento,
+            realizarCartao: realizarPlanejamentoCartao,
+            realizarFatura: aoPagarFatura,
           }}
           aoPosMutacao={aoPosMutacao}
         />
       )}
 
       <p style={estilos.notaEtapa}>
-        A efetivação (lançar em conta/cartão) será disponibilizada em etapa futura.
+        A realização pode ser feita em conta (RPC realizar_planejamento) ou em
+        cartão de crédito (RPC realizar_planejamento_cartao, à vista) pela aba
+        Lançamentos.
       </p>
     </div>
   )
