@@ -108,3 +108,40 @@ export function agruparPorSemanaISO(itens = []) {
 
   return ordenarPorChave([...grupos.values()])
 }
+
+// ---------------------------------------------------------------------------
+// Agrupa pelo ANO CIVIL de data_prevista.
+//
+// agruparPorAno(itens) →
+// [
+//   { chave:'2025', ano:2025, inicio:'2025-01-01', fim:'2025-12-31', itens:[...] },
+//   { chave:'2026', ano:2026, inicio:'2026-01-01', fim:'2026-12-31', itens:[...] },
+// ]
+// Os limites de ano vêm de periodos.js (definirPeriodo), como nos demais
+// agrupadores — sem recálculo manual de "quantos dias tem o ano".
+// ---------------------------------------------------------------------------
+export function agruparPorAno(itens = []) {
+  if (!Array.isArray(itens)) {
+    throw new Error('agruparPorAno espera uma lista de itens.')
+  }
+
+  const grupos = new Map()
+  for (let i = 0; i < itens.length; i++) {
+    const data = dataPrevistaValida(itens[i], i)
+    const ano = data.slice(0, 4) // 'YYYY' — ordena cronológico como texto
+
+    if (!grupos.has(ano)) {
+      const limites = definirPeriodo('ano', `${ano}-06-15`)
+      grupos.set(ano, {
+        chave: ano,
+        ano: Number(ano),
+        inicio: limites.inicio,
+        fim: limites.fim,
+        itens: [],
+      })
+    }
+    grupos.get(ano).itens.push(itens[i])
+  }
+
+  return ordenarPorChave([...grupos.values()])
+}

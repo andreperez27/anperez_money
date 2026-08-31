@@ -7,13 +7,14 @@
 //
 // Representação única de período (contrato estável):
 //   { tipo, inicio, fim, ...metadados }
-//   • tipo: 'semana' | 'mes' | 'trimestre' | 'semestre'
+//   • tipo: 'semana' | 'mes' | 'trimestre' | 'semestre' | 'ano'
 //   • inicio/fim: datas civis 'YYYY-MM-DD' INCLUSIVAS, sempre inicio <= fim
 //   • metadados mínimos por tipo (só o que identifica o período):
 //       semana    → ano, semana        (ISO 8601, via src/lib/semana.js)
 //       mes       → ano, mes           (mes 1–12, calendário civil)
 //       trimestre → ano, trimestre     (Q1..Q4 → 1..4)
 //       semestre  → ano, semestre      (S1..S2 → 1..2)
+//       ano       → ano                (ano civil)
 //
 // REGRAS DE OURO:
 //   • A lógica ISO de semana NÃO é duplicada: delega 100% para
@@ -32,7 +33,7 @@ const MS_DIA = 86_400_000
 
 import { semanaIso } from './semana.js'
 
-export const TIPOS_DE_PERIODO = ['semana', 'mes', 'trimestre', 'semestre']
+export const TIPOS_DE_PERIODO = ['semana', 'mes', 'trimestre', 'semestre', 'ano']
 
 // ---------------------------------------------------------------------------
 // Internos — validação e aritmética de data civil (mesmas regras de semana.js:
@@ -147,6 +148,15 @@ export function definirPeriodo(tipo, referencia) {
     )
   }
 
+  if (tipo === 'ano') {
+    return montarPeriodo(
+      tipo,
+      { ano },
+      isoDe(ano, 1, 1),
+      isoDe(ano, 12, diasNoMes(ano, 12)),
+    )
+  }
+
   throw new Error(
     `Tipo de período desconhecido ("${tipo}"): use ${TIPOS_DE_PERIODO.join(', ')}.`,
   )
@@ -221,6 +231,17 @@ export function deslocarPeriodo(tipo, periodo, delta) {
       { ano: novoAno, semestre: novoSemestre },
       isoDe(novoAno, primeiroMes, 1),
       isoDe(novoAno, ultimoMes, diasNoMes(novoAno, ultimoMes)),
+    )
+  }
+
+  if (tipo === 'ano') {
+    inteiro(periodo.ano, 'Ano')
+    const novoAno = periodo.ano + n
+    return montarPeriodo(
+      tipo,
+      { ano: novoAno },
+      isoDe(novoAno, 1, 1),
+      isoDe(novoAno, 12, diasNoMes(novoAno, 12)),
     )
   }
 

@@ -190,6 +190,42 @@ caso('V4 — S1 −1 → S2 do ANO ANTERIOR', () => {
 })
 
 // ---------------------------------------------------------------------------
+// ANO — ano civil
+caso('A1 — ano simples: qualquer data de 2026 → 01/01→31/12', () => {
+  assert.deepEqual(definirPeriodo('ano', '2026-08-26'), {
+    tipo: 'ano', ano: 2026, inicio: '2026-01-01', fim: '2026-12-31',
+  })
+})
+caso('A2 — último dia do ano inclusivo (31/12)', () => {
+  const p = definirPeriodo('ano', '2026-12-31')
+  assert.equal(p.inicio, '2026-01-01')
+  assert.equal(p.fim, '2026-12-31')
+})
+caso('A3 — primeiro dia do ano também pertence a ele', () => {
+  const p = definirPeriodo('ano', '2026-01-01')
+  assert.equal(p.inicio, '2026-01-01')
+  assert.equal(p.fim, '2026-12-31')
+})
+caso('A4 — ano +1 +1 → ano seguinte inteiro (2027)', () => {
+  const p = definirPeriodo('ano', '2026-08-26')
+  assert.deepEqual(deslocarPeriodo('ano', p, 1), {
+    tipo: 'ano', ano: 2027, inicio: '2027-01-01', fim: '2027-12-31',
+  })
+})
+caso('A5 — ano −1 → ano anterior inteiro (2025)', () => {
+  const p = definirPeriodo('ano', '2026-08-26')
+  assert.deepEqual(deslocarPeriodo('ano', p, -1), {
+    tipo: 'ano', ano: 2025, inicio: '2025-01-01', fim: '2025-12-31',
+  })
+})
+caso('A6 — ano bissexto seguido não quebra (2024 → 2025)', () => {
+  const p = definirPeriodo('ano', '2024-03-01')
+  const a = deslocarPeriodo('ano', p, 1)
+  assert.equal(a.ano, 2025)
+  assert.equal(a.fim, '2025-12-31')
+})
+
+// ---------------------------------------------------------------------------
 // PERÍODO ATUAL — sempre com referência EXPLÍCITA (sem relógio)
 caso('P1 — data dentro do período → true', () => {
   const p = definirPeriodo('mes', '2026-08-01')

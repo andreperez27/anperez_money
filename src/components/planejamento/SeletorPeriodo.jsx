@@ -16,6 +16,7 @@ const RÓTULO_UNIDADE = {
   mes: 'Mês',
   trimestre: 'Trimestre',
   semestre: 'Semestre',
+  ano: 'Ano',
 }
 
 export default function SeletorPeriodo({

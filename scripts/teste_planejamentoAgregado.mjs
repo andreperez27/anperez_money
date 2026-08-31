@@ -15,7 +15,7 @@
 //   • dados inválidos lançam erro CLARO (nunca descarte silencioso).
 // Sem dependências externas — apenas node:assert.
 import assert from 'node:assert/strict'
-import { agruparPorMes, agruparPorSemanaISO } from '../src/lib/planejamentoAgregado.js'
+import { agruparPorMes, agruparPorSemanaISO, agruparPorAno } from '../src/lib/planejamentoAgregado.js'
 
 let passou = 0
 let falhou = 0
@@ -143,6 +143,51 @@ caso('S6 — W52/2025 vem ANTES de W01/2026 na ordenação', () => {
 })
 
 // ---------------------------------------------------------------------------
+// agruparPorAno
+caso('Y1 — lista vazia devolve [] (nunca null)', () => {
+  assert.deepEqual(agruparPorAno([]), [])
+})
+caso('Y2 — um ano completo: chave/ano/limites corretos', () => {
+  const origem = item('2026-08-26', 'único')
+  const [g] = agruparPorAno([origem])
+  assert.equal(g.chave, '2026')
+  assert.equal(g.ano, 2026)
+  assert.equal(g.inicio, '2026-01-01')
+  assert.equal(g.fim, '2026-12-31')
+  assert.equal(g.itens.length, 1)
+  assert.equal(g.itens[0], origem) // MESMA referência — sem cópia
+})
+caso('Y3 — itens de anos diferentes FORA DE ORDEM saem cronológicos', () => {
+  const grupos = agruparPorAno([
+    item('2026-08-10'),
+    item('2025-01-01'),
+    item('2027-03-03'),
+    item('2025-12-31'),
+  ])
+  assert.deepEqual(
+    grupos.map((g) => g.chave),
+    ['2025', '2026', '2027'],
+  )
+  assert.equal(grupos[0].fim, '2025-12-31')
+  assert.equal(grupos[1].inicio, '2026-01-01')
+  assert.equal(grupos[2].fim, '2027-12-31')
+})
+caso('Y4 — primeiro e último dia do ano caem no mesmo grupo', () => {
+  const grupos = agruparPorAno([item('2026-12-31'), item('2026-01-01')])
+  assert.equal(grupos.length, 1)
+  assert.equal(grupos[0].itens.length, 2)
+})
+caso('Y5 — ano bissexto não quebra os limites (2024 → 2025)', () => {
+  const grupos = agruparPorAno([item('2024-02-29'), item('2025-06-15')])
+  assert.deepEqual(
+    grupos.map((g) => g.chave),
+    ['2024', '2025'],
+  )
+  assert.equal(grupos[0].fim, '2024-12-31')
+  assert.equal(grupos[1].fim, '2025-12-31')
+})
+
+// ---------------------------------------------------------------------------
 // CONSISTÊNCIA — nenhuma perda, nenhuma duplicação (por referência)
 caso('C1 — varredura: soma dos grupos = total de itens (mês)', () => {
   const datas = []
@@ -160,7 +205,7 @@ caso('C2 — cada item aparece EXATAMENTE uma vez (sem duplicação)', () => {
     item('2026-08-30'),
     item('2025-12-29'),
   ]
-  const grupos = [...agruparPorMes(itens), ...agruparPorSemanaISO(itens)]
+  const grupos = [...agruparPorMes(itens), ...agruparPorSemanaISO(itens), ...agruparPorAno(itens)]
   const vistas = new Map()
   for (const g of grupos) {
     for (const it of g.itens) {
@@ -169,7 +214,7 @@ caso('C2 — cada item aparece EXATAMENTE uma vez (sem duplicação)', () => {
   }
   assert.equal(vistas.size, itens.length) // nenhum item perdido
   for (const vezes of vistas.values()) {
-    assert.equal(vezes, 2) // 1x em cada agrupador, nunca 2x no mesmo
+    assert.equal(vezes, 3) // 1x em cada agrupador, nunca 2x no mesmo
   }
 })
 caso('C3 — associação correta: o item está no grupo da SUA data', () => {
@@ -194,6 +239,7 @@ caso('I3 — data inexistente no calendário é rejeitada (2026-02-30)', () => {
 caso('I4 — entrada que não é lista é rejeitada', () => {
   assert.throws(() => agruparPorMes(null), /lista/)
   assert.throws(() => agruparPorSemanaISO('não sou lista'), /lista/)
+  assert.throws(() => agruparPorAno({}), /lista/)
 })
 
 // ---------------------------------------------------------------------------
