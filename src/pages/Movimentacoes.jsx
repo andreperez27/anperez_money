@@ -76,7 +76,7 @@ export default function Movimentacoes() {
     }
   }, [periodo, personalizado.dataInicio, personalizado.dataFim, contaAtiva?.id])
 
-  const { movimentacoes, carregando, erro, criarMovimentacao, editarMovimentacao, excluirMovimentacao, atualizar: atualizarLista } =
+  const { movimentacoes, carregando, erro, criarMovimentacao, editarMovimentacao, excluirMovimentacao, atualizar: atualizarLista, moverMovimentacaoNoDia } =
     useMovimentacoes(filtros)
   const { excluir: excluirTransferenciaRpc } = useTransferencias()
   const navigate = useNavigate()
@@ -320,6 +320,21 @@ export default function Movimentacoes() {
     }
   }
 
+  // "Reordenar dentro do dia" (ETAPA 07 do Extrato): a RPC
+  // mover_movimentacao_no_dia troca a posição do lançamento com o vizinho do
+  // MESMO DIA (↑ sobe, ↓ desce). Só muda a ordem de exibição — o saldo
+  // progressivo recomputa porque o próprio método recarrega a lista com os
+  // filtros vigentes. O saldo_de_abertura não muda (são as mesmas linhas), por
+  // isso não damos pulsoAbertura aqui.
+  async function handleMoverDia(mov, sentido) {
+    setMensagem(null)
+    try {
+      await moverMovimentacaoNoDia(mov.id, sentido)
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: `Não foi possível reordenar: ${err.message}` })
+    }
+  }
+
   // "Excluir" numa linha de transferência: RPC excluir_transferencia apaga
   // as duas movimentações e o registro, revertendo os dois saldos. Sem rastro.
   async function handleExcluirTransferencia(mov) {
@@ -467,8 +482,9 @@ export default function Movimentacoes() {
                     )}
 
                     {/* Cabeçalho do extrato (desktop): Data | Histórico |
-                        Débito | Crédito | Saldo (+ Ações). No celular cada
-                        linha vira cartão empilhado, sem scroll horizontal. */}
+                        Valor (+ verde crédito / − vermelho débito) | Saldo
+                        (+ Ações). No celular cada linha vira cartão
+                        empilhado, sem scroll horizontal. */}
                     {!esMovil && (
                       <div style={estilos.tabelaCabecalho}>
                         <span style={estilos.gradeCabecalho}>Data</span>
@@ -476,10 +492,7 @@ export default function Movimentacoes() {
                           Histórico
                         </span>
                         <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
-                          Débito
-                        </span>
-                        <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
-                          Crédito
+                          Valor
                         </span>
                         <span style={{ ...estilos.gradeCabecalho, borderLeft: '1px solid #374151', textAlign: 'right' }}>
                           Saldo
@@ -521,7 +534,6 @@ export default function Movimentacoes() {
                               </span>
                             </span>
                             <span style={estilos.celulaValor} />
-                            <span style={estilos.celulaValor} />
                             <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(saldoFimPeriodo) }}>
                               {formatoReal.format(saldoFimPeriodo)}
                             </span>
@@ -530,7 +542,7 @@ export default function Movimentacoes() {
                         )
                       })()}
 
-                      {movimentacoes.map((mov) => {
+                      {movimentacoes.map((mov, i) => {
                         const ehEntrada = mov.tipo_op === 'Entrada'
                         // Movimentações ligadas a caixinhas (categoria
                         // 'caixinha', criadas por caixinha_guardar/resgatar)
@@ -552,6 +564,46 @@ export default function Movimentacoes() {
                         // Saldo progressivo: efeito real desta linha na conta,
                         // acumulado desde a abertura (centavos, sem deriva).
                         const saldoLinha = saldosLinha ? saldosLinha.get(mov.id) : null
+
+                        // Reordenação dentro do dia (ETAPA 07 do Extrato):
+                        // setinhas ↑/↓ só aparecem quando há vizinho do MESMO
+                        // DIA na lista (senão não há o que trocar). A linha
+                        // "SALDO FINAL DO PERÍODO" é sintética e fica fora do
+                        // .map(), por isso nunca recebe setas.
+                        const origemBloqueado = ehCaixinha || ehTransferencia
+                        const podeSubir = i > 0 && movimentacoes[i - 1].data === mov.data
+                        const podeDescer =
+                          i < movimentacoes.length - 1 &&
+                          movimentacoes[i + 1].data === mov.data
+                        // Mesmo botões de ação (seta ↑/↓ do mesmo tamanho e
+                        // paleta de editar/excluir). Caixinha/transferência
+                        // continuam com 🔒 (não se reordena operação indivisível).
+                        const botoesReordenar = origemBloqueado ? null : (
+                          <>
+                            {podeSubir && (
+                              <button
+                                type="button"
+                                onClick={() => handleMoverDia(mov, 'subir')}
+                                style={estilos.botaoAcao}
+                                title="Mover mais para cima (dentro deste dia)"
+                                aria-label="Mover movimentação para cima"
+                              >
+                                ↑
+                              </button>
+                            )}
+                            {podeDescer && (
+                              <button
+                                type="button"
+                                onClick={() => handleMoverDia(mov, 'descer')}
+                                style={estilos.botaoAcao}
+                                title="Mover mais para baixo (dentro deste dia)"
+                                aria-label="Mover movimentação para baixo"
+                              >
+                                ↓
+                              </button>
+                            )}
+                          </>
+                        )
 
                         const acoes = ehCaixinha ? (
                           <span
@@ -637,7 +689,7 @@ export default function Movimentacoes() {
                                 {saldoLinha === null ? '—' : formatoReal.format(saldoLinha)}
                               </strong>
                             </div>
-                            <div style={estilos.cardMovilAcciones}>{acoes}</div>
+                            <div style={estilos.cardMovilAcciones}>{botoesReordenar}{acoes}</div>
                           </li>
                         ) : (
                           <li key={mov.id} style={estilos.tabelaLinha}>
@@ -648,16 +700,19 @@ export default function Movimentacoes() {
                               <span style={estilosComuns.nomeConta}>{mov.descricao}</span>
                               {rotuloCategoria}
                             </span>
-                            <span style={{ ...estilos.celulaValor, color: '#f87171' }}>
-                              {ehEntrada ? '' : formatoReal.format(Number(mov.valor))}
-                            </span>
-                            <span style={{ ...estilos.celulaValor, color: '#4ade80' }}>
-                              {ehEntrada ? formatoReal.format(Number(mov.valor)) : ''}
+                            <span
+                              style={
+                                ehEntrada
+                                  ? { ...estilos.celulaValor, color: '#4ade80' }
+                                  : { ...estilos.celulaValor, color: '#f87171' }
+                              }
+                            >
+                              {ehEntrada ? '+' : '−'}{formatoReal.format(Number(mov.valor))}
                             </span>
                             <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(saldoLinha) }}>
                               {saldoLinha === null ? '—' : formatoReal.format(saldoLinha)}
                             </span>
-                            <span style={estilos.celulaAcoes}>{acoes}</span>
+                            <span style={estilos.celulaAcoes}>{botoesReordenar}{acoes}</span>
                           </li>
                         )
                       })}
@@ -691,7 +746,6 @@ export default function Movimentacoes() {
                             <span style={estilos.celulaDescricao}>
                               <span style={estilos.rotuloEspecial}>SALDO DE ABERTURA</span>
                             </span>
-                            <span style={estilos.celulaValor} />
                             <span style={estilos.celulaValor} />
                             <span style={{ ...estilos.celulaSaldo, ...corDoSaldo(aberturaEfetiva) }}>
                               {formatoReal.format(aberturaEfetiva)}
@@ -859,10 +913,11 @@ const estilos = {
   },
   avisoFuturoInline: { color: '#fbbf24' },
   // Extrato bancário: Data | Histórico | Débito | Crédito | Saldo (+ Ações),
-  // com colunas separadas por linha vertical e valores à direita.
+  // com colunas separadas por linha vertical e valores à direita. A última
+  // coluna (Ações) é larga o bastante para até 4 ícones (↑↓ reordenar + ✏️/🗑️).
   tabelaCabecalho: {
     display: 'grid',
-    gridTemplateColumns: '84px minmax(0, 1fr) 96px 100px 108px 78px',
+    gridTemplateColumns: '84px minmax(0, 1fr) 96px 108px 170px',
     alignItems: 'center',
     padding: '0.3rem 0',
     color: '#6b7280',
@@ -879,7 +934,7 @@ const estilos = {
   },
   tabelaLinha: {
     display: 'grid',
-    gridTemplateColumns: '84px minmax(0, 1fr) 96px 100px 108px 78px',
+    gridTemplateColumns: '84px minmax(0, 1fr) 96px 108px 170px',
     alignItems: 'center',
     padding: '0.45rem 0',
     borderRadius: '8px',

@@ -76,24 +76,44 @@ export function saldoNoFimDoPeriodo(saldoAbertura, resumo) {
 }
 
 // ---------------------------------------------------------------------------
-// JANELA "Últimos N" (ordenacao data DESC, criado_em DESC, id ASC)
+// JANELA "Últimos N" (ordenacao data DESC, ordem_dia DESC, criado_em DESC,
+// id ASC)
 // ---------------------------------------------------------------------------
 // A janela não tem datas: começa na LINHA mais antiga exibida (a última da
 // lista) e vai até a mais recente. O saldo de abertura da janela é o efeito
 // de TODAS as linhas com prioridade de ordenação MENOR que essa linha de
 // borda — inclusive linhas do MESMO DIA cortadas pelo limite, por isso não
-// basta `data < D`: dentro do mesmo dia a ordem é criado_em DESC (o mais
-// recente vem primeiro; ficam FORA os de criado_em MENOR que a borda) e,
-// empatando, id ASC (ficam fora os de id MAIOR). Esta função monta o filtro
-// PostgREST equivalente ao "complemento da janela" na ordem documentada,
-// para a abertura sair exatamente do ponto onde a lista começa.
+// basta `data < D`: dentro do mesmo dia a ordem é ordem_dia DESC (NULL por
+// último; ficam FORA os de ordem_dia MENOR que a borda — e os ainda não
+// reordenados, NULL, ficam fora quando a borda já tem ordem), depois
+// criado_em DESC (os de criado_em MENOR que a borda ficam fora) e, empatando,
+// id ASC (os de id MAIOR ficam fora). Esta função monta o filtro PostgREST
+// equivalente ao "complemento da janela" na ordem documentada, para a abertura
+// sair exatamente do ponto onde a lista começa.
 export function montarFiltroAntesDaJanela(ultimaLinha) {
-  const { data, criado_em, id } = ultimaLinha
-  return [
-    `data.lt.${data}`,
-    `and(data.eq.${data},criado_em.lt.${criado_em})`,
-    `and(data.eq.${data},criado_em.eq.${criado_em},id.gt.${id})`,
-  ].join(',')
+  const { data, ordem_dia, criado_em, id } = ultimaLinha
+  const o = ordem_dia ?? undefined
+
+  // Linhas de data ANTERIOR à borda: todas vêm depois dela na lista.
+  const grupos = [`data.lt.${data}`]
+
+  if (o !== undefined && o !== null) {
+    // Borda JÁ foi reordenada (dia materializado): vêm depois as de ordem_dia
+    // menor e as ainda NULL (nulls por último). Como um dia reordenado tem
+    // ordem_dia DISTINTAS entre si, não há empate de ordem_dia com a borda.
+    grupos.push(
+      `and(data.eq.${data},ordem_dia.lt.${o})`,
+      `and(data.eq.${data},ordem_dia.is.null)`,
+    )
+  } else {
+    // Borda SEM ordem_dia (dia nunca reordenado): todas as do dia também são
+    // NULL → o desempate dentro do dia volta a ser criado_em DESC, id ASC.
+    grupos.push(
+      `and(data.eq.${data},ordem_dia.is.null,criado_em.lt.${criado_em})`,
+      `and(data.eq.${data},ordem_dia.is.null,criado_em.eq.${criado_em},id.gt.${id})`,
+    )
+  }
+  return grupos.join(',')
 }
 
 // ---------------------------------------------------------------------------

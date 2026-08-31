@@ -15,8 +15,9 @@ import { somarEfeito, montarFiltroAntesDaJanela } from '../lib/extratoCalc'
 // a montar o JOIN com a tabela contas usando a FK conta_id — cada linha
 // chega com contas: { nome }, sem escrever JOIN manual.
 //
-// Ordenação: data mais recente primeiro, e depois criado_em (desempate
-// de lançamentos do mesmo dia) — como no app antigo.
+// Ordenação: data mais recente primeiro; dentro do mesmo dia, ordem_dia
+// (ordem manual do usuário, ETAPA 07) e depois criado_em/id como desempate
+// das não reordenadas — como no app antigo.
 //
 // Como em useContas: sem filtro de user_id no código (RLS filtra no
 // banco) e insert sem user_id (DEFAULT auth.uid() preenche no banco).
@@ -37,11 +38,14 @@ export function useMovimentacoes({
       .eq('conta_id', contaId)
     if (dataInicio) query = query.gte('data', dataInicio)
     if (dataFim) query = query.lte('data', dataFim)
-    // Ordenação determinística: data desc, depois criado_em desc e id asc
-    // como desempate (linhas criadas na mesma transação — ex.: par de uma
-    // transferência — podem nascer com timestamp idêntico; o id uuid
-    // garante ordem estável entre buscas).
+    // Ordenação determinística: data desc; depois ordem_dia desc (NULL por
+    // último — ordem MANUAL do usuário dentro do mesmo dia, coluna nova da
+    // ETAPA 07); depois criado_em desc e id asc como desempate das não
+    // reordenadas (linhas criadas na mesma transação — ex.: par de uma
+    // transferência — podem nascer com timestamp idêntico; o id uuid garante
+    // ordem estável entre buscas).
     query = query.order('data', { ascending: false })
+    query = query.order('ordem_dia', { ascending: false, nullsFirst: false })
     query = query.order('criado_em', { ascending: false })
     query = query.order('id', { ascending: true })
     if (limite) query = query.limit(limite)
@@ -142,6 +146,23 @@ export function useMovimentacoes({
     setErro(null)
   }
 
+  // Reordenar dentro do MESMO DIA (ETAPA 07 do Extrato): a RPC
+  // mover_movimentacao_no_dia (migration 18) troca a posição de UMA
+  // movimentação para cima/para baixo entre as do mesmo dia + mesma conta,
+  // gravando a coluna ordem_dia de forma atômica no servidor (valida posse
+  // + FOR UPDATE contra corrida). Só muda a ORDEM DE EXIBIÇÃO; não toca em
+  // saldo/trigger/valor/data/tipo_op. Após o sucesso, recarrega a lista com
+  // os filtros vigentes (mesmo padrão de criar/editar/excluir) — o saldo
+  // progressivo recomputa sozinho da nova ordem.
+  async function moverMovimentacaoNoDia(id, sentido) {
+    const { error } = await supabase.rpc('mover_movimentacao_no_dia', { p_id: id, p_sentido: sentido })
+    if (error) throw new Error(error.message)
+
+    const dados = await carregar()
+    setMovimentacoes(dados)
+    setErro(null)
+  }
+
   return {
     movimentacoes,
     carregando,
@@ -150,6 +171,7 @@ export function useMovimentacoes({
     editarMovimentacao,
     excluirMovimentacao,
     atualizar,
+    moverMovimentacaoNoDia,
   }
 }
 
