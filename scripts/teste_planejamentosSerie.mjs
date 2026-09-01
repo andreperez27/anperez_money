@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { semanaIso } from '../src/lib/semana.js'
 import {
   montarLinhasSerie,
+  montarLinhasRecorrentes,
   calcularCancelamentoDaquiParaFrente,
   calcularRegeneração,
+  calcularRegeneraçãoRecorrente,
 } from '../src/lib/planejamentoSerie.js'
 
 // ============================================================================
@@ -517,6 +519,150 @@ teste('D3 — regeneração preserva o destino padrão herdado do ref', () => {
     assert.equal(l.destino_padrao, 'cartao')
     assert.equal(l.cartao_padrao_id, CARTAO)
   }
+})
+
+// ---------------------------------------------------------------------------
+// REGENERAÇÃO DE SÉRIE RECORRENTE (calcularRegeneraçãoRecorrente) — 01/09/2026
+// ---------------------------------------------------------------------------
+
+// Série recorrente de teste: valor MENSAL repetido (montarLinhasRecorrentes),
+// com ids/estado injetados como fariam as linhas do banco.
+function construirSerieRecorrente({
+  totalParcelas,
+  primeira,
+  valorCentavos = 4490,
+  descricao = 'Netflix',
+  serieDataTermino = undefined,
+  vetNaN = [],
+  vetCancelado = [],
+}) {
+  return montarLinhasRecorrentes({
+    serieId: SERIE,
+    tipoOp: 'Saida',
+    descricao,
+    valorCentavos,
+    totalParcelas,
+    dataPrimeiraParcela: primeira,
+    origem: 'recorrente',
+    serieDataTermino,
+  }).map((linha, i) => {
+    const numero = i + 1
+    const estado = vetNaN.includes(numero)
+      ? 'realizado'
+      : vetCancelado.includes(numero)
+        ? 'cancelado'
+        : 'previsto'
+    return { ...linha, id: `rec-${numero}`, estado, criado_em: '' }
+  })
+}
+
+teste('REC1 — recorrente: só o futuro previsto é recriado; realizado/cancelado preservados', () => {
+  const serie = construirSerieRecorrente({
+    totalParcelas: 6,
+    primeira: '2026-06-10',
+    vetNaN: [2],
+    vetCancelado: [4],
+  })
+  const r = calcularRegeneraçãoRecorrente(serie, {})
+  // Previstos eram 1,3,5,6 → todos removidos e recriados.
+  assert.deepEqual(r.idsPrevistoARemover.sort(), ['rec-1', 'rec-3', 'rec-5', 'rec-6'].sort())
+  // Números preservados: 2 (realizado) e 4 (cancelado) não voltam.
+  assert.deepEqual(r.numerosPreservados.sort(), [2, 4].sort())
+  const numerosRecriados = r.linhasParaInserir.map((l) => l.parcela_numero).sort((a, b) => a - b)
+  assert.deepEqual(numerosRecriados, [1, 3, 5, 6])
+  // Valor repetido (não dividido) e same serie/tipo/descricao.
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.valor, 44.9)
+    assert.equal(l.origem, 'recorrente')
+    assert.equal(l.total_parcelas, 6)
+  }
+})
+
+teste('REC2 — recorrente: muda descrição e valor mensal (repetido), remonta futuro', () => {
+  const serie = construirSerieRecorrente({
+    totalParcelas: 4,
+    primeira: '2026-06-10',
+  })
+  const r = calcularRegeneraçãoRecorrente(serie, {
+    descricao: 'Netflix Premium',
+    valorCentavos: 5590,
+  })
+  assert.ok(r.linhasParaInserir.length === 4)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.descricao, 'Netflix Premium')
+    assert.equal(l.valor, 55.9)
+  }
+  assert.equal(r.novoValorCentavos, 5590)
+  assert.equal(r.novoTotalCentavos, 5590 * 4)
+})
+
+teste('REC3 — recorrente: nova data inicial recalcula total quando há término', () => {
+  const serie = construirSerieRecorrente({
+    totalParcelas: 6,
+    primeira: '2026-06-10',
+    serieDataTermino: '2026-11-10',
+  })
+  // Move o mês inicial p/ setembro; término nov/2026 → 3 parcelas (set/out/nov).
+  const r = calcularRegeneraçãoRecorrente(serie, {
+    data_primeira_parcela: '2026-09-10',
+  })
+  assert.equal(r.novoTotalParcelas, 3)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.total_parcelas, 3)
+    assert.equal(l.serie_data_termino, '2026-11-10')
+  }
+})
+
+teste('REC4 — recorrente: preserva término/serie_data_termino e destino herdado', () => {
+  const CARTAO = 'dddddddd-dddd-dddd-dddd-dddd-dddddddd'
+  const serie = construirSerieRecorrente({
+    totalParcelas: 3,
+    primeira: '2026-06-10',
+    serieDataTermino: '2026-08-10',
+  }).map((l) => ({ ...l, destino_padrao: 'cartao', cartao_padrao_id: CARTAO }))
+  const r = calcularRegeneraçãoRecorrente(serie, {})
+  assert.equal(r.linhasParaInserir.length, 3)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.serie_data_termino, '2026-08-10')
+    assert.equal(l.destino_padrao, 'cartao')
+    assert.equal(l.cartao_padrao_id, CARTAO)
+  }
+})
+
+teste('REC5 — recorrente: edita o término e ele passa a valer para o futuro', () => {
+  // Sem término (indefinida, 24 meses). Encurtar para 4 meses com término.
+  const serie = construirSerieRecorrente({
+    totalParcelas: 24,
+    primeira: '2026-06-10',
+  })
+  const r = calcularRegeneraçãoRecorrente(serie, {
+    valorCentavos: 4490,
+    data_primeira_parcela: '2026-06-10',
+    serie_data_termino: '2026-09-10',
+  })
+  assert.equal(r.novoTotalParcelas, 4)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.serie_data_termino, '2026-09-10')
+  }
+})
+
+teste('REC6 — recorrente: bloqueia reduzir abaixo da maior parcela já realizada', () => {
+  // Série com término nov/2026 (6 parcelas, jun-nov), parcela 5 realizada.
+  // Mudar o mês inicial p/ outubro encolhe o horizonte para 2 (< 5) → bloqueia.
+  const serie = construirSerieRecorrente({
+    totalParcelas: 6,
+    primeira: '2026-06-10',
+    serieDataTermino: '2026-11-10',
+    vetNaN: [5],
+  })
+  lancaErro(
+    () =>
+      calcularRegeneraçãoRecorrente(serie, {
+        data_primeira_parcela: '2026-10-10',
+        valorCentavos: 4490,
+      }),
+    'maior parcela já realizada',
+  )
 })
 
 // ---------------------------------------------------------------------------

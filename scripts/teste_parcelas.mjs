@@ -3,6 +3,7 @@ import {
   dividirValorEmParcelas,
   dataDaParcela,
   gerarOcorrenciasDaSerie,
+  repetirValorEmOcorrencias,
 } from '../src/lib/parcelas.js'
 
 // ============================================================================
@@ -361,6 +362,122 @@ teste('W5 — default continua mensal (periodicidade omitida)', () => {
     ocorrencias.map((o) => o.data_prevista),
     ['2026-07-10', '2026-08-10', '2026-09-10'],
   )
+})
+
+// ---------------------------------------------------------------------------
+// TESTES DE RECORRÊNCIA (repetirValorEmOcorrencias) — problema 1 do andaime
+// 01/09/2026: MESMO valor repetido em vez de dividir um total.
+// ---------------------------------------------------------------------------
+
+teste('R1 — mesmo valor repetido em todas as ocorrências', () => {
+  const ocorrencias = repetirValorEmOcorrencias({
+    serieId: 'rec-1',
+    tipoOp: 'Saida',
+    descricao: 'Netflix',
+    valorCentavos: 4490,
+    totalParcelas: 4,
+    dataPrimeiraParcela: '2027-01-05',
+    origem: 'recorrente',
+  })
+  assert.equal(ocorrencias.length, 4)
+  assert.ok(ocorrencias.every((o) => o.valor === 44.9))
+  assert.ok(ocorrencias.every((o) => o.origem === 'recorrente'))
+  assert.ok(ocorrencias.every((o) => o.total_parcelas === 4))
+})
+
+teste('R2 — datas mensais com clamp de fevereiro preservando a âncora (D2)', () => {
+  const ocorrencias = repetirValorEmOcorrencias({
+    serieId: 'rec-2',
+    tipoOp: 'Saida',
+    descricao: 'Aluguel',
+    valorCentavos: 150000,
+    totalParcelas: 5,
+    dataPrimeiraParcela: '2027-01-31',
+    origem: 'recorrente',
+  })
+  assert.deepEqual(
+    ocorrencias.map((o) => o.data_prevista),
+    ['2027-01-31', '2027-02-28', '2027-03-31', '2027-04-30', '2027-05-31'],
+  )
+})
+
+teste('R3 — dia 29 atravessa ano bissexto (29/01/2028 → 29/02 → 29/03)', () => {
+  const ocorrencias = repetirValorEmOcorrencias({
+    serieId: 'rec-3',
+    tipoOp: 'Saida',
+    descricao: 'Curso',
+    valorCentavos: 20000,
+    totalParcelas: 3,
+    dataPrimeiraParcela: '2028-01-29',
+    origem: 'recorrente',
+  })
+  assert.deepEqual(
+    ocorrencias.map((o) => o.data_prevista),
+    ['2028-01-29', '2028-02-29', '2028-03-29'],
+  )
+})
+
+teste('R4 — inválidos: valor, quantidade, serieId, tipoOp, descrição', () => {
+  const base = {
+    serieId: 'rec-x',
+    tipoOp: 'Saida',
+    descricao: 'X',
+    valorCentavos: 10000,
+    totalParcelas: 3,
+    dataPrimeiraParcela: '2027-01-10',
+    origem: 'recorrente',
+  }
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, valorCentavos: 0 }), 'inteiro positivo')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, valorCentavos: -5 }), 'inteiro positivo')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, valorCentavos: 1.5 }), 'inteiro positivo')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, totalParcelas: 0 }), 'Quantidade')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, serieId: '' }), 'serieId')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, tipoOp: 'entrada' }), 'tipoOp')
+  lancaErro(() => repetirValorEmOcorrencias({ ...base, descricao: '  ' }), 'descrição')
+})
+
+teste('R5 — propaga destino/conta/observação; NUNCA semana (na lib)', () => {
+  const [o] = repetirValorEmOcorrencias({
+    serieId: 'rec-5',
+    tipoOp: 'Entrada',
+    descricao: 'Aluguel recebido',
+    valorCentavos: 250000,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2027-09-05',
+    origem: 'manual',
+    contaDestinoId: 'conta-uuid',
+    observacao: 'contrato 2027',
+  })
+  assert.equal(o.origem, 'manual')
+  assert.equal(o.conta_destino_id, 'conta-uuid')
+  assert.equal(o.observacao, 'contrato 2027')
+  assert.equal('ano_semana' in o, false)
+  assert.equal('semana' in o, false)
+})
+
+teste('R6 — serie_data_termino propagado somente quando informado', () => {
+  const [com] = repetirValorEmOcorrencias({
+    serieId: 'rec-6',
+    tipoOp: 'Saida',
+    descricao: 'Plano',
+    valorCentavos: 10000,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2027-01-10',
+    origem: 'recorrente',
+    serieDataTermino: '2027-02-10',
+  })
+  assert.equal(com.serie_data_termino, '2027-02-10')
+
+  const [sem] = repetirValorEmOcorrencias({
+    serieId: 'rec-6',
+    tipoOp: 'Saida',
+    descricao: 'Plano',
+    valorCentavos: 10000,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2027-01-10',
+    origem: 'recorrente',
+  })
+  assert.equal('serie_data_termino' in sem, false)
 })
 
 // ---------------------------------------------------------------------------

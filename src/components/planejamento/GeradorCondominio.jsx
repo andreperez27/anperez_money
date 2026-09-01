@@ -62,7 +62,7 @@ function parseValorObservacao(observacao, cod) {
 
 const MES_3 = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
 
-export default function GeradorCondominio({ aoCriar, aoPosMutacao }) {
+export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao, contas = [] }) {
   const { carregando: carregandoItens, erro: erroItens, listar, criarItem } =
     useDespesaRecorrenteItens()
 
@@ -71,6 +71,7 @@ export default function GeradorCondominio({ aoCriar, aoPosMutacao }) {
   const [mesAno, setMesAno] = useState(() => hoje().slice(0, 7))
   const [gas, setGas] = useState('')
   const [agua, setAgua] = useState('')
+  const [contaId, setContaId] = useState('')
   const [itensVigentes, setItensVigentes] = useState([])
 
   // Modal de cadastro/edicao de item fixo (nova vigência).
@@ -202,9 +203,16 @@ export default function GeradorCondominio({ aoCriar, aoPosMutacao }) {
         <GeradorRecorrenciaMensal
           nome="Condomínio"
           tipoOp="Saida"
+          contaPadrao={contaId || undefined}
           calcularValor={calcularValor}
+          aoCriarSerie={aoCriarSerie}
           aoCriar={aoCriar}
           aoPosMutacao={aoPosMutacao}
+          aoResetarCamposExtra={() => {
+            setGas('')
+            setAgua('')
+            setContaId('')
+          }}
         >
           <label style={estilos.rotuloCampo}>
             Consumo de Gás (R$)
@@ -213,6 +221,17 @@ export default function GeradorCondominio({ aoCriar, aoPosMutacao }) {
           <label style={estilos.rotuloCampo}>
             Consumo de Água (R$)
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={agua} onChange={(e) => setAgua(e.target.value)} />
+          </label>
+          <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
+            Conta de destino
+            <select style={estilosComuns.input} value={contaId} onChange={(e) => setContaId(e.target.value)}>
+              <option value="">Sem conta específica</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
           </label>
         </GeradorRecorrenciaMensal>
       </div>

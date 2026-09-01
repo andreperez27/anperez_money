@@ -4,8 +4,10 @@ import { semanaIso, inicioDaSemanaIso } from '../lib/semana'
 import { calcularResumoPlanejamentos } from '../lib/planejamentoCalc'
 import {
   montarLinhasSerie,
+  montarLinhasRecorrentes,
   calcularCancelamentoDaquiParaFrente,
   calcularRegeneração,
+  calcularRegeneraçãoRecorrente,
 } from '../lib/planejamentoSerie.js'
 import { validarFaixaDePeriodo } from '../lib/periodos.js'
 
@@ -300,6 +302,34 @@ export function usePlanejamentos({ ano, semana } = {}) {
     await atualizar()
   }
 
+  // Excluir SÉRIE INTEIRA (decisão 01/09/2026, com André): apaga TODAS as
+  // ocorrências do serie_id — previstas, canceladas E realizadas. As
+  // movimentações reais já lançadas (extrato) NÃO são apagadas (tabela
+  // independente); só somem os registros do Planejamento. Avulsa cai no
+  // excluirPlanejamento. A confirmação (com aviso de quantidade) fica na UI.
+  async function excluirSerie(id) {
+    const { data: alvo, error: erroAlvo } = await supabase
+      .from('planejamentos')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (erroAlvo) throw new Error(erroAlvo.message)
+    if (!alvo) throw new Error('Planejamento não encontrado.')
+
+    if (!alvo.serie_id) {
+      await excluirPlanejamento(id)
+      return
+    }
+
+    const { error } = await supabase
+      .from('planejamentos')
+      .delete()
+      .eq('serie_id', alvo.serie_id)
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
   // Realizar (Efetivação — ETAPA 06/E5-F): transforma UMA previsão 'previsto'
   // em lançamento real de CONTA via RPC atômica no banco (migration 16). O
   // Postgres faz INSERT em movimentacoes + UPDATE para 'realizado' na mesma
@@ -357,6 +387,21 @@ export function usePlanejamentos({ ano, semana } = {}) {
     await atualizar()
   }
 
+  // Criar SÉRIE RECORRENTE (despesa fixa mensal — ETAPA 06/P4 evoluída).
+  // Difere de criarSerieParcelada porque o VALOR é o mesmo repetido em cada
+  // ocorrência (repetirValorEmOcorrencias → montarLinhasRecorrentes), em vez
+  // de um total dividido. Aceita serie_data_termino opcional (migration 21),
+  // propagado a cada linha como metadado informativo do término. A semana
+  // nunca vem da UI (montarLinhasRecorrentes a calcula via semanaIso).
+  async function criarSerieRecorrente(dados) {
+    const serieId = crypto.randomUUID()
+    const linhas = montarLinhasRecorrentes({ ...dados, serieId })
+    const { error } = await supabase.from('planejamentos').insert(linhas)
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
   // Cancelar SÉRIE a partir de uma ocorrência (decisão D5). Se a alvo for
   // AVULSA (sem serie_id), cancela somente ela (E5-D.1 §3). Para série,
   // cancela as ocorrências da mesma série com parcela >= a atual e estado
@@ -399,6 +444,9 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // o resto via parcelas + semanaIso e devolve o que inserir. DELETE físico
   // apenas das previstas antigas; as novas entram num lote único. Bloqueia
   // reduzir o total abaixo da maior parcela já realizada.
+  // Em 01/09/2026 passou a ROTEAR pela origem da série: recorrente usa
+  // calcularRegeneraçãoRecorrente (valor MENSAL repetido — montarLinhas...
+  // Recorrentes); parcelada/manual usa calcularRegeneração (divide o total).
   async function regenerarSerie(id, alteracoes) {
     const { data: alvo, error: erroAlvo } = await supabase
       .from('planejamentos')
@@ -416,7 +464,10 @@ export function usePlanejamentos({ ano, semana } = {}) {
     if (erroSerie) throw new Error(erroSerie.message)
     if (!serie || serie.length === 0) throw new Error('Série não encontrada.')
 
-    const { idsPrevistoARemover, linhasParaInserir } = calcularRegeneração(serie, alteracoes)
+    const recursiva = alvo.origem === 'recorrente'
+    const { idsPrevistoARemover, linhasParaInserir } = recursiva
+      ? calcularRegeneraçãoRecorrente(serie, alteracoes)
+      : calcularRegeneração(serie, alteracoes)
 
     if (idsPrevistoARemover.length > 0) {
       const { error: errDelete } = await supabase
@@ -487,9 +538,11 @@ export function usePlanejamentos({ ano, semana } = {}) {
     editarPlanejamento,
     cancelarPlanejamento,
     excluirPlanejamento,
+    excluirSerie,
     realizarPlanejamento,
     realizarPlanejamentoCartao,
     criarSerieParcelada,
+    criarSerieRecorrente,
     cancelarSerieAPartirDe,
     regenerarSerie,
   }

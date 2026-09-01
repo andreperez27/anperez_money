@@ -279,8 +279,9 @@ export default function FaturaDetalhe() {
     const compra = parcela.compras ?? {}
     const editando = editandoId === parcela.id
     return (
-      <li key={parcela.id} style={estilos.linha}>
+      <li key={parcela.id} className="fl-linha" style={estilos.linha}>
         <div
+          className="fl-linhaGrid"
           style={{
             ...estilos.linhaGrid,
             gridTemplateColumns: comAcoes
@@ -288,16 +289,16 @@ export default function FaturaDetalhe() {
               : estilos.linhaGrid.gridTemplateColumns,
           }}
         >
-          <span style={estilos.celData}>{formatarData(compra.data ?? '')}</span>
-          <span style={estilos.celDescricao} title={compra.descricao || ''}>
+          <span className="fl-data" style={estilos.celData}>{formatarData(compra.data ?? '')}</span>
+          <span className="fl-desc" style={estilos.celDescricao} title={compra.descricao || ''}>
             {compra.descricao || 'Compra no cartão'}
           </span>
-          <span style={estilos.celParcela}>
+          <span className="fl-parc" style={estilos.celParcela}>
             {parcela.numero}/{parcela.total}
           </span>
-          <span style={estilos.celValor}>{formatoReal.format(Number(parcela.valor))}</span>
+          <span className="fl-valor" style={estilos.celValor}>{formatoReal.format(Number(parcela.valor))}</span>
           {comAcoes && (
-            <span style={estilos.celAcoes}>
+            <span className="fl-acoes" style={estilos.celAcoes}>
               <button
                 type="button"
                 title="Editar lançamento"
@@ -336,6 +337,42 @@ export default function FaturaDetalhe() {
       <style>{`
         .resumo-grid { display: grid; gap: 0.7rem; }
         @media (min-width: 900px) { .resumo-grid { grid-template-columns: repeat(3, 1fr); } }
+
+        /* Linha de lançamento (fatura + extrato): no celular a grade fixa de
+           Data | Descrição | Parc. | Valor | Ações é estreita demais e esmaga/
+           corta os campos. Aqui a linha passa para 2 níveis (descrição+valor em
+           cima; data+parcela+ações embaixo) e o cabeçalho é escondido. O
+           quebra de linha usa !important para vencer o grid inline dos estilos. */
+        .fl-linhaGrid { display: grid; }
+        .fl-linhaCabec { display: grid; }
+        @media (max-width: 640px) {
+          .fl-linhaCabec { display: none; }
+          .fl-linha { padding: 0.85rem 0.9rem !important; }
+          .fl-linhaGrid {
+            grid-template-columns: 1fr auto auto !important;
+            grid-template-rows: auto auto;
+          }
+          .fl-data { grid-column: 1; grid-row: 2; align-self: start; }
+          .fl-desc {
+            grid-column: 1; grid-row: 1;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            overflow-wrap: anywhere;
+            padding-right: 0.6rem;
+          }
+          .fl-parc {
+            grid-column: 2; grid-row: 2;
+            text-align: left !important;
+            justify-self: start;
+          }
+          .fl-valor {
+            grid-column: 2 / 4; grid-row: 1;
+            justify-self: end;
+            padding-left: 0.6rem;
+          }
+          .fl-acoes { grid-column: 3; grid-row: 2; justify-self: end; }
+        }
       `}</style>
       <Link to="/cartoes" style={estilosComuns.link}>← Cartões</Link>
 
@@ -423,7 +460,7 @@ export default function FaturaDetalhe() {
 
           {/* Tabela no estilo extrato do app antigo */}
           <section style={estilos.tabelaCaixa}>
-            <div style={estilos.linhaCabec}>
+            <div className="fl-linhaCabec" style={estilos.linhaCabec}>
               <span>Data</span>
               <span>Descrição</span>
               <span>Parc.</span>
@@ -568,6 +605,7 @@ export default function FaturaDetalhe() {
           {range && (
             <div style={estilos.tabelaCaixa}>
               <div
+                className="fl-linhaCabec"
                 style={{
                   ...estilos.linhaCabec,
                   gridTemplateColumns: '1.4fr 4fr 1fr 1.5fr auto',

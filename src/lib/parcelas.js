@@ -189,3 +189,78 @@ export function gerarOcorrenciasDaSerie(dados) {
 
   return ocorrencias
 }
+
+// ----------------------------------------------------------------------------
+// 4. RECORRÊNCIA — MESMO valor repetido em todas as ocorrências
+// ----------------------------------------------------------------------------
+// Para despesas fixas mensais (DAS-MEI, assinaturas, condomínio com valor
+// calculado no 1º mês), a série NÃO divide um total: repete o valor do mês
+// inicial em cada parcela. Compartilha toda a aritmética de datas/dia ãncora
+// com gerarOcorrenciasDaSerie (dataDaParcela, clamp de fim de mês D2); o que
+// muda é apenas a origem do valor (único, repetido) e a leitura opcional de
+// serie_data_termino (metadado informativo da migration 21, propagado a cada
+// linha — nunca usado no cálculo, sempre derivado da UI).
+export function repetirValorEmOcorrencias(dados) {
+  const {
+    serieId,
+    tipoOp,
+    descricao,
+    valorCentavos,
+    totalParcelas,
+    dataPrimeiraParcela,
+    origem,
+    contaDestinoId,
+    destinoPadrao,
+    cartaoPadraoId,
+    observacao,
+    serieDataTermino,
+  } = dados ?? {}
+
+  if (typeof serieId !== 'string' || !serieId.trim()) {
+    throw new Error('serieId é obrigatório.')
+  }
+  if (!TIPOS_OP.includes(tipoOp)) {
+    throw new Error('tipoOp deve ser Entrada ou Saida.')
+  }
+  if (!descricao || !descricao.trim()) {
+    throw new Error('Informe a descrição.')
+  }
+  if (!Number.isInteger(valorCentavos) || valorCentavos <= 0) {
+    throw new Error(
+      `Valor inválido (${valorCentavos}): informe centavos como inteiro positivo.`,
+    )
+  }
+  if (!Number.isInteger(totalParcelas) || totalParcelas < 1) {
+    throw new Error(`Quantidade de parcelas inválida (${totalParcelas}).`)
+  }
+
+  const ocorrencias = []
+  for (let numero = 1; numero <= totalParcelas; numero += 1) {
+    const ocorrencia = {
+      serie_id: serieId,
+      parcela_numero: numero,
+      total_parcelas: totalParcelas,
+      tipo_op: tipoOp,
+      descricao: descricao.trim(),
+      valor: valorCentavos / 100,
+      data_prevista: dataDaParcela(dataPrimeiraParcela, numero, 'mensal'),
+    }
+    if (origem !== undefined) ocorrencia.origem = origem
+    if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
+      ocorrencia.conta_destino_id = contaDestinoId
+    }
+    if (destinoPadrao !== undefined) ocorrencia.destino_padrao = destinoPadrao
+    if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
+      ocorrencia.cartao_padrao_id = cartaoPadraoId
+    }
+    if (observacao !== undefined && observacao !== null && observacao !== '') {
+      ocorrencia.observacao = observacao
+    }
+    if (serieDataTermino !== undefined && serieDataTermino !== null && serieDataTermino !== '') {
+      ocorrencia.serie_data_termino = serieDataTermino
+    }
+    ocorrencias.push(ocorrencia)
+  }
+
+  return ocorrencias
+}

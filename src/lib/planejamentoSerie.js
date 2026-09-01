@@ -23,8 +23,10 @@
 import { semanaIso } from './semana.js'
 import {
   gerarOcorrenciasDaSerie,
+  repetirValorEmOcorrencias,
   dataDaParcela,
 } from './parcelas.js'
+import { totalParcelasRecorrencia } from './recorrenciaCalc.js'
 
 // ----------------------------------------------------------------------------
 // Linhas prontas para INSERT no Supabase, a partir do contrato de uma série.
@@ -197,4 +199,162 @@ export function calcularRegeneração(serie, alteracoes) {
     novoTotalParcelas,
     novoTotalCentavos,
   }
+}
+
+// ----------------------------------------------------------------------------
+// REGENERAÇÃO DE SÉRIE RECORRENTE (fixa mensal) — mesmo espírito da
+// calcularRegeneração (D4): passado realizado/cancelado imutável, futuro
+// previsto recriado. A diferença é o VALOR: em vez de dividir um total, repete
+// o valor da parcela (montarLinhasRecorrentes). Aceita, em alteracoes:
+//   • descricao, valorCentavos (valor MENSAL repetido), data_primeira_parcela;
+//   • total_parcelas opcional (padrão = atual; se a série tem
+//     serie_data_termino e a data inicial mudou, o total é recalculado pelos
+//     meses até o término — mesma regra da criação);
+//   • conta/destino/cartao/observacao opcionais (mesma política da D4).
+// Bloqueia reduzir o total abaixo da maior parcela já realizada.
+// ----------------------------------------------------------------------------
+export function calcularRegeneraçãoRecorrente(serie, alteracoes) {
+  if (!Array.isArray(serie) || serie.length === 0) {
+    throw new Error('Série vazia ou não encontrada.')
+  }
+
+  const ordenadas = [...serie].sort(
+    (a, b) =>
+      (a.parcela_numero ?? 0) - (b.parcela_numero ?? 0) ||
+      String(a.criado_em || '').localeCompare(String(b.criado_em || '')),
+  )
+  const ref = ordenadas[0]
+  const serieId = ref.serie_id
+
+  const realizadas = serie.filter((o) => o.estado === 'realizado')
+  const maiorRealizada = realizadas.reduce(
+    (maior, o) => Math.max(maior, o.parcela_numero ?? 0),
+    0,
+  )
+
+  const numerosPreservados = new Set(
+    serie
+      .filter((o) => o.estado === 'realizado' || o.estado === 'cancelado')
+      .map((o) => o.parcela_numero),
+  )
+
+  const idsPrevistoARemover = serie
+    .filter((o) => o.estado === 'previsto')
+    .map((o) => o.id)
+
+  const valorCentavos =
+    alteracoes?.valorCentavos ?? Math.round(Number(ref.valor) * 100)
+
+  const dataPrimeira =
+    alteracoes?.data_primeira_parcela ??
+    serie.reduce(
+      (menor, o) => (o.data_prevista < menor ? o.data_prevista : menor),
+      serie[0].data_prevista,
+    )
+
+  let novoTotalParcelas = alteracoes?.total_parcelas
+  if (novoTotalParcelas === undefined) {
+    const novoTermino =
+      alteracoes?.serie_data_termino !== undefined
+        ? alteracoes.serie_data_termino
+        : ref.serie_data_termino
+    // Recalcula do zero quando há término (existente ou editado) — mesma
+    // regra da criação (totalParcelasRecorrencia). Sem término fica no total
+    // atual (indefinida = 24 meses prorrogável, preservado na edição).
+    if (novoTermino) {
+      novoTotalParcelas = totalParcelasRecorrencia(
+        dataPrimeira.slice(0, 7),
+        novoTermino,
+      )
+    } else {
+      novoTotalParcelas = ref.total_parcelas
+    }
+  }
+
+  if (novoTotalParcelas < maiorRealizada) {
+    throw new Error(
+      `Não é possível reduzir para ${novoTotalParcelas} parcela(s): a maior parcela já realizada é ${maiorRealizada}.`,
+    )
+  }
+
+  const linhas = montarLinhasRecorrentes({
+    serieId,
+    tipoOp: ref.tipo_op,
+    descricao: alteracoes?.descricao ?? ref.descricao,
+    valorCentavos,
+    totalParcelas: novoTotalParcelas,
+    dataPrimeiraParcela: dataPrimeira,
+    origem: ref.origem,
+    contaDestinoId:
+      alteracoes?.conta_destino_id !== undefined
+        ? alteracoes.conta_destino_id
+        : ref.conta_destino_id,
+    destinoPadrao:
+      alteracoes?.destino_padrao !== undefined
+        ? alteracoes.destino_padrao
+        : ref.destino_padrao,
+    cartaoPadraoId:
+      alteracoes?.cartao_padrao_id !== undefined
+        ? alteracoes.cartao_padrao_id
+        : ref.cartao_padrao_id,
+    observacao:
+      alteracoes?.observacao !== undefined
+        ? alteracoes.observacao
+        : ref.observacao,
+    serieDataTermino:
+      alteracoes?.serie_data_termino !== undefined
+        ? alteracoes.serie_data_termino
+        : ref.serie_data_termino,
+  })
+
+  // Números já resolvidos (realizado/cancelado) não são re-inseridos: o
+  // passado não se repete no futuro.
+  const linhasParaInserir = linhas.filter(
+    (linha) => !numerosPreservados.has(linha.parcela_numero),
+  )
+
+  return {
+    serieId,
+    linhasParaInserir,
+    idsPrevistoARemover,
+    numerosPreservados: [...numerosPreservados],
+    novoTotalParcelas,
+    novoValorCentavos: valorCentavos,
+    novoTotalCentavos: valorCentavos * novoTotalParcelas,
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Linhas prontas para INSERT de uma série RECORRENTE (despesa fixa mensal).
+// Mesma política de montarLinhasSerie, mas o valor é o MESMO repetido em cada
+// ocorrência (via repetirValorEmOcorrencias) em vez de um total dividido. A
+// semana vem de semanaIso(data_prevista); estado nasce 'previsto'. aceita
+// serie_data_termino opcional (migration 21), propagado a cada linha como
+// metadado informativo do término da recorrência.
+// ----------------------------------------------------------------------------
+export function montarLinhasRecorrentes(dados) {
+  const ocorrencias = repetirValorEmOcorrencias(dados)
+
+  return ocorrencias.map((o) => {
+    const { ano, semana } = semanaIso(o.data_prevista)
+    const linha = {
+      tipo_op: o.tipo_op,
+      descricao: o.descricao,
+      valor: o.valor,
+      data_prevista: o.data_prevista,
+      ano_semana: ano,
+      semana,
+      estado: 'previsto',
+      serie_id: o.serie_id,
+      parcela_numero: o.parcela_numero,
+      total_parcelas: o.total_parcelas,
+    }
+    if (o.origem !== undefined) linha.origem = o.origem
+    if (o.conta_destino_id !== undefined) linha.conta_destino_id = o.conta_destino_id
+    if (o.destino_padrao !== undefined) linha.destino_padrao = o.destino_padrao
+    if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id
+    if (o.observacao !== undefined) linha.observacao = o.observacao
+    if (o.serie_data_termino !== undefined) linha.serie_data_termino = o.serie_data_termino
+    return linha
+  })
 }

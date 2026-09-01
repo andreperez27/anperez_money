@@ -3,6 +3,8 @@ import { useMuyEstrecho } from '../../hooks/useMediaQuery'
 import { useContas } from '../../hooks/useContas'
 import { useCartoes } from '../../hooks/useCartoes'
 import ModalFormulario from '../ModalFormulario'
+import EditarPlanejamentoForm from '../EditarPlanejamentoForm'
+import EditarSerieForm from '../EditarSerieForm'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 import GeradorCondominio from './GeradorCondominio'
@@ -81,28 +83,23 @@ export default function Lancamentos({
     data_primeira_parcela: '', // parcelada
     periodicidade: 'mensal', // parcelada: 'mensal' | 'semanal'
     destino: '', // '' | 'conta' | 'cartao' — destino_padrao planejado
+    conta: '', // conta_destino_id (quando destino = 'conta')
     cartao: '', // cartao_padrao_id (quando destino = 'cartao')
   })
   const [formMsg, setFormMsg] = useState({ tipo: '', texto: '' })
   const [criando, setCriando] = useState(false)
   const [mostrandoForm, setMostrandoForm] = useState(false)
 
-  // Edição de destino padrão (Conta/Cartão) de um lançamento JA EXISTENTE —
-  // útil para planejamentos já realizados (ex.: seguro do carro) para os quais
-  // você quer registrar a informação de qual conta/cartão foi (ou será) usado.
+  // Edição de um lançamento JA EXISTENTE (problema 2 — 01/09/2026): o
+  // formulário completo (descrição, valor, data, tipo, destino) vive no
+  // EditarPlanejamentoForm; aqui só guardamos o item em edição.
   const [editando, setEditando] = useState(null) // item em edição
-  const [editForm, setEditForm] = useState({ destino: '', cartao: '', cartao_tem: false })
-  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
-
-  function campoEdit(campoO) {
-    setEditForm((f) => ({ ...f, ...campoO }))
-    if (erroAcao) setErroAcao('')
-  }
+  const [editandoSerie, setEditandoSerie] = useState(null) // item que abre a edição da SÉRIE
 
   // Modo 'recorrente': despesa fixa mensal genérica (ex.: DAS-MEI, assinaturas).
   // Reutiliza o GeradorRecorrenciaMensal com nome = descrição e calcularValor
   // = valor fixo digitado (origem 'recorrente' no payload).
-  const [recForm, setRecForm] = useState({ descricao: '', valor: '', destino: '', cartao: '' })
+  const [recForm, setRecForm] = useState({ descricao: '', valor: '', destino: '', conta: '', cartao: '' })
   const recValor = lerValor(recForm.valor)
   const recNome = recForm.descricao.trim() || 'Recorrente'
 
@@ -190,44 +187,75 @@ export default function Lancamentos({
     }
   }
 
-  // Abre o modal de edição de destino (Conta/Cartão) pré-preenchido com o que
-  // o lançamento já registra. Vale para itens previstos E realizados.
+  // Abre o modal de EDIÇÃO completa (problema 2 — 01/09/2026). Pré-preenchido
+  // com o que o lançamento registra (descrição, valor, data, tipo, destino) no
+  // EditarPlanejamentoForm. Vale para itens previstos E realizados.
   function aoAbrirEditar(item) {
-    const ehCartao = item.destino_padrao === 'cartao'
-    const cartaoValido = ehCartao && !!item.cartao_padrao_id
     setEditando(item)
-    setEditForm({
-      destino: ehCartao ? 'cartao' : 'conta',
-      cartao: cartaoValido ? item.cartao_padrao_id : (cartoesAtivos[0]?.id ?? ''),
-      cartao_tem: cartaoValido,
+    setErroAcao('')
+  }
+
+  // Salva as alterações do EditarPlanejamentoForm. O form SÓ envia os campos
+  // que mudaram (editarPlanejamento é parcial); aqui fechamos o modal e
+  // recarregamos a faixa na página.
+  async function aoSalvarEdicao(id, alteracoes) {
+    await acoes.editar(id, alteracoes)
+    setErroAcao('')
+    setEditando(null)
+    await aoPosMutacao?.()
+  }
+
+  // Abre a edição da SÉRIE RECORRENTE (01/09/2026 — decisão com André): vale
+  // SÓ para o futuro; realizado/cancelado ficam imutáveis. Pré-preenchemos o
+  // form com os valores da série a partir do item/linha: valor mensal = valor
+  // de uma ocorrência prevista, data inicial = menor data_prevista,
+  // serie_data_termino do item (metadado na linha recorrente).
+  async function aoEditarSerie(item) {
+    if (carregando) return
+    if (item.origem !== 'recorrente') {
+      setErroAcao('Somente séries recorrentes podem ser editadas em bloco por enquanto.')
+      return
+    }
+    setEditandoSerie({
+      id: item.id,
+      serie_id: item.serie_id,
+      descricao: item.descricao,
+      data_prevista: item.data_prevista,
+      __valorMensal: Number(item.valor),
+      __dataInicial: item.data_prevista,
+      __serieDataTermino: item.serie_data_termino ?? null,
     })
     setErroAcao('')
   }
 
-  // Confirma a edição do destino padrão. Pode definir conta (destino_padrao
-  // null/implicito) ou cartão (destino_padrao='cartao' + cartao_padrao_id).
-  // Não altera valor/data/estado — só o direcionamento.
-  async function aoConfirmarEditar(e) {
-    e.preventDefault()
-    if (salvandoEdicao) return
-    if (editForm.destino === 'cartao' && !editForm.cartao) {
-      setErroAcao('Selecione o cartão de destino.')
-      return
-    }
+  // Salva as alterações da SÉRIE. O EditarSerieForm envia o contrato da rota
+  // recorrente de regenerarSerie (calcularRegeneraçãoRecorrente): só os campos
+  // que mudaram; realizado/cancelado são preservados pela lib.
+  async function aoSalvarEdicaoSerie(id, alteracoes) {
+    await acoes.regenerarSerie(id, alteracoes)
+    setErroAcao('')
+    setEditandoSerie(null)
+    await aoPosMutacao?.()
+  }
+
+  // Exclui a SÉRIE INTEIRA do banco (01/09/2026 — decisão com André): todas as
+  // ocorrências, previstas, canceladas E realizadas. As movimentações reais já
+  // lançadas (extrato) não são afetadas. Avulsa cai no excluir simples.
+  async function aoExcluirSerie(item) {
+    if (carregando) return
+    const ehAvulsa = !item.serie_id
+    const num = typeof item.total_parcelas === 'number' ? item.total_parcelas : ''
+    const mensagem = ehAvulsa
+      ? `Excluir DEFINITIVAMENTE "${item.descricao}"?`
+      : `Excluir DEFINITIVAMENTE a série "${item.descricao}" (${num} ocorrências)?\n\nTodas as parcelas (previstas, canceladas e realizadas) serão removidas do Planejamento.\nOs lançamentos reais já lançados no extrato NÃO são apagados.`
+    const ok = window.confirm(mensagem)
+    if (!ok) return
     try {
-      setSalvandoEdicao(true)
-      const alteracoes =
-        editForm.destino === 'cartao'
-          ? { destino_padrao: 'cartao', cartao_padrao_id: editForm.cartao }
-          : { destino_padrao: null, cartao_padrao_id: null }
-      await acoes.editar(editando.id, alteracoes)
+      await acoes.excluirSerie(item.id)
       setErroAcao('')
-      setEditando(null)
       await aoPosMutacao?.()
-    } catch (err) {
-      setErroAcao(`Não foi possível salvar: ${err.message}`)
-    } finally {
-      setSalvandoEdicao(false)
+    } catch (e) {
+      setErroAcao(`Não foi possível excluir a série: ${e.message}`)
     }
   }
 
@@ -332,9 +360,10 @@ export default function Lancamentos({
           dataPrimeiraParcela: form.data_primeira_parcela || dataPadrao,
           periodicidade: form.periodicidade,
           destinoPadrao: form.destino || undefined,
+          contaDestinoId: form.destino === 'conta' ? form.conta || undefined : undefined,
           cartaoPadraoId: form.destino === 'cartao' ? form.cartao || undefined : undefined,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '', data_primeira_parcela: '', destino: '', cartao: '' }))
+        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '', data_primeira_parcela: '', destino: '', conta: '', cartao: '' }))
       } else {
         const valor = lerValor(form.valor)
         if (!Number.isFinite(valor) || valor <= 0) {
@@ -347,9 +376,10 @@ export default function Lancamentos({
           valor,
           data_prevista: form.data_prevista || dataPadrao,
           destino_padrao: form.destino || undefined,
+          conta_destino_id: form.destino === 'conta' ? form.conta || undefined : undefined,
           cartao_padrao_id: form.destino === 'cartao' ? form.cartao || undefined : undefined,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '', data_prevista: '', destino: '', cartao: '' }))
+        setForm((f) => ({ ...f, descricao: '', valor: '', data_prevista: '', destino: '', conta: '', cartao: '' }))
       }
       await aoPosMutacao?.()
       setMostrandoForm(false)
@@ -491,6 +521,25 @@ export default function Lancamentos({
               Cartão
             </button>
           </div>
+          {form.destino === 'conta' && (
+            <select
+              style={estilosComuns.input}
+              value={form.conta}
+              onChange={(e) => campo({ conta: e.target.value })}
+            >
+              <option value="" disabled>
+                Selecionar conta
+              </option>
+              {contasAtivas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          )}
+          {form.destino === 'conta' && contasAtivas.length === 0 && (
+            <span style={estilosComuns.mensagemErro}>Nenhuma conta ativa disponível.</span>
+          )}
           {form.destino === 'cartao' && (
             <select
               style={estilosComuns.input}
@@ -579,11 +628,14 @@ export default function Lancamentos({
             <GeradorRecorrenciaMensal
               nome={recNome}
               tipoOp="Saida"
+              contaPadrao={recForm.destino === 'conta' ? recForm.conta || undefined : undefined}
               destinoPadrao={recForm.destino || undefined}
               cartaoPadraoId={recForm.destino === 'cartao' ? recForm.cartao || undefined : undefined}
               calcularValor={() => ({ total: recValor, detalhamento: [] })}
+              aoCriarSerie={acoes.criarSerieRecorrente}
               aoCriar={acoes.criar}
               aoPosMutacao={aoPosMutacao}
+              aoResetarCamposExtra={() => setRecForm({ descricao: '', valor: '', destino: '', conta: '', cartao: '' })}
             >
               <label style={estilos.rotuloCampo}>
                 Descrição
@@ -624,6 +676,25 @@ export default function Lancamentos({
                     Cartão
                   </button>
                 </div>
+                {recForm.destino === 'conta' && (
+                  <select
+                    style={estilosComuns.input}
+                    value={recForm.conta}
+                    onChange={(e) => setRecForm((f) => ({ ...f, conta: e.target.value }))}
+                  >
+                    <option value="" disabled>
+                      Selecionar conta
+                    </option>
+                    {contasAtivas.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {recForm.destino === 'conta' && contasAtivas.length === 0 && (
+                  <span style={estilosComuns.mensagemErro}>Nenhuma conta ativa disponível.</span>
+                )}
                 {recForm.destino === 'cartao' && (
                   <select
                     style={estilosComuns.input}
@@ -653,7 +724,12 @@ export default function Lancamentos({
         )}
 
         {modo === 'condominio' && (
-          <GeradorCondominio aoCriar={acoes.criar} aoPosMutacao={aoPosMutacao} />
+          <GeradorCondominio
+            aoCriarSerie={acoes.criarSerieRecorrente}
+            aoCriar={acoes.criar}
+            aoPosMutacao={aoPosMutacao}
+            contas={contasAtivas}
+          />
         )}
         </ModalFormulario>
       )}
@@ -782,80 +858,29 @@ export default function Lancamentos({
         </ModalFormulario>
       )}
 
-      {/* Edição de destino padrão (Conta/Cartão) — vale também para lançamentos
-          JÁ realizados (ex.: seguro do carro), onde se registra a informação de
-          qual conta ou cartão usou (ou usará). Só altera o direcionamento. */}
+      {/* Edição COMPLETA de um lançamento (problema 2 — 01/09/2026): o form
+          pré-preenchido (descrição, valor, data, tipo, destino) mora no
+          EditarPlanejamentoForm e salva só os campos que mudaram via
+          acoes.editar. Vale para previstos E realizados. */}
       {editando && (
-        <ModalFormulario
-          titulo="Editar destino"
-          aoFechar={() => {
-            if (!salvandoEdicao) setEditando(null)
-          }}
-        >
-          <form onSubmit={aoConfirmarEditar} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }} noValidate>
-            <p style={{ ...estilosComuns.mensagem, margin: 0 }}>
-              Registrar o destino de <strong style={{ color: '#e5e7eb' }}>{editando.descricao}</strong>.
-            </p>
+        <EditarPlanejamentoForm
+          item={editando}
+          contas={contasAtivas}
+          cartoes={cartoesAtivos}
+          aoSalvar={aoSalvarEdicao}
+          aoCancelar={() => setEditando(null)}
+        />
+      )}
 
-            <div style={estilos.toggle}>
-              <button
-                type="button"
-                onClick={() => campoEdit({ destino: 'conta' })}
-                style={{ ...estilos.pilhaModo, ...(editForm.destino === 'conta' ? estilos.pilhaModoAtiva : {}) }}
-              >
-                Conta
-              </button>
-              <button
-                type="button"
-                onClick={() => campoEdit({ destino: 'cartao' })}
-                style={{ ...estilos.pilhaModo, ...(editForm.destino === 'cartao' ? estilos.pilhaModoAtiva : {}) }}
-              >
-                Cartão
-              </button>
-            </div>
-
-            {editForm.destino === 'cartao' && (
-              <label style={estilos.rotuloCampo}>
-                Cartão de destino
-                {carregandoCartoes ? (
-                  <span style={estilosComuns.mensagem}>Carregando cartões...</span>
-                ) : (
-                  <select
-                    style={estilosComuns.input}
-                    value={editForm.cartao}
-                    onChange={(e) => campoEdit({ cartao: e.target.value })}
-                  >
-                    <option value="" disabled>
-                      Selecionar cartão
-                    </option>
-                    {cartoesAtivos.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {`${c.nome}${c.contas?.nome ? ` (${c.contas.nome})` : ''}`}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {cartoesAtivos.length === 0 && !carregandoCartoes && (
-                  <span style={estilosComuns.mensagemErro}>Nenhum cartão ativo disponível.</span>
-                )}
-              </label>
-            )}
-
-            <p style={{ color: '#9ca3af', fontSize: '0.8rem', margin: 0 }}>
-              {editForm.destino === 'cartao'
-                ? 'O destino fica como cartão de crédito (pré-seleção no Lançar).'
-                : 'O destino fica como conta bancária.'}
-            </p>
-
-            <button
-              type="submit"
-              disabled={salvandoEdicao || (editForm.destino === 'cartao' && cartoesAtivos.length === 0)}
-              style={salvandoEdicao ? estilos.botaoCriando : estilosComuns.botaoCriar}
-            >
-              {salvandoEdicao ? 'Salvando...' : 'Salvar destino'}
-            </button>
-          </form>
-        </ModalFormulario>
+      {/* Edição da SÉRIE RECORRENTE (01/09/2026 — decisão com André): vale só
+          para o FUTURO; realizado/cancelado imutáveis. Chama regenerarSerie
+          (rota recorrente). */}
+      {editandoSerie && (
+        <EditarSerieForm
+          item={editandoSerie}
+          aoSalvar={aoSalvarEdicaoSerie}
+          aoCancelar={() => setEditandoSerie(null)}
+        />
       )}
 
       {erroAcao && <p style={{ ...estilosComuns.mensagemErro, marginTop: '1rem' }}>{erroAcao}</p>}
@@ -940,7 +965,7 @@ export default function Lancamentos({
                               <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
                             )}
                             {item.estado !== 'cancelado' && (
-                              <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar destino (Conta/Cartão)" style={estilosItem.botaoAcaoNeutro}>Editar</button>
+                              <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
                             )}
                             {item.estado !== 'cancelado' && (
                               <button type="button" onClick={() => aoCancelar(item)} title="Cancelar esta ocorrência" style={estilosItem.botaoAcaoNeutro}>Cancelar</button>
@@ -948,7 +973,14 @@ export default function Lancamentos({
                             {item.estado !== 'cancelado' && ehSerie && (
                               <button type="button" onClick={() => aoCancelarSerie(item)} title="Cancelar série a partir desta parcela" style={estilosItem.botaoAcaoSerie}>Série</button>
                             )}
-                            <button type="button" onClick={() => aoExcluir(item)} title="Excluir definitivamente" style={estilosItem.botaoAcaoExcluir}>Excluir</button>
+                            {item.origem === 'recorrente' && (
+                              <button type="button" onClick={() => aoEditarSerie(item)} title="Editar toda a série recorrente (futuro)" style={estilosItem.botaoAcaoNeutro}>Editar série</button>
+                            )}
+                            {ehSerie ? (
+                              <button type="button" onClick={() => aoExcluirSerie(item)} title="Excluir a série inteira do banco" style={estilosItem.botaoAcaoExcluir}>Excluir série</button>
+                            ) : (
+                              <button type="button" onClick={() => aoExcluir(item)} title="Excluir definitivamente" style={estilosItem.botaoAcaoExcluir}>Excluir</button>
+                            )}
                           </>
                         )}
                       </span>
@@ -997,7 +1029,7 @@ export default function Lancamentos({
                             <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
                           )}
                           {item.estado !== 'cancelado' && (
-                            <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar destino (Conta/Cartão)" style={estilosItem.botaoAcaoNeutro}>Editar</button>
+                            <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
                           )}
                           {item.estado !== 'cancelado' && (
                             <button type="button" onClick={() => aoCancelar(item)} title="Cancelar esta ocorrência" style={estilosItem.botaoAcaoNeutro}>Cancelar</button>
@@ -1005,7 +1037,14 @@ export default function Lancamentos({
                           {item.estado !== 'cancelado' && ehSerie && (
                             <button type="button" onClick={() => aoCancelarSerie(item)} title="Cancelar série a partir desta parcela" style={estilosItem.botaoAcaoSerie}>Série</button>
                           )}
-                          <button type="button" onClick={() => aoExcluir(item)} title="Excluir definitivamente" style={estilosItem.botaoAcaoExcluir}>Excluir</button>
+                          {item.origem === 'recorrente' && (
+                            <button type="button" onClick={() => aoEditarSerie(item)} title="Editar toda a série recorrente (futuro)" style={estilosItem.botaoAcaoNeutro}>Editar série</button>
+                          )}
+                          {ehSerie ? (
+                            <button type="button" onClick={() => aoExcluirSerie(item)} title="Excluir a série inteira do banco" style={estilosItem.botaoAcaoExcluir}>Excluir série</button>
+                          ) : (
+                            <button type="button" onClick={() => aoExcluir(item)} title="Excluir definitivamente" style={estilosItem.botaoAcaoExcluir}>Excluir</button>
+                          )}
                         </>
                       )}
                     </span>
