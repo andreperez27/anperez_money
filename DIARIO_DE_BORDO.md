@@ -25,7 +25,9 @@ Módulos já implementados:
   séries parceladas/mensais/semanais, periodicidade, geradores (DAS-MEI,
   condomínio, recorrente mensal), direcionamento de destino (Conta/Cartão),
   média móvel — e a **fatura automática no Planejamento** com projeção
-  dinâmica por cartão (real + previstos, sem dupla contagem).
+  dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
+  mensal em **série** (dia de vencimento + término/24 meses) e **edição
+  completa pré-preenchida** (salvando só o que mudou).
 - **Cartões de Crédito**: lista, fatura (real de `v_faturas`), lançar compra,
   extrato do cartão, fluxo de pagamento da fatura, migração do histórico do
   app antigo.
@@ -119,3 +121,4 @@ completo daquele dia.
 - [diario/2026-08-27.md](diario/2026-08-27.md) — Módulo Cartões de Crédito (ETAPA C1/C2/C3): frontend da lista e fatura, edição de cartão, "lançar compra", extrato do cartão, fluxo de pagamento, fatura demonstrativa e rolagem no desktop.
 - [diario/2026-08-28.md](diario/2026-08-28.md) — ETAPAS C4/C5/C7/C8 + Planejamento + Extrato: rolagem uniforme, formulários em modal, migração do histórico de cartões, efetivação previsto→realizado em conta, gerador de condomínio, reordenação manual do dia e periodicidade/recorrência/média móvel.
 - [diario/2026-08-31.md](diario/2026-08-31.md) — Consolidação de Condomínio/DAS-MEI no formulário padrão, direcionamento Conta/Cartão e a fatura automática no Planejamento (projeção dinâmica por cartão, sem dupla contagem); correções: previsto de cartão nunca soma como saída direta e fim do furo compra/vencimento (a projeção respeita o dia de fechamento da fatura e aparece no período do vencimento, aceitando cartão de destino inativo).
+- [diario/2026-09-01.md](diario/2026-09-01.md) — Recorrência no Planejamento vira SÉRIE mensal (dia de vencimento 1-31 + término opcional; indefinida = horizonte de 24 meses, prorrogável) com `repetirValorEmOcorrencias`/`montarLinhasRecorrentes`; edição completa em formulário pré-preenchido (`EditarPlanejamentoForm` + `montarAlteracoesEdicao`, salvando só o que mudou; série = só a ocorrência atual); migration 21 (`serie_data_termino`).
