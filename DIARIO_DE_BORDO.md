@@ -25,12 +25,40 @@ Módulos já implementados:
   séries parceladas/mensais/semanais, periodicidade, geradores (DAS-MEI,
   condomínio, recorrente mensal), direcionamento de destino (Conta/Cartão),
   média móvel — e a **fatura automática no Planejamento** com projeção
-  dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
-  mensal em **série** (dia de vencimento + término/24 meses) e **edição
-  completa pré-preenchida** (salvando só o que mudou).
+dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
+   mensal em **série** (dia de vencimento + término/24 meses), **edição
+   completa pré-preenchida** (salvando só o que mudou), **editar a série
+   inteira só no futuro** (realizado/cancelado imutáveis) e **excluir série
+   do banco** sem apagar movimentações reais; **escolha de conta no destino**
+   na criação e na edição (`conta_destino_id`) e formulário recorrente que
+   **limpa automaticamente** após gerar.
 - **Cartões de Crédito**: lista, fatura (real de `v_faturas`), lançar compra,
   extrato do cartão, fluxo de pagamento da fatura, migração do histórico do
-  app antigo.
+  app antigo — e linhas de fatura/extrato **responsivas no celular** (2
+  níveis, sem cortar descrição/valor).
+- **Ponto Inteligente** (módulo de jornada por **exceções** ao padrão): carga
+  padrão constante (Seg–Sex 20:30→03:00, Sáb 20:30→02:00, Dom off) nunca é
+  lançada; lança-se só o que foge — hora extra (HE = horas − base), trabalho
+  em domingo/feriado (`domfer`, base 0, diária congelada pela hora de saída)
+  e **férias** (agora por **intervalo** com **saldo de 15 dias/ano**, sem
+  sobreposição, ex-férias avulsas migradas). Turno que
+  cruza a meia-noite (saída ≤ entrada → +1 dia) e valores em R$ **congelados
+  na gravação** (reajuste da config não retrocalcula) — lógica portada do app
+  antigo (`Controle_Horas`), com `VALOR_FIXO_SEMANA` reajustado para 1650.
+  Feriados viram tabela. Migration 22 + `pontoCalc.js` + `usePonto.js` +
+  tela `Ponto.jsx` (31 testes→46). Fix RLS (`default auth.uid()` na
+  `ponto_excecoes`, migration 23) + seed dos 12 feriados do app antigo para
+  2026 e 2027 (móveis de 2027 calculados pela Páscoa: Sexta Santa 26/03 e
+  Corpus Christi 27/05). Compensação (carga igual ao padrão + horário atípico
+  = lança `he` he=0) e importação do histórico (migration 24, 98 lançamentos).
+  Férias por intervalo (migration 25) e **valores na página Configurações**
+  (`PontoConfig.jsx`). 8ª leva: lançamento virou "+ Lançar avulso" em modal
+  padrão (o sistema analisa a data e classifica automaticamente hora
+  extra / dom-fer / compensação, bloqueando o horário padrão), "Marcar férias"
+  no mesmo modal, e feriados movidos para a Configurações (lista + excluir).
+  9ª leva: linha do tempo **semanal** (SeletorPeriodo do Planejamento) e
+  correção do card Domingos/feriados (o fechamento passou a ler as colunas
+  snake_case do banco com fallback camelCase) — 47 testes.
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -121,4 +149,4 @@ completo daquele dia.
 - [diario/2026-08-27.md](diario/2026-08-27.md) — Módulo Cartões de Crédito (ETAPA C1/C2/C3): frontend da lista e fatura, edição de cartão, "lançar compra", extrato do cartão, fluxo de pagamento, fatura demonstrativa e rolagem no desktop.
 - [diario/2026-08-28.md](diario/2026-08-28.md) — ETAPAS C4/C5/C7/C8 + Planejamento + Extrato: rolagem uniforme, formulários em modal, migração do histórico de cartões, efetivação previsto→realizado em conta, gerador de condomínio, reordenação manual do dia e periodicidade/recorrência/média móvel.
 - [diario/2026-08-31.md](diario/2026-08-31.md) — Consolidação de Condomínio/DAS-MEI no formulário padrão, direcionamento Conta/Cartão e a fatura automática no Planejamento (projeção dinâmica por cartão, sem dupla contagem); correções: previsto de cartão nunca soma como saída direta e fim do furo compra/vencimento (a projeção respeita o dia de fechamento da fatura e aparece no período do vencimento, aceitando cartão de destino inativo).
-- [diario/2026-09-01.md](diario/2026-09-01.md) — Recorrência no Planejamento vira SÉRIE mensal (dia de vencimento 1-31 + término opcional; indefinida = horizonte de 24 meses, prorrogável) com `repetirValorEmOcorrencias`/`montarLinhasRecorrentes`; edição completa em formulário pré-preenchido (`EditarPlanejamentoForm` + `montarAlteracoesEdicao`, salvando só o que mudou; série = só a ocorrência atual); migration 21 (`serie_data_termino`).
+- [diario/2026-09-01.md](diario/2026-09-01.md) — Recorrência no Planejamento vira SÉRIE mensal (dia de vencimento 1-31 + término opcional; indefinida = horizonte de 24 meses, prorrogável) com `repetirValorEmOcorrencias`/`montarLinhasRecorrentes`; edição completa em formulário pré-preenchido (`EditarPlanejamentoForm` + `montarAlteracoesEdicao`, salvando só o que mudou; série = só a ocorrência atual); migration 21 (`serie_data_termino`). 2ª leva: editar série inteira só no futuro + excluir série do banco (`CalcularRegeneraçãoRecorrente`/`excluirSerie`). 3ª leva: escolha de conta no destino na criação e edição, correção do payload camelCase da série, formulário recorrente limpa após gerar, fatura/extrato de cartões responsivos no celular e entrega commitada/publicada (`14e20cc`, `f50f98c`). 4ª leva: módulo PONTO INTELIGENTE por exceções (migration 22 + `pontoCalc.js`/`usePonto.js`/tela `Ponto.jsx`, 31 testes) — lógica portada do app antigo, reajuste do fixo semanal confirmado em 1650. 5ª leva: fix RLS (`default auth.uid()` na `ponto_excecoes`, migration 23) + seed dos feriados do app antigo (2026 e 2027). 6ª leva: análise do `registros` do app antigo e exportação para o modelo de exceções — migration 24 importa 98 lançamentos (74 `he` + 24 `domfer`; dias-padrão descartados) com `ehTurnoPadrao`/`classificarTurnoParaUI` e a NOVA REGRA DE COMPENSAÇÃO (carga igual à esperada com horário atípico = lança `he` he=0, registrando entrada/saída por controle); 38 testes. 7ª leva: FÉRIAS POR INTERVALO — migration 25 (`ponto_ferias`, saldo de 15 dias/ano, sem sobreposição via exclusion constraint, migra as férias avulsas) + `QUOTA_FERIAS_ANUAL`/helpers na lib (46 testes), `criarFerias`/`excluirFerias`/`saldoFerias` no hook, formulário início+fim e lista de férias na tela, e **valores movidos para a página Configurações** (`PontoConfig.jsx`, reajuste vale só para lançamentos novos). 8ª leva: lançamento virou "+ Lançar avulso" em modal padrão (sistema analisa a data e classifica hora extra / dom-fer / compensação, bloqueando o horário padrão), "Marcar férias" no mesmo modal, feriados movidos para a Configurações. 9ª leva: linha do tempo **semanal** (SeletorPeriodo do Planejamento) e correção do bug do card Domingos/feriados (`fecharPeriodo` lendo as colunas snake_case do banco) — 47 testes.
