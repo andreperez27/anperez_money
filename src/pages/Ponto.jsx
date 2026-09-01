@@ -23,7 +23,7 @@ import {
 //     (que dispensa lançamento);
 //   • "Marcar férias" abre o mesmo modal com intervalo (início/fim; dia único
 //     = início igual a fim) e controle do saldo de 15 dias do ano.
-// O resumo do mês soma as exceções + dias de férias; os demais dias contam
+// O resumo da semana soma as exceções + dias de férias; os demais dias contam
 // como padrão. Os feriados são geridos na página Configurações (PontoConfig).
 export default function Ponto() {
   // Linha do tempo SEMANAL (mesmo padrão de Planejamento, via periodos.js +
@@ -91,7 +91,7 @@ export default function Ponto() {
     }
   }, [modal, data, entrada, saida, feriados, config])
 
-  // Quando o período visível muda (botões mês), o hook recarrega sozinho.
+  // Quando o período visível muda (setas da semana), o hook recarrega sozinho.
   useEffect(() => {
     carregarPeriodo(janela.inicioISO, janela.fimISO)
   }, [janela]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -199,7 +199,7 @@ export default function Ponto() {
         <>
           {/* ── Resumo do mês ─────────────────────────────────────────── */}
           <section style={estilosComuns.secao}>
-            <h3>Resumo do mês</h3>
+            <h3>Resumo da semana</h3>
             {carregando ? (
               <p style={estilosComuns.mensagem}>Carregando...</p>
             ) : (
