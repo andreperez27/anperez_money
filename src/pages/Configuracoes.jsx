@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Contas from './Contas'
 import CartoesConfig from '../components/CartoesConfig'
+import PontoConfig from '../components/PontoConfig'
 import { supabase } from '../lib/supabaseClient'
 import { estilosComuns } from '../lib/compartilhados'
 
@@ -107,6 +108,8 @@ export default function Configuracoes() {
         <h2>Minhas Contas</h2>
         <Contas />
       </section>
+
+      <PontoConfig />
 
       <CartoesConfig />
 

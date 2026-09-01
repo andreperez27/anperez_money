@@ -27,14 +27,17 @@ export default function SeletorPeriodo({
   aoTrocarTipo,
   aoDeslocar,
   aoIrParaHoje,
+  tipos = TIPOS_DE_PERIODO,
 }) {
   const unidade = RÓTULO_UNIDADE[tipo] ?? 'Período'
 
   return (
     <div style={estilos.bloco}>
-      {/* Pílulas de tipo — mesma linguagem visual dos toggles existentes */}
+      {/* Pílulas de tipo — mesma linguagem visual dos toggles existentes.
+          Onde o chamador só quer um tipo (ex.: Ponto usa só a semana), passa
+          `tipos={['semana']}` para esconder as demais pílulas. */}
       <div style={estilos.pilulas}>
-        {TIPOS_DE_PERIODO.map((t) => (
+        {tipos.map((t) => (
           <button
             key={t}
             type="button"
