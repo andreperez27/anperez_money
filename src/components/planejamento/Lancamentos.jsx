@@ -221,6 +221,7 @@ export default function Lancamentos({
       serie_id: item.serie_id,
       descricao: item.descricao,
       data_prevista: item.data_prevista,
+      periodicidade: item.periodicidade ?? 'mensal',
       __valorMensal: Number(item.valor),
       __dataInicial: item.data_prevista,
       __serieDataTermino: item.serie_data_termino ?? null,
@@ -628,6 +629,7 @@ export default function Lancamentos({
             <GeradorRecorrenciaMensal
               nome={recNome}
               tipoOp="Saida"
+              permiteSemanal
               contaPadrao={recForm.destino === 'conta' ? recForm.conta || undefined : undefined}
               destinoPadrao={recForm.destino || undefined}
               cartaoPadraoId={recForm.destino === 'cartao' ? recForm.cartao || undefined : undefined}
@@ -717,8 +719,9 @@ export default function Lancamentos({
               </div>
             </GeradorRecorrenciaMensal>
             <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
-              O DAS-MEI e assinaturas mensais (Netflix, HBO, Vivo) entram aqui:
-              valor fixo todo mês, gerado como origem 'recorrente'.
+              Despesas fixas (DAS-MEI, Netflix, condomínio) entram como recorrência
+              MENSAL; entradas semanais (ex.: pagamento fixo) como SEMANAL — valor
+              fixo repetido, gerado como origem 'recorrente'.
             </p>
           </div>
         )}
@@ -908,9 +911,13 @@ export default function Lancamentos({
           {itens.map((item) => {
             const disponivel = ehDisponivel(item, dataHoje)
             const ehSerie = !!item.serie_id
+            // Recorrência é despesa fixa mensal (não compra parcelada): além de
+            // não exibir "1/24", não carrega a tag de mês na descrição.
+            const ehRecorrente = item.origem === 'recorrente'
             const ehFatura = item.fatura === true
             const ehFaturaReal = ehFatura && item.tipo === 'real'
             const ehFaturaProjetada = ehFatura && item.tipo === 'projetada'
+            const ehFerias = item.ferias === true
             const destinoCartao =
               item.estado === 'previsto' &&
               item.destino_padrao === 'cartao' &&
@@ -925,7 +932,7 @@ export default function Lancamentos({
                     <div style={estilosItem.linhaMobileTopo}>
                       <span style={estilosItem.data}>{formatarData(item.data_prevista)}</span>
                       <span style={estilosItem.topoDireita}>
-                        {ehSerie && (
+                        {ehSerie && !ehRecorrente && (
                           <span style={estilosItem.badgeParcela}>
                             {item.parcela_numero}/{item.total_parcelas}
                           </span>
@@ -935,6 +942,9 @@ export default function Lancamentos({
                         )}
                         {ehFaturaProjetada && (
                           <span style={estilosItem.badgeProjecao}>Projeção</span>
+                        )}
+                        {ehFerias && (
+                          <span style={estilosItem.badgeFerias}>Férias</span>
                         )}
                         {destinoCartao && (
                           <span style={estilosItem.badgeDestinoCartao} title="Destino planejado: cartão de crédito (ainda não efetivado)">
@@ -955,7 +965,9 @@ export default function Lancamentos({
                         {RÓTULO_TIPO(item.tipo_op)} · {formatoReal.format(Number(item.valor))}
                       </span>
                       <span style={estilosItem.acoes}>
-                        {ehFaturaReal ? (
+                        {ehFerias ? (
+                          <span style={estilosItem.textoFerias}>Aviso</span>
+                        ) : ehFaturaReal ? (
                           <button type="button" onClick={() => aoEfetivarFatura(item)} title="Pagar a fatura em aberto do cartão (valor real)" style={estilosItem.botaoAcaoFatura}>Pagar fatura</button>
                         ) : ehFaturaProjetada ? (
                           <span style={estilosItem.botaoAcaoNeutro}>Projeção</span>
@@ -991,7 +1003,7 @@ export default function Lancamentos({
                     <span style={estilosItem.data}>{formatarData(item.data_prevista)}</span>
                     <span style={conteudoItem(item)}>
                       {item.descricao}
-                      {ehSerie && (
+                      {ehSerie && !ehRecorrente && (
                         <span style={{ ...estilosItem.badgeParcela, marginLeft: '0.5rem' }}>
                           {item.parcela_numero}/{item.total_parcelas}
                         </span>
@@ -1001,6 +1013,9 @@ export default function Lancamentos({
                       )}
                       {ehFaturaProjetada && (
                         <span style={{ ...estilosItem.badgeProjecao, marginLeft: '0.5rem' }}>Projeção</span>
+                      )}
+                      {ehFerias && (
+                        <span style={{ ...estilosItem.badgeFerias, marginLeft: '0.5rem' }}>Férias</span>
                       )}
                       {destinoCartao && (
                         <span style={{ ...estilosItem.badgeDestinoCartao, marginLeft: '0.5rem' }} title="Destino planejado: cartão de crédito (ainda não efetivado)">
@@ -1019,7 +1034,9 @@ export default function Lancamentos({
                     </span>
                     <span style={badgeEstado(item.estado)}>{RÓTULO_ESTADO[item.estado] ?? item.estado}</span>
                     <span style={estilosItem.acoes}>
-                      {ehFaturaReal ? (
+                      {ehFerias ? (
+                        <span style={estilosItem.textoFerias}>Aviso</span>
+                      ) : ehFaturaReal ? (
                         <button type="button" onClick={() => aoEfetivarFatura(item)} title="Pagar a fatura em aberto do cartão (valor real)" style={estilosItem.botaoAcaoFatura}>Pagar fatura</button>
                       ) : ehFaturaProjetada ? (
                         <span style={estilosItem.botaoAcaoNeutro}>Projeção</span>

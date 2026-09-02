@@ -13,7 +13,9 @@ import { montarObservacaoCondominio } from '../../lib/despesaRecorrenteCalc'
 import {
   totalParcelasRecorrencia,
   primeiroVencimento,
+  totalOcorrenciasRecorrencia,
 } from '../../lib/recorrenciaCalc'
+import { diaDaSemanaIso } from '../../lib/parcelas'
 
 // ============================================================================
 // GERADOR DE RECORRÊNCIA MENSAL (ETAPA 06/P4 — componente reutilizável)
@@ -47,6 +49,11 @@ import {
 //                      aoCriarSerie não é informado. Mantido para não quebrar o
 //                      GeradorDasMei preservado como referência.
 //   • aoPosMutacao   — callback pós-criação (recarrega a faixa na página).
+//   • permiteSemanal — se 'true', mostra o seletor Mensal/Semanal. Em SEMANAL,
+//                      o mês/dia dão lugar a "Dia da semana" + "Data de início"
+//                      (a 1ª ocorrência; o passo é 7 dias corridos). Quando
+//                      'false' (padrão — Condomínio/DAS-MEI), nada muda: segue
+//                      mensal estrito.
 //   • aoResetarCamposExtra — callback opcional para o PAI limpar os campos que
 //                      ele injeta como children (ex.: descrição/valor no
 //                      Lancamentos, gás/água no GeradorCondominio). O próprio
@@ -68,6 +75,7 @@ export default function GeradorRecorrenciaMensal({
   cartaoPadraoId,
   calcularValor,
   children,
+  permiteSemanal = false,
   aoCriarSerie,
   aoCriar,
   aoPosMutacao,
@@ -85,6 +93,15 @@ export default function GeradorRecorrenciaMensal({
   const [msg, setMsg] = useState({ tipo: '', texto: '' })
   const [gerando, setGerando] = useState(false)
 
+  // Recorrência SEMANAL (somente quando permiteSemanal). periodicidade
+  // 'mensal'|'semanal'; diaSemana em padrão ISO 0=seg..6=dom; dataInicio é a
+  // data da 1ª ocorrência (o passo seguinte é +7 dias corridos).
+  const [periodicidade, setPeriodicidade] = useState('mensal')
+  const [diaSemana, setDiaSemana] = useState(() => diaDaSemanaIso(hoje()))
+  const [dataInicio, setDataInicio] = useState(() => hoje())
+
+  const ehSemanal = periodicidade === 'semanal'
+
   const [anoAtual, mesAtual] = mesAno.split('-').map(Number)
   const rotuloMes = `${MES_3[mesAtual - 1]}/${anoAtual}`
 
@@ -99,9 +116,11 @@ export default function GeradorRecorrenciaMensal({
     }
   }, [mesAno, calcularValor])
 
-  // Número de parcelas da série: com término = meses até ele (inclusive);
-  // sem término = horizonte inicial fixo (lib recorrenciaCalc).
-  const totalParcelas = totalParcelasRecorrencia(mesAno, dataTermino)
+  // Número de parcelas da série: com término = meses/semanas até ele
+  // (inclusive); sem término = horizonte inicial fixo (lib recorrenciaCalc).
+  const totalParcelas = ehSemanal
+    ? totalOcorrenciasRecorrencia(dataInicio, dataTermino, 'semanal')
+    : totalParcelasRecorrencia(mesAno, dataTermino)
 
   // Zera o formulário para o próximo lançamento: mês/dia voltam para HOJE e a
   // data de término é limpa (pedido do André — 01/09/2026). Evita gerar 2× a
@@ -110,17 +129,29 @@ export default function GeradorRecorrenciaMensal({
     setMesAno(hoje().slice(0, 7))
     setDiaVencimento(Number(hoje().slice(8, 10)))
     setDataTermino('')
+    setPeriodicidade('mensal')
+    setDiaSemana(diaDaSemanaIso(hoje()))
+    setDataInicio(hoje())
   }
 
   // Painel de resumo da extensão para o usuário decidir antes de gerar.
   const rotuloTérmino = dataTermino
-    ? `até ${formatarData(dataTermino)} (${totalParcelas} meses)`
-    : `indefinida (${totalParcelas} meses — prorrogável)`
+    ? `até ${formatarData(dataTermino)} (${totalParcelas} ${ehSemanal ? 'semanas' : 'meses'})`
+    : `indefinida (${totalParcelas} ${ehSemanal ? 'semanas' : 'meses'} — prorrogável)`
 
   async function aoGerar(e) {
     e.preventDefault()
     if (gerando) return
-    if (!diaVencimento || diaVencimento < 1 || diaVencimento > 31) {
+    if (ehSemanal) {
+      if (!dataInicio || !/^\d{4}-\d{2}-\d{2}$/.test(dataInicio)) {
+        setMsg({ tipo: 'erro', texto: 'Informe a data de início (a 1ª ocorrência da série).' })
+        return
+      }
+      if (dataInicio.slice(0, 7) < hoje().slice(0, 7)) {
+        setMsg({ tipo: 'erro', texto: 'A data de início deve ser no mês corrente ou futura.' })
+        return
+      }
+    } else if (!diaVencimento || diaVencimento < 1 || diaVencimento > 31) {
       setMsg({ tipo: 'erro', texto: 'Informe o dia do vencimento (1 a 31).' })
       return
     }
@@ -131,17 +162,21 @@ export default function GeradorRecorrenciaMensal({
     try {
       setGerando(true)
       const valorCentavos = Math.round(previa.total * 100)
-      const dataPrimeiraParcela = primeiroVencimento(mesAno, diaVencimento)
+      const dataPrimeiraParcela = ehSemanal ? dataInicio : primeiroVencimento(mesAno, diaVencimento)
       // Contrato da série recorrente (camelCase, como na série parcelada):
       // repetirValorEmOcorrencias → montarLinhasRecorrentes. NÃO usar
       // snake_case aqui — a lib lê tipoOp/contaDestinoId/destinoPadrao/
       // cartaoPadraoId (bug corrigido em 01/09/2026).
       const serieDados = {
         tipoOp,
-        descricao: `${nome} ${rotuloMes}`,
+        // Recorrência NÃO é uma compra de um mês específico: a descrição é o
+        // nome puro (sem a tag "SET/2026" do mês de criação). Cada ocorrência
+        // da série já tem a própria data_prevista.
+        descricao: nome,
         valorCentavos,
         totalParcelas,
         dataPrimeiraParcela,
+        periodicidade: ehSemanal ? 'semanal' : 'mensal',
         origem: 'recorrente',
         observacao: montarObservacaoCondominio(previa.detalhamento),
         serieDataTermino: dataTermino || undefined,
@@ -156,7 +191,7 @@ export default function GeradorRecorrenciaMensal({
         await aoCriarSerie(serieDados)
         setMsg({
           tipo: 'ok',
-          texto: `Série de ${nome} gerada: ${totalParcelas} meses × ${formatoReal.format(previa.total)} (${rotuloTérmino}).`,
+          texto: `Série de ${nome} gerada: ${totalParcelas} ${ehSemanal ? 'semanas' : 'meses'} × ${formatoReal.format(previa.total)} (${rotuloTérmino}).`,
         })
       } else {
         // Fallback legado (avulso de UM mês) — mantido p/ GeradorDasMei ref.
@@ -189,22 +224,62 @@ export default function GeradorRecorrenciaMensal({
   return (
     <form onSubmit={aoGerar} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }} noValidate>
       <div style={estilos.grade}>
-        <label style={estilos.rotuloCampo}>
-          Mês de início
-          <input style={estilosComuns.input} type="month" value={mesAno} onChange={(e) => setMesAno(e.target.value)} />
-        </label>
-        <label style={estilos.rotuloCampo}>
-          Dia do vencimento
-          <input
-            style={estilosComuns.input}
-            type="number"
-            min="1"
-            max="31"
-            step="1"
-            value={diaVencimento}
-            onChange={(e) => setDiaVencimento(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
+        {permiteSemanal && (
+          <label style={estilos.rotuloCampo}>
+            Periodicidade
+            <select
+              style={estilosComuns.input}
+              value={periodicidade}
+              onChange={(e) => setPeriodicidade(e.target.value)}
+            >
+              <option value="mensal">Mensal</option>
+              <option value="semanal">Semanal</option>
+            </select>
+          </label>
+        )}
+        {!ehSemanal ? (
+          <>
+            <label style={estilos.rotuloCampo}>
+              Mês de início
+              <input style={estilosComuns.input} type="month" value={mesAno} onChange={(e) => setMesAno(e.target.value)} />
+            </label>
+            <label style={estilos.rotuloCampo}>
+              Dia do vencimento
+              <input
+                style={estilosComuns.input}
+                type="number"
+                min="1"
+                max="31"
+                step="1"
+                value={diaVencimento}
+                onChange={(e) => setDiaVencimento(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label style={estilos.rotuloCampo}>
+              Dia da semana
+              <select
+                style={estilosComuns.input}
+                value={diaSemana}
+                onChange={(e) => setDiaSemana(Number(e.target.value))}
+              >
+                <option value={0}>Segunda-feira</option>
+                <option value={1}>Terça-feira</option>
+                <option value={2}>Quarta-feira</option>
+                <option value={3}>Quinta-feira</option>
+                <option value={4}>Sexta-feira</option>
+                <option value={5}>Sábado</option>
+                <option value={6}>Domingo</option>
+              </select>
+            </label>
+            <label style={estilos.rotuloCampo}>
+              Data de início (1ª ocorrência)
+              <input style={estilosComuns.input} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+            </label>
+          </>
+        )}
         <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
           Data de término (opcional — deixe vazio p/ indefinido)
           <input style={estilosComuns.input} type="date" value={dataTermino} onChange={(e) => setDataTermino(e.target.value)} />
@@ -218,7 +293,10 @@ export default function GeradorRecorrenciaMensal({
       </div>
 
       <p style={{ color: '#9ca3af', fontSize: '0.8rem', margin: 0 }}>
-        Valor do mês de início repetido em cada parcela · Duração: <strong style={{ color: '#e5e7eb' }}>{rotuloTérmino}</strong>.
+        {ehSemanal
+          ? 'Mesmo valor repetido a cada 7 dias da data de início · Duração: '
+          : 'Valor do mês de início repetido em cada parcela · Duração: '}
+        <strong style={{ color: '#e5e7eb' }}>{rotuloTérmino}</strong>.
       </p>
 
       {msg.texto && (
@@ -226,7 +304,7 @@ export default function GeradorRecorrenciaMensal({
       )}
 
       <button type="submit" disabled={gerando} style={gerando ? { ...estilosComuns.botaoCriar, opacity: 0.6 } : estilosComuns.botaoCriar}>
-        {gerando ? 'Gerando...' : `Gerar série de ${rotuloMes} (${totalParcelas} meses)`}
+        {gerando ? 'Gerando...' : `Gerar série de ${rotuloMes} (${totalParcelas} ${ehSemanal ? 'semanas' : 'meses'})`}
       </button>
     </form>
   )

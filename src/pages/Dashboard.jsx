@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useMuyEstrecho } from '../hooks/useMediaQuery'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useTodasCaixinhas } from '../hooks/useCaixinhas'
+import { useLimitesCartoes } from '../hooks/useLimitesCartoes'
+import { useResumoPonto } from '../hooks/useResumoPonto'
+import { useResumoPlanejamento } from '../hooks/useResumoPlanejamento'
 import { formatoReal } from '../lib/compartilhados'
 import HomeCard, {
   IconeContas,
@@ -16,8 +19,9 @@ import anperezLogo from '../assets/anperez-logo.png'
 
 // Tela inicial = HUB DE DIRECIONAMENTO (decisão E2.6-A): apresenta a
 // identidade do app e navega para os módulos. Os módulos apresentam os
-// próprios dados nas suas telas — exceto o card de Contas Correntes que
-// mostra saldo real da conta ativa (toggle com patrimônio total).
+// próprios dados nas suas telas — exceto os cards de Contas Correntes e
+// de Cartões, que ciclam entre todas as contas/cartões ativos e terminam
+// no total consolidado (o mesmo padrão de "clicar no valor para alternar").
 //
 // Visual identity: design tokens extraídos do anperez-mockup-v2.html.
 // Tipografia: Space Grotesk (textos) + JetBrains Mono (valores/labels).
@@ -26,17 +30,45 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const muyEstrecho = useMuyEstrecho()
   const [valoresVisiveis, setValoresVisiveis] = useState(true)
-  const [modoContas, setModoContas] = useState('pj')
-  const { contaAtiva, contas } = useContaAtiva()
+  // Índice do ciclo de contas (0..N). N = última posição = patrimônio total,
+  // voltando à primeira conta depois. Generalizado: acompanha qualquer
+  // quantidade de contas ativas sem precisar mexer aqui de novo.
+  const [modoContas, setModoContas] = useState(0)
+  const { contas } = useContaAtiva()
   const { caixinhas: todasCaixinhas } = useTodasCaixinhas()
+  // Índice do ciclo de cartões (0 = total de disponível, depois cada cartão).
+  const [modoCartoes, setModoCartoes] = useState(0)
+  const { cartoesAtivos, limites, total: totalDisponivel } = useLimitesCartoes()
+  const resumoPonto = useResumoPonto()
+  const resumoPlanejamento = useResumoPlanejamento()
 
-  const saldoPJ = contaAtiva ? Number(contaAtiva.saldo_atual) : 0
-  const patrimonio = contas
-    .filter((c) => c.ativa)
-    .reduce((soma, c) => soma + Number(c.saldo_atual), 0)
+  const contasAtivas = contas.filter((c) => c.ativa)
+  const patrimonio =
+    contasAtivas.reduce((soma, c) => soma + Number(c.saldo_atual), 0)
     + todasCaixinhas
       .filter((c) => c.ativa)
       .reduce((soma, c) => soma + Number(c.saldo), 0)
+
+  // O ciclo do card de Contas: cada conta ativa (na ordem da lista) e, por
+  // fim, o patrimônio total. Indice final = contasAtivas.length.
+  const totalEtapas = contasAtivas.length + 1
+  const etapaContas = modoContas % totalEtapas
+  const contaDaEtapa = contasAtivas[etapaContas]
+  const rotuloConta = contaDaEtapa ? `Saldo ${contaDaEtapa.nome}` : 'Patrimônio total'
+  const valorConta = contaDaEtapa ? Number(contaDaEtapa.saldo_atual) : patrimonio
+
+  // O ciclo do card de Cartões: total do limite disponível e, depois, o
+  // disponível de cada cartão (na ordem da lista). Indice final =
+  // cartoesAtivos.length (sem ativos → só o total).
+  const totalEtapasCartoes = cartoesAtivos.length + 1
+  const etapaCartoes = modoCartoes % totalEtapasCartoes
+  const cartaoDaEtapa = cartoesAtivos[etapaCartoes - 1]
+  const rotuloCartao = cartaoDaEtapa
+    ? `Disponível ${cartaoDaEtapa.nome}`
+    : 'Limite disponível total'
+  const valorCartao = cartaoDaEtapa
+    ? limites[cartaoDaEtapa.id] ?? (Number(cartaoDaEtapa.limite) || 0)
+    : totalDisponivel
 
   return (
     <div style={estilos.root}>
@@ -84,32 +116,53 @@ export default function Dashboard() {
           titulo="Contas Correntes"
           descricao={
             <div>
-              <span style={estilos.contaLabel}>
-                {modoContas === 'pj' ? `Saldo ${contaAtiva?.nome ?? ''}` : 'Patrimônio total'}
-              </span>
+              <span style={estilos.contaLabel}>{rotuloConta}</span>
               <span style={{
                 ...estilos.contaValor,
                 filter: valoresVisiveis ? 'none' : 'blur(5px)',
                 opacity: valoresVisiveis ? 1 : 0.5,
               }}>
-                {formatoReal.format(modoContas === 'pj' ? saldoPJ : patrimonio)}
+                {formatoReal.format(valorConta)}
               </span>
             </div>
           }
           aoClicar={() => navigate('/contas')}
-          aoClicarValor={() => setModoContas((m) => m === 'pj' ? 'patrimonio' : 'pj')}
+          aoClicarValor={() => setModoContas((m) => m + 1)}
         />
         <HomeCard
           icone={<IconeCartoes />}
           titulo="Cartões de Crédito"
-          descricao="Faturas e limites"
+          descricao={
+            <div>
+              <span style={estilos.contaLabel}>{rotuloCartao}</span>
+              <span style={{
+                ...estilos.contaValor,
+                filter: valoresVisiveis ? 'none' : 'blur(5px)',
+                opacity: valoresVisiveis ? 1 : 0.5,
+              }}>
+                {formatoReal.format(valorCartao)}
+              </span>
+            </div>
+          }
           aoClicar={() => navigate('/cartoes')}
-          valorVisivel={valoresVisiveis}
+          aoClicarValor={() => setModoCartoes((m) => m + 1)}
         />
         <HomeCard
           icone={<IconePonto />}
           titulo="Ponto Inteligente"
-          descricao="Jornada e horas a receber"
+          descricao={
+            <div>
+              <span style={estilos.contaLabel}>Saldo de horas da semana</span>
+              <span style={{
+                ...estilos.contaValorPonto,
+                filter: valoresVisiveis ? 'none' : 'blur(5px)',
+                opacity: valoresVisiveis ? 1 : 0.5,
+              }}>
+                {resumoPonto.saldoHoras >= 0 ? '+' : ''}
+                {Math.round(resumoPonto.saldoHoras * 100) / 100}h
+              </span>
+            </div>
+          }
           aoClicar={() => navigate('/ponto')}
         />
         <HomeCard
@@ -121,7 +174,18 @@ export default function Dashboard() {
         <HomeCard
           icone={<IconePlanejamento />}
           titulo="Planejamento"
-          descricao="Entradas e despesas futuras"
+          descricao={
+            <div>
+              <span style={estilos.contaLabel}>Previsto da semana</span>
+              <span style={{
+                ...estilos.contaValorPonto,
+                filter: valoresVisiveis ? 'none' : 'blur(5px)',
+                opacity: valoresVisiveis ? 1 : 0.5,
+              }}>
+                {formatoReal.format(resumoPlanejamento.resultado)}
+              </span>
+            </div>
+          }
           aoClicar={() => navigate('/planejamento')}
         />
         <HomeCard
@@ -214,6 +278,13 @@ const estilos = {
     fontWeight: 500,
     color: '#5c6a68',
     transition: 'filter 0.2s, opacity 0.2s',
+  },
+  contaValorPonto: {
+    display: 'block',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '10.5px',
+    fontWeight: 600,
+    color: '#12181a',
   },
   grid: {
     display: 'grid',

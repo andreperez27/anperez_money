@@ -10,6 +10,7 @@ import Caixinhas from './pages/Caixinhas'
 import CaixinhaDetalhe from './pages/CaixinhaDetalhe'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
+import TrocarSenha from './pages/TrocarSenha'
 import Ponto from './pages/Ponto'
 import Planejamento from './pages/Planejamento'
 import Layout from './components/Layout'
@@ -213,6 +214,7 @@ function App() {
         }
       >
         <Route index element={<Configuracoes />} />
+        <Route path="senha" element={<TrocarSenha />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

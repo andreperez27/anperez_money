@@ -270,5 +270,74 @@ verificar('P8 — modo SEMANA: navegando para a semana do VENCIMENTO a Projeçã
   assert.equal(calcularResumoPlanejamentos(itensParaSomatorio).totais.saidas, 186.05)
 })
 
+verificar('P9 — item REALIZADO em cartão NÃO soma como saída do fluxo (só via fatura)', () => {
+  // Cenário reportado: Netflix e "Seguro do carro - Mapfre" realizados EM
+  // CARTÃO (estado='realizado', lancamento_tipo='compra' — a RPC mantém
+  // destino_padrao='cartao' via realizar_planejamento_cartao). A saída
+  // de caixa só ocorre no PAGAMENTO da fatura do cartão — nunca como linha
+  // própria no fluxo do período.
+  const realizedCartao = (id, data, valor) => ({
+    id,
+    estado: 'realizado',
+    lancamento_tipo: 'compra',
+    destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-A',
+    data_prevista: data,
+    valor,
+    tipo_op: 'Saida',
+  })
+  const itensBase = [
+    realizedCartao('netflix', '2026-09-02', 44.9),
+    realizedCartao('seguro', '2026-09-02', 141.15),
+  ]
+  const { itensVisiveis, itensParaSomatorio } = montarProjecao({
+    itensBase,
+    cartoes: [cartaoA],
+    faturasReais: [], // fatura real paga em outra semana/fora desta faixa
+    inicioISO: '2026-08-31',
+    fimISO: '2026-09-06', // semana 36 (mesma da queixa)
+  })
+
+  // Continuam visíveis na timeline (computados como realizados).
+  assert.equal(itensVisiveis.length, 2)
+  assert.ok(itensVisiveis.some((i) => i.id === 'netflix'))
+  assert.ok(itensVisiveis.some((i) => i.id === 'seguro'))
+
+  // Mas NÃO entram no somatório: a saída do fluxo desta semana é R$ 0
+  // (nenhuma fatura do cartão vence/paga nesta faixa).
+  assert.equal(itensParaSomatorio.length, 0)
+  const resumo = calcularResumoPlanejamentos(itensParaSomatorio)
+  assert.equal(resumo.totais.saidas, 0) // NÃO 186,05
+})
+
+verificar('P10 — em cartão REALIZADO fora da faixa da fatura não soma; dentro da fatura real soma uma vez', () => {
+  // O realizado de cartão já está na fatura REAL (v_faturas). Nesta faixa a
+  // fatura real do cartão (valor 186,05) aparece e paga; o item realizado NÃO
+  // pode somar de novo como linha (senão vira 372,10).
+  const realized = {
+    id: 'seguro',
+    estado: 'realizado',
+    lancamento_tipo: 'compra',
+    destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-A',
+    data_prevista: '2026-08-31',
+    valor: 186.05,
+    tipo_op: 'Saida',
+  }
+  const { itensVisiveis, itensParaSomatorio } = montarProjecao({
+    itensBase: [realized],
+    cartoes: [cartaoA], // vencimento dia 10
+    faturasReais: [{ cartao: cartaoA, mes: '2026-09', valor_restante: 186.05 }],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+  })
+  // Timeline: item realizado + a fatura real.
+  assert.equal(itensVisiveis.length, 2)
+  assert.ok(itensVisiveis.some((i) => i.fatura === true))
+  // Somatório: só a fatura (186,05), não 372,10.
+  const resumo = calcularResumoPlanejamentos(itensParaSomatorio)
+  assert.equal(resumo.totais.saidas, 186.05)
+})
+
 console.log(`\n${ok} ok, ${falhou} falharam`)
 process.exit(falhou === 0 ? 0 : 1)

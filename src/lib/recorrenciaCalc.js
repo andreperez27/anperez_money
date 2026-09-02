@@ -47,6 +47,29 @@ export function totalParcelasRecorrencia(mesInicial, dataTermino) {
   return mesesAteTermino(mesInicial, dataTermino)
 }
 
+// Total de ocorrências de uma recorrência até dataTermino (inclusive):
+// mensal = meses completos (totalParcelasRecorrencia); semanal = semanas
+// inteiras (7 dias corridos) contadas da data de início até o término +1.
+export function totalOcorrenciasRecorrencia(inicioISO, dataTermino, periodicidade = 'mensal') {
+  if (periodicidade === 'semanal') {
+    if (!dataTermino) return HORIZONTE_RECORRENCIA_SEM_TERMINO_MESES
+    if (typeof inicioISO !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(inicioISO)) {
+      throw new Error(`Data de início inválida ("${inicioISO}"): use o formato YYYY-MM-DD.`)
+    }
+    if (typeof dataTermino !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dataTermino)) {
+      throw new Error(`Data de término inválida ("${dataTermino}"): use o formato YYYY-MM-DD.`)
+    }
+    const msInicio = Date.UTC(...inicioISO.split('-').map(Number).map((v, i) => (i === 1 ? v - 1 : v)))
+    const msTermino = Date.UTC(...dataTermino.split('-').map(Number).map((v, i) => (i === 1 ? v - 1 : v)))
+    const total = Math.floor((msTermino - msInicio) / (7 * 86_400_000)) + 1
+    if (total < 1) {
+      throw new Error('A data de término deve ser na data de início ou depois dela.')
+    }
+    return total
+  }
+  return totalParcelasRecorrencia(inicioISO.slice(0, 7), dataTermino)
+}
+
 // Monta 'YYYY-MM-DD' do dia do vencimento no mês de início, com clamp de fim
 // de mês (ex.: dia 31 em fevereiro → 28/29). A lib dataDaParcela já faz o
 // clamp nos meses seguintes preservando a âncora (D2) — aqui só normalizamos

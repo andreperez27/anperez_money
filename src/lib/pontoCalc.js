@@ -282,6 +282,19 @@ export function saldoFeriasNoAno(ferias = [], ano) {
   return QUOTA_FERIAS_ANUAL - feriasUsadasNoAno(ferias, ano)
 }
 
+// Carga cumprida para exibição (UI): soma da carga esperada + horas extras
+// registradas + horas trabalhadas em domingo/feriado. A decisão de contar
+// (ou não) o dom/fer aqui é da UI — este helper entrega a carte completa:
+//   cargaEsperada + resumo.he + resumo.horasDomfer
+// Separado em lib pura para teste e reuso (equivale ao total exibido no card
+// "Carga horária" da semana). Sem férias/feriados extras, basta passar as
+// exceções e a janela.
+export function cargaCumpridaHoras(excecoes, { inicioISO, fimISO }, ferias, feriados) {
+  const resumo = fecharPeriodo(excecoes, { inicioISO, fimISO }, ferias)
+  const esperada = cargaEsperadaHoras(inicioISO, fimISO, feriados, ferias)
+  return Math.round((esperada + resumo.he + resumo.horasDomfer) * 100) / 100
+}
+
 // Dias do intervalo que se sobrepõem à janela [inicioISO, fimISO] (inclusive).
 export function diasIntervaloNaJanela({ data_inicio, data_fim }, inicioISO, fimISO) {
   const ini = inicioISO && data_inicio < inicioISO ? inicioISO : data_inicio
@@ -334,6 +347,7 @@ export function fecharPeriodo(excecoes, { inicioISO, fimISO } = {}, ferias = [])
 
   let horas = 0
   let he = 0
+  let horasDomfer = 0
   let domferQtdTotal = 0
   let diasTrabalho = 0
   let diasFerias = ferias.reduce(
@@ -357,6 +371,9 @@ export function fecharPeriodo(excecoes, { inicioISO, fimISO } = {}, ferias = [])
     const valorDomfer = Number(ex.valor_domfer ?? ex.valorDomfer ?? 0)
     horas += Number(ex.horas || 0)
     he += Number(ex.he || 0)
+    // Horas trabalhadas em domingo/feriado, separadas para o card de carga
+    // total: entram na carga cumprida da semana, mas NÃO na HE (têm diária).
+    if (ex.tipo === 'domfer') horasDomfer += Number(ex.horas || 0)
     domferQtdTotal += domferQtd
     valorHeTotal += valorHe
     valorDomferTotal += valorDomfer
@@ -368,6 +385,7 @@ export function fecharPeriodo(excecoes, { inicioISO, fimISO } = {}, ferias = [])
     diasFerias,
     horas: Math.round(horas * 100) / 100,
     he: Math.round(he * 100) / 100,
+    horasDomfer: Math.round(horasDomfer * 100) / 100,
     domferQtd: domferQtdTotal,
     valorHe: Math.round(valorHeTotal * 100) / 100,
     valorDomfer: Math.round(valorDomferTotal * 100) / 100,

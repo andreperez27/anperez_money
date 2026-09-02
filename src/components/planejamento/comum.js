@@ -113,6 +113,11 @@ export const estilosItem = {
   // VERDE-LIMÃO, sem botão de pagar (só a fatura REAL paga).
   badgeProjecao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(163, 230, 53, 0.15)', color: '#a3e635', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
   badgeDisponivel: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Marcador de FÉRIAS (sintético, R$ 0, aviso de data futura) — tom CIANO,
+  // distinto de fatura (violeta) / projeção (verde-limão) / cartão (azul).
+  badgeFerias: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(34, 211, 238, 0.15)', color: '#22d3ee', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Férias não são lançáveis/edítáveis/excluíveis — rótulo inerte (valor 0).
+  textoFerias: { color: '#22d3ee', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'default', whiteSpace: 'nowrap' },
   // Destino padrão planejado (cartão) em item ainda PREVISTO — tom AZUL, para
   // deixar claro que é intenção (não efetivado), diferente do badge de compra
   // já lançada e do "Disponível" (amarelo).

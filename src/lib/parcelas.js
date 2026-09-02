@@ -127,6 +127,31 @@ export function dataDaParcela(dataPrimeiraISO, numeroParcela, periodicidade = 'm
 }
 
 // ----------------------------------------------------------------------------
+// 2b. DIA DA SEMANA (recorrência semanal)
+// ----------------------------------------------------------------------------
+// O dia da semana de uma data no padrão ISO: 0 = segunda ... 6 = domingo.
+// Exportado para a UI pré-selecionar o seletor "dia da semana" na edição.
+export function diaDaSemanaIso(dataISO) {
+  const { ano, mes, dia } = lerDataCivil(dataISO)
+  return (new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay() + 6) % 7
+}
+
+// Dada uma data de REFERÊNCIA e um dia da semana ISO desejado (0 a 6),
+// devolve a data desse dia na MESMA semana da referência (segunda a domingo,
+// corte na segunda — compatível com semanaIso de src/lib/semana.js). Usada na
+// edição: mudar só o dia da semana mantém o resto das datas na mesma semana de
+// origem da série, minimizando o deslocamento da régua.
+export function dataDoDiaDaSemanaNaSemana(ReferenciaISO, diaSemana) {
+  if (!Number.isInteger(diaSemana) || diaSemana < 0 || diaSemana > 6) {
+    throw new Error(`Dia da semana inválido (${diaSemana}): use 0 a 6 (0=seg, 6=dom).`)
+  }
+  const { ano, mes, dia } = lerDataCivil(ReferenciaISO)
+  const ts = Date.UTC(ano, mes - 1, dia)
+  const dowRef = (new Date(ts).getUTCDay() + 6) % 7
+  return isoDe(ts + (diaSemana - dowRef) * 86_400_000)
+}
+
+// ----------------------------------------------------------------------------
 // 3. GERAÇÃO DA SÉRIE — dados prontos para o hook inserir
 // ----------------------------------------------------------------------------
 // Devolve um array com UMA ocorrência por parcela (snake_case igual às
@@ -172,6 +197,7 @@ export function gerarOcorrenciasDaSerie(dados) {
       // em inteiro. Ex.: 15000 -> 150 (representação exata até 2 decimais).
       valor: centavos / 100,
       data_prevista: dataDaParcela(dataPrimeiraParcela, numero, periodicidade),
+      periodicidade: periodicidade || 'mensal',
     }
     if (origem !== undefined) ocorrencia.origem = origem
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
@@ -208,6 +234,7 @@ export function repetirValorEmOcorrencias(dados) {
     valorCentavos,
     totalParcelas,
     dataPrimeiraParcela,
+    periodicidade,
     origem,
     contaDestinoId,
     destinoPadrao,
@@ -243,7 +270,8 @@ export function repetirValorEmOcorrencias(dados) {
       tipo_op: tipoOp,
       descricao: descricao.trim(),
       valor: valorCentavos / 100,
-      data_prevista: dataDaParcela(dataPrimeiraParcela, numero, 'mensal'),
+      data_prevista: dataDaParcela(dataPrimeiraParcela, numero, periodicidade || 'mensal'),
+      periodicidade: periodicidade || 'mensal',
     }
     if (origem !== undefined) ocorrencia.origem = origem
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {

@@ -31,6 +31,7 @@ import {
   marcarFerias,
   diasDoPeriodo,
   cargaEsperadaHoras,
+  cargaCumpridaHoras,
   diasIntervaloInclusive,
   qtdDiasIntervalo,
   diasIntervaloNoAno,
@@ -304,6 +305,7 @@ caso('semana com apenas uma HE lançada fecha certo (demais dias cumpridos)', ()
     diasFerias: 0,
     horas: 9.5,
     he: 3,
+    horasDomfer: 0,
     domferQtd: 0,
     valorHe: 120,
     valorDomfer: 0,
@@ -364,6 +366,40 @@ caso('periodo inválido é rejeitado (início depois do fim)', () => {
 })
 caso('calcularLancamento exige entrada/saída e data válidas', () => {
   assert.throws(() => calcularLancamento('2026-08-10', { entrada: '', saida: null }, {}))
+})
+
+// ---------------------------------------------------------------------------
+// 8) Carga cumprida: dom/fer não entra na contagem (Parte 1.2)
+// ---------------------------------------------------------------------------
+// Semana 03/08→09/08/2026 (seg-dom). Sábado 08/08 com HE (20:30→06:00 =
+// 9,5h; base sáb = 5,5h; he = 4h). Domingo 09/08 com domfer (20:30→03:00 =
+// 6,5h; base dom = 0). A carga cumprida deve ser 38h (carga esperada) + 4h
+// (HE) = 42h — o domingo NÃO entra na carga, pois tem card e remuneração
+// próprios (diária). O saldo deve ser +4h (só a HE isolada).
+caso('cargaCumpridaHoras: dom/fer ENTRA na carga, saldo soma HE + domfer', () => {
+  const excecoes = [
+    // sáb 08/08: HE (saiu 06:00 = 4h a mais que a base 5,5h)
+    { data: '2026-08-08', tipo: 'he', horas: 9.5, he: 4, domfer_qtd: 0, valor_he: 160, valor_domfer: 0 },
+    // dom 09/08: domfer (base 0; diária ate4 = 400)
+    { data: '2026-08-09', tipo: 'domfer', horas: 6.5, he: 0, domfer_qtd: 1, valor_he: 0, valor_domfer: 400 },
+  ]
+  const janela = { inicioISO: '2026-08-03', fimISO: '2026-08-09' }
+
+  // Carga esperada da semana: seg–sex = 5 × 6,5 = 32,5h; sáb = 5,5h = 38h.
+  const esperada = cargaEsperadaHoras(janela.inicioISO, janela.fimISO)
+  assert.equal(esperada, 38)
+
+  // Carga cumprida: 38h (esperada) + 4h (HE) + 6,5h (domfer) = 48,5h.
+  const cumprida = cargaCumpridaHoras(excecoes, janela)
+  assert.equal(cumprida, 48.5)
+
+  // Saldo: +4h HE + 6,5h domfer = +10,5h (dom/fer conta na carga cumprida).
+  const resumo = fecharPeriodo(excecoes, janela)
+  assert.equal(resumo.he, 4)
+  assert.equal(resumo.horasDomfer, 6.5)
+  assert.equal(resumo.domferQtd, 1)
+  // resumo.horas é a soma bruta (9,5 + 6,5 = 16) — NÃO é a carga cumprida.
+  assert.equal(resumo.horas, 16)
 })
 
 console.log(`\n${passou} ok, ${falhou} falharam`)

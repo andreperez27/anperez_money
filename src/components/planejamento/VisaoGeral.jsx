@@ -34,6 +34,10 @@ export default function VisaoGeral({
   itens,
   dividirPorMes,
   aoVerLancamentos,
+  saldoProjetado,
+  saldoProjetadoCarregando,
+  saldoProjetadoErro,
+  rotuloPeriodo,
 }) {
   const dataHoje = hoje()
 
@@ -75,15 +79,32 @@ export default function VisaoGeral({
                 {formatoReal.format(totais.saidas)}
               </span>
             </div>
+            {/* Card único combinado: SALDO PROJETADO (destaque) + resultado
+                previsto da janela (detalhe discreto), padrão do card "Carga
+                horária" do Ponto: número grande em cima, meta pequena embaixo. */}
             <div style={estilos.cardResumo}>
-              <span style={estilos.rotuloCard}>Resultado previsto</span>
+              <span style={estilos.rotuloCard}>Saldo projetado</span>
+              {saldoProjetadoCarregando ? (
+                <span style={{ ...estilos.valorCard, color: '#9ca3af' }}>…</span>
+              ) : saldoProjetadoErro ? (
+                <span style={{ ...estilos.valorCard, color: '#f87171', fontSize: '0.85rem' }}>indisponível</span>
+              ) : (
+                <span
+                  style={{
+                    ...estilos.valorCard,
+                    color: Number(saldoProjetado) >= 0 ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {formatoReal.format(Number(saldoProjetado) || 0)}
+                </span>
+              )}
               <span
                 style={{
-                  ...estilos.valorCard,
+                  ...estilos.metaCard,
                   color: totais.resultado >= 0 ? '#4ade80' : '#f87171',
                 }}
               >
-                {formatoReal.format(totais.resultado)}
+                resultado do {rotuloPeriodo}: {formatoReal.format(totais.resultado)}
               </span>
             </div>
           </div>
@@ -133,14 +154,21 @@ export default function VisaoGeral({
                 {proximos.map((item) => {
                   const disponivel = ehDisponivel(item, dataHoje)
                   const ehSerie = !!item.serie_id
+                  const ehRecorrente = item.origem === 'recorrente'
+                  const ehFerias = item.ferias === true
                   return (
                     <li key={item.id} style={estilos.linhaProximo}>
                       <span style={estilosItem.data}>{formatarData(item.data_prevista)}</span>
                       <span style={{ ...conteudoItem(item), flex: '1 1 auto', minWidth: 0 }}>
                         {item.descricao}
-                        {ehSerie && (
+                        {ehSerie && !ehRecorrente && (
                           <span style={{ ...estilosItem.badgeParcela, marginLeft: '0.5rem' }}>
                             {item.parcela_numero}/{item.total_parcelas}
+                          </span>
+                        )}
+                        {ehFerias && (
+                          <span style={{ ...estilosItem.badgeFerias, marginLeft: '0.5rem' }}>
+                            Férias
                           </span>
                         )}
                         {disponivel && (
@@ -155,10 +183,12 @@ export default function VisaoGeral({
                       <span
                         style={{
                           ...estilosItem.valor,
-                          color: ehEntrada(item.tipo_op) ? '#4ade80' : '#f87171',
+                          color: ehFerias ? '#22d3ee' : ehEntrada(item.tipo_op) ? '#4ade80' : '#f87171',
                         }}
                       >
-                        {RÓTULO_TIPO(item.tipo_op)} · {formatoReal.format(Number(item.valor))}
+                        {ehFerias
+                          ? 'Aviso de férias'
+                          : `${RÓTULO_TIPO(item.tipo_op)} · ${formatoReal.format(Number(item.valor))}`}
                       </span>
                     </li>
                   )
@@ -191,6 +221,7 @@ const estilos = {
   cardResumo: { flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '0.85rem 1rem', borderRadius: '12px', background: '#111827', border: '1px solid #1f2937' },
   rotuloCard: { color: '#9ca3af', fontSize: '0.8rem' },
   valorCard: { fontSize: '1.15rem', fontWeight: 'bold' },
+  metaCard: { color: '#9ca3af', fontSize: '0.78rem' },
   divisao: { marginBottom: '1.25rem' },
   tituloSecao: { margin: '0 0 0.6rem', color: '#e5e7eb', fontSize: '0.95rem' },
   listaMeses: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.35rem' },

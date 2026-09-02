@@ -26,7 +26,7 @@ import {
   repetirValorEmOcorrencias,
   dataDaParcela,
 } from './parcelas.js'
-import { totalParcelasRecorrencia } from './recorrenciaCalc.js'
+import { totalOcorrenciasRecorrencia, totalParcelasRecorrencia } from './recorrenciaCalc.js'
 
 // ----------------------------------------------------------------------------
 // Linhas prontas para INSERT no Supabase, a partir do contrato de uma série.
@@ -56,6 +56,7 @@ export function montarLinhasSerie(dados) {
     if (o.destino_padrao !== undefined) linha.destino_padrao = o.destino_padrao
     if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id
     if (o.observacao !== undefined) linha.observacao = o.observacao
+    if (o.periodicidade !== undefined) linha.periodicidade = o.periodicidade
     return linha
   })
 }
@@ -262,12 +263,19 @@ export function calcularRegeneraçãoRecorrente(serie, alteracoes) {
     // regra da criação (totalParcelasRecorrencia). Sem término fica no total
     // atual (indefinida = 24 meses prorrogável, preservado na edição).
     if (novoTermino) {
-      novoTotalParcelas = totalParcelasRecorrencia(
-        dataPrimeira.slice(0, 7),
-        novoTermino,
-      )
+      const periodicidadeEfetiva =
+        alteracoes?.periodicidade !== undefined
+          ? alteracoes.periodicidade
+          : ref.periodicidade
+      novoTotalParcelas =
+        periodicidadeEfetiva === 'semanal'
+          ? totalOcorrenciasRecorrencia(dataPrimeira, novoTermino, 'semanal')
+          : totalParcelasRecorrencia(dataPrimeira.slice(0, 7), novoTermino)
     } else {
-      novoTotalParcelas = ref.total_parcelas
+      // Sem término: mantém o total atual. Séries antigas podem ter
+      // total_parcelas NULL (criadas antes da coluna/série); aí assumimos a
+      // quantidade real de ocorrências existentes na série.
+      novoTotalParcelas = ref.total_parcelas ?? serie.length
     }
   }
 
@@ -284,6 +292,10 @@ export function calcularRegeneraçãoRecorrente(serie, alteracoes) {
     valorCentavos,
     totalParcelas: novoTotalParcelas,
     dataPrimeiraParcela: dataPrimeira,
+    periodicidade:
+      alteracoes?.periodicidade !== undefined
+        ? alteracoes.periodicidade
+        : ref.periodicidade,
     origem: ref.origem,
     contaDestinoId:
       alteracoes?.conta_destino_id !== undefined
@@ -355,6 +367,7 @@ export function montarLinhasRecorrentes(dados) {
     if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id
     if (o.observacao !== undefined) linha.observacao = o.observacao
     if (o.serie_data_termino !== undefined) linha.serie_data_termino = o.serie_data_termino
+    if (o.periodicidade !== undefined) linha.periodicidade = o.periodicidade
     return linha
   })
 }

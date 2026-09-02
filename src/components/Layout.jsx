@@ -11,9 +11,10 @@ import logo from '../assets/logo.png'
 // de escritorio; en pantalla pequeña se muestran como iconos + label corto.
 const NAV_ITEMS = [
   { to: '/', end: true, rotulo: 'Início', icono: 'inicio' },
+  { to: '/planejamento', rotulo: 'Planejamento', icono: 'planejamento' },
+  { to: '/ponto', rotulo: 'Ponto', icono: 'ponto' },
   { to: '/contas', rotulo: 'Contas', icono: 'contas' },
   { to: '/cartoes', rotulo: 'Cartões', icono: 'cartoes' },
-  { to: '/configuracoes', rotulo: 'Ajustes', icono: 'config' },
 ]
 
 // Iconos SVG en línea (trazo fino, mismo estilo que HomeCard). Sin
@@ -55,6 +56,21 @@ function Icono({ nombre }) {
           {path('M4 18h10')}
           {path('M18 18h2')}
           <circle cx="16" cy="18" r="2" {...stroke} />
+        </>
+      )}
+      {nombre === 'planejamento' && (
+        <>
+          {path('M3 5h18v16H3z')}
+          {path('M8 3v4')}
+          {path('M16 3v4')}
+          {path('M3 10h18')}
+          {path('M9 15l2 2 4-4')}
+        </>
+      )}
+      {nombre === 'ponto' && (
+        <>
+          <circle cx="12" cy="12" r="9" {...stroke} />
+          {path('M12 7v5l3 2')}
         </>
       )}
     </svg>
@@ -115,6 +131,12 @@ export default function Layout() {
         <NavLink to="/" end style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Início
         </NavLink>
+        <NavLink to="/planejamento" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+          Planejamento
+        </NavLink>
+        <NavLink to="/ponto" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+          Ponto
+        </NavLink>
         <NavLink to="/contas" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Contas Correntes
         </NavLink>
@@ -172,11 +194,20 @@ export default function Layout() {
           )}
         </div>
 
-        {/* Dropdown de perfil: e-mail completo + Sair (móvil). */}
+        {/* Dropdown de perfil: e-mail completo + Configurações + Trocar senha
+            + Sair (móvil). Mantém o e-mail visível — é a referência de "essa
+            é a minha conta" no meio de tantos módulos numéricos do app. */}
         {ehMobile && perfilAberto && (
           <div style={estilos.dropdownPerfil}>
             <span style={estilos.emailDropdown}>{usuario?.email}</span>
-            <button onClick={handleLogout} style={estilos.botaoSair}>
+            <NavLink
+              to="/configuracoes"
+              style={estilos.linkPerfil}
+              onClick={() => setPerfilAberto(false)}
+            >
+              Configurações
+            </NavLink>
+            <button onClick={handleLogout} style={estilos.botaoSairPerfil}>
               Sair
             </button>
           </div>
@@ -320,6 +351,27 @@ const estilos = {
     fontSize: '0.8rem',
     wordBreak: 'break-all',
     marginBottom: '0.5rem',
+  },
+  linkPerfil: {
+    display: 'block',
+    color: '#e5e7eb',
+    textDecoration: 'none',
+    padding: '0.5rem 0.4rem',
+    borderRadius: '8px',
+    borderBottom: '1px solid #1f2937',
+  },
+  botaoSairPerfil: {
+    display: 'block',
+    width: '100%',
+    marginTop: '0.4rem',
+    padding: '0.5rem 0.4rem',
+    borderRadius: '8px',
+    border: '1px solid #374151',
+    background: 'none',
+    color: '#f87171',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'left',
   },
   menu: { display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' },
   separador: {

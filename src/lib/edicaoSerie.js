@@ -23,6 +23,7 @@ export function montarRegeneracaoRecorrente({
   valorCentavos,
   dataPrimeiraParcela,
   serieDataTermino,
+  periodicidade,
 }) {
   const alteracoes = {}
 
@@ -32,6 +33,14 @@ export function montarRegeneracaoRecorrente({
   const valorAtualCentavos = Math.round(Number(item.__valorMensal ?? item.valor) * 100)
   if (Number.isFinite(valorCentavos) && valorCentavos > 0 && valorCentavos !== valorAtualCentavos) {
     alteracoes.valorCentavos = valorCentavos
+  }
+
+  // Periodicidade da série: se mudou (mensal ↔ semanal), a regeneração passa a
+  // usar o novo passo. O dia da semana (semanal) é derivado da nova
+  // data_primeira_parcela; o dia do mês (mensal), do novo mês+dia — por isso
+  // aqui basta registrar a periodicidade; a lib gera as datas via dataDaParcela.
+  if (periodicidade !== undefined && periodicidade !== (item.periodicidade ?? 'mensal')) {
+    alteracoes.periodicidade = periodicidade
   }
 
   const dataAtual = item.__dataInicial ?? item.data_prevista

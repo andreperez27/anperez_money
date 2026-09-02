@@ -3,8 +3,11 @@ import { usePlanejamentos } from '../hooks/usePlanejamentos'
 import { useFaturasPlanejamento } from '../hooks/useFaturasPlanejamento'
 import { montarProjecao } from '../lib/faturaProjecao'
 import { estilosComuns, hoje } from '../lib/compartilhados'
+import { adicionarDiasISO } from '../lib/saldoProjetado'
 import { definirPeriodo, deslocarPeriodo, ehPeriodoAtual } from '../lib/periodos'
 import { calcularResumoPlanejamentos } from '../lib/planejamentoCalc'
+import { useFeriasPlanejamento } from '../hooks/useFeriasPlanejamento'
+import { useSaldoProjetado } from '../hooks/useSaldoProjetado'
 import SeletorPeriodo from '../components/planejamento/SeletorPeriodo'
 import VisaoGeral from '../components/planejamento/VisaoGeral'
 import Lancamentos from '../components/planejamento/Lancamentos'
@@ -81,6 +84,11 @@ export default function Planejamento() {
   // Cartões (sempre só sobre dado real).
   const faturasPlanejamento = useFaturasPlanejamento()
   const { faturasReais, cartoes, pagarFatura, recarregar: recarregarFaturas } = faturasPlanejamento
+
+  // FÉRIAS (fonte da verdade = Ponto). Viraram marcadores sintéticos (R$ 0)
+  // na timeline do Planejamento — avisos de data futura, nunca editáveis.
+  const feriasPlanejamento = useFeriasPlanejamento()
+  const { ferias: feriasMarcadas } = feriasPlanejamento
 
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
   const [aba, setAba] = useState('visao') // 'visao' | 'lancamentos'
@@ -185,9 +193,10 @@ export default function Planejamento() {
       inicioISO: periodoVisivel.inicio,
       fimISO: periodoVisivel.fim,
       previstosCartaoExternos: previstosCartaoTotal,
+      ferias: feriasMarcadas,
     })
     return res
-  }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal])
+  }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal, feriasMarcadas])
 
   // Resumo: SEMPRE via a função pura do domínio sobre o array PARA SOMATÓRIO
   // (que exclui os previstos de cartão absorvidos pela fatura, evitando contar
@@ -198,6 +207,35 @@ export default function Planejamento() {
   )
   const totaisVisiveis = resumoVisivel.totais
   const contagensVisiveis = resumoVisivel.contagens
+
+  // SALDO ACUMULADO PROJETADO (horizonte de 90 dias a partir de hoje). Sai do
+  // saldo REAL atual (contas + caixinhas ativas) e atravessa os planejamentos
+  // do horizonte, com a mesma projeção de fatura e as férias do Planejamento.
+  const fimHorizonte = useMemo(() => adicionarDiasISO(hoje(), 90), [])
+  const saldoProjetado = useSaldoProjetado({
+    ateISO: fimHorizonte,
+    listarPorPeriodo,
+    cartoes,
+    faturasReais,
+    previstosCartaoExternos: previstosCartaoTotal,
+    ferias: feriasMarcadas,
+  })
+  // Saldo acumulado até o fim do PERÍODO visível (limitado ao horizonte de 90
+  // dias): é o ponto do card "Saldo projetado" ao lado do "Resultado previsto".
+  const saldoAteFimVisivel =
+    !!periodoVisivel && periodoVisivel.fim <= fimHorizonte
+      ? saldoProjetado.saldoEm(periodoVisivel.fim)
+      : saldoProjetado.saldoProjetado
+
+  // Texto do detalhe discreto no card combinado: "resultado do {período}".
+  const RÓTULO_PERIODO = {
+    semana: 'semana',
+    mes: 'mês',
+    trimestre: 'trimestre',
+    semestre: 'semestre',
+    ano: 'ano',
+  }
+  const rotuloPeriodo = RÓTULO_PERIODO[periodoVisivel?.tipo] || RÓTULO_PERIODO[tipoPeriodo] || 'período'
 
   const unidadeAtual =
     !!periodoVisivel && ehPeriodoAtual(tipoPeriodo, periodoVisivel, hoje())
@@ -317,6 +355,10 @@ export default function Planejamento() {
           itens={itensVisiveis}
           dividirPorMes={!modoSemana}
           aoVerLancamentos={() => setAba('lancamentos')}
+          saldoProjetado={saldoAteFimVisivel}
+          saldoProjetadoCarregando={saldoProjetado.carregando}
+          saldoProjetadoErro={saldoProjetado.erro}
+          rotuloPeriodo={rotuloPeriodo}
         />
       ) : (
         <Lancamentos

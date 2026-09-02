@@ -53,6 +53,7 @@ export default function Ponto() {
     excluirFerias,
     saldoFerias,
     excluirExcecao,
+    editarExcecao,
   } = usePonto(janela)
 
   // Modal centralizado (padrão das demais páginas): 'trabalho' | 'ferias' | null.
@@ -64,6 +65,7 @@ export default function Ponto() {
   const [obs, setObs] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [mensagem, setMensagem] = useState(null)
+  const [editando, setEditando] = useState(null)
 
   // Prévia da classificação/duração enquanto o usuário digita (mesmo cálculo
   // que o hook fará ao salvar — o tipo é decidido PELA DATA, não pelo usuário).
@@ -103,7 +105,18 @@ export default function Ponto() {
     setEntrada('20:30')
     setSaida('03:00')
     setObs('')
+    setEditando(null)
     setModal(tipo)
+  }
+
+  function abrirEdicao(ex) {
+    setMensagem(null)
+    setData(ex.data)
+    setEntrada(ex.entrada ?? '20:30')
+    setSaida(ex.saida ?? '03:00')
+    setObs(ex.obs ?? '')
+    setEditando(ex)
+    setModal('trabalho')
   }
 
   function aoDeslocar(delta) {
@@ -117,6 +130,7 @@ export default function Ponto() {
   function fecharModal() {
     setModal(null)
     setMensagem(null)
+    setEditando(null)
   }
 
   async function handleSubmeter(e) {
@@ -147,6 +161,13 @@ export default function Ponto() {
           tipo: 'ok',
           texto: `Férias de ${formatarData(data)} a ${formatarData(fim)} marcadas (${dias} dia(s)).`,
         })
+      } else if (editando) {
+        await editarExcecao(editando.id, { dataISO: data, entrada, saida, obs: obs || undefined })
+        setMensagem({
+          tipo: 'ok',
+          texto: `Lançamento de ${formatarData(data)} atualizado — ${previsao.tipo}.`,
+        })
+        setEditando(null)
       } else {
         await criarExcecaoTrabalho({ dataISO: data, entrada, saida, obs: obs || undefined })
         setMensagem({
@@ -206,9 +227,13 @@ export default function Ponto() {
               <>
                 <ul style={estilosResumo.grade}>
                   <li style={estilosResumo.card}>
-                    <span style={estilosResumo.rotulo}>Horas de exceção</span>
-                    <span style={estilosResumo.valor}>{resumo.horas}h</span>
-                    <span style={estilosResumo.meta}>carga esperada {cargaEsperada}h</span>
+                    <span style={estilosResumo.rotulo}>Carga horária</span>
+                    <span style={estilosResumo.valor}>
+                      {cargaEsperada + resumo.he + resumo.horasDomfer}h
+                    </span>
+                    <span style={estilosResumo.meta}>
+                      esperada {cargaEsperada}h + HE + dom/fer
+                    </span>
                   </li>
                   <li style={estilosResumo.card}>
                     <span style={estilosResumo.rotulo}>Hora extra</span>
@@ -225,18 +250,22 @@ export default function Ponto() {
                     </span>
                   </li>
                   <li style={estilosResumo.card}>
-                    <span style={estilosResumo.rotulo}>Férias</span>
-                    <span style={estilosResumo.valor}>{resumo.diasFerias} dia(s)</span>
+                    <span style={estilosResumo.rotulo}>Previsto a receber</span>
+                    <span style={estilosResumo.valor}>
+                      {formatoReal.format(
+                        (config.fixoSemana ?? 0) + resumo.valorHe + resumo.valorDomfer,
+                      )}
+                    </span>
                     <span style={estilosResumo.meta}>
-                      saldo {saldoFerias(periodo.ano)} de {QUOTA_FERIAS_ANUAL} dias em {periodo.ano}
+                      fixo {formatoReal.format(config.fixoSemana ?? 0)} + HE + diárias
                     </span>
                   </li>
                 </ul>
                 <p style={estilosComuns.mensagem}>
                   Dia sem lançamento conta como carga padrão cumprida. Saldo do período:{' '}
                   <strong style={estilosResumo.saldo}>
-                    {resumo.horas - cargaEsperada >= 0 ? '+' : ''}
-                    {Math.round((resumo.horas - cargaEsperada) * 100) / 100}h
+                    {resumo.he + resumo.horasDomfer >= 0 ? '+' : ''}
+                    {Math.round((resumo.he + resumo.horasDomfer) * 100) / 100}h
                   </strong>
                 </p>
               </>
@@ -287,6 +316,13 @@ export default function Ponto() {
                           {formatoReal.format(Number(ex.valor_he))}
                         </div>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => abrirEdicao(ex)}
+                        style={estilosAcao.editar}
+                      >
+                        editar
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleExcluirExcecao(ex.id)}
@@ -346,7 +382,13 @@ export default function Ponto() {
       {/* ── Modal padrão do app: lançamento avulso OU férias ─────────── */}
       {modal && (
         <ModalFormulario
-          titulo={modal === 'trabalho' ? 'Lançamento avulso' : 'Marcar férias'}
+          titulo={
+            editando
+              ? 'Editar lançamento'
+              : modal === 'trabalho'
+                ? 'Lançamento avulso'
+                : 'Marcar férias'
+          }
           aoFechar={fecharModal}
         >
           <form onSubmit={handleSubmeter} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
@@ -428,10 +470,12 @@ export default function Ponto() {
               style={estilosComuns.botaoCriar}
             >
               {enviando
-                ? 'Lançando...'
+                ? editando ? 'Atualizando...' : 'Lançando...'
                 : modal === 'ferias'
                   ? 'Marcar férias'
-                  : 'Lançar avulso'}
+                  : editando
+                    ? 'Atualizar'
+                    : 'Lançar avulso'}
             </button>
           </form>
 
@@ -491,6 +535,16 @@ const estilosResumo = {
 }
 
 const estilosAcao = {
+  editar: {
+    marginTop: '0.3rem',
+    background: 'none',
+    border: 'none',
+    color: '#42A5F5',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    display: 'inline-block',
+  },
   excluir: {
     marginTop: '0.3rem',
     background: 'none',
@@ -499,7 +553,7 @@ const estilosAcao = {
     fontSize: '0.75rem',
     cursor: 'pointer',
     textDecoration: 'underline',
-    display: 'block',
-    marginLeft: 'auto',
+    display: 'inline-block',
+    marginLeft: '0.5rem',
   },
 }
