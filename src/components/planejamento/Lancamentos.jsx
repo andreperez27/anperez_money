@@ -13,6 +13,8 @@ import {
   RÓTULO_TIPO,
   ehEntrada,
   ehDisponivel,
+  ehAtrasado,
+  ehAjustadoPonto,
   badgeEstado,
   conteudoItem,
   corTipo,
@@ -628,8 +630,9 @@ export default function Lancamentos({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             <GeradorRecorrenciaMensal
               nome={recNome}
-              tipoOp="Saida"
+              tipoOp="Entrada"
               permiteSemanal
+              permiteTipoOp
               contaPadrao={recForm.destino === 'conta' ? recForm.conta || undefined : undefined}
               destinoPadrao={recForm.destino || undefined}
               cartaoPadraoId={recForm.destino === 'cartao' ? recForm.cartao || undefined : undefined}
@@ -721,7 +724,8 @@ export default function Lancamentos({
             <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
               Despesas fixas (DAS-MEI, Netflix, condomínio) entram como recorrência
               MENSAL; entradas semanais (ex.: pagamento fixo) como SEMANAL — valor
-              fixo repetido, gerado como origem 'recorrente'.
+              fixo repetido. Use o campo "Tipo de lançamento" para escolher entre
+              Entrada (dinheiro a receber) ou Saída (despesa), editável antes de gerar.
             </p>
           </div>
         )}
@@ -910,10 +914,12 @@ export default function Lancamentos({
         <ul style={{ ...estilosItem.lista, marginTop: '1rem' }}>
           {itens.map((item) => {
             const disponivel = ehDisponivel(item, dataHoje)
+            const atrasado = ehAtrasado(item, dataHoje)
+            const ajustadoPonto = ehAjustadoPonto(item, dataHoje)
             const ehSerie = !!item.serie_id
             // Recorrência é despesa fixa mensal (não compra parcelada): além de
             // não exibir "1/24", não carrega a tag de mês na descrição.
-            const ehRecorrente = item.origem === 'recorrente'
+            const ehRecorrente = item.origem === 'recorrente' || item.origem === 'jornada'
             const ehFatura = item.fatura === true
             const ehFaturaReal = ehFatura && item.tipo === 'real'
             const ehFaturaProjetada = ehFatura && item.tipo === 'projetada'
@@ -946,14 +952,23 @@ export default function Lancamentos({
                         {ehFerias && (
                           <span style={estilosItem.badgeFerias}>Férias</span>
                         )}
+                        {ajustadoPonto && (
+                          <span style={estilosItem.badgeJornada} title="Valor real fechado do Ponto (fixo + HE + domingo/feriado)">
+                            Ajustado pelo Ponto
+                          </span>
+                        )}
                         {destinoCartao && (
                           <span style={estilosItem.badgeDestinoCartao} title="Destino planejado: cartão de crédito (ainda não efetivado)">
                             Cartão{cartaoDestino ? `: ${cartaoDestino.nome}` : ''}
                           </span>
                         )}
-                        {disponivel && (
+                        {atrasado ? (
+                          <span style={estilosItem.badgeAtrasado} title="Data prevista no passado e ainda não lançado/cancelado">
+                            Atrasado
+                          </span>
+                        ) : disponivel ? (
                           <span style={estilosItem.badgeDisponivel}>Disponível</span>
-                        )}
+                        ) : null}
                         <span style={badgeEstado(item.estado)}>
                           {RÓTULO_ESTADO[item.estado] ?? item.estado}
                         </span>
@@ -1017,16 +1032,25 @@ export default function Lancamentos({
                       {ehFerias && (
                         <span style={{ ...estilosItem.badgeFerias, marginLeft: '0.5rem' }}>Férias</span>
                       )}
+                      {ajustadoPonto && (
+                        <span style={{ ...estilosItem.badgeJornada, marginLeft: '0.5rem' }} title="Valor real fechado do Ponto (fixo + HE + domingo/feriado)">
+                          Ajustado pelo Ponto
+                        </span>
+                      )}
                       {destinoCartao && (
                         <span style={{ ...estilosItem.badgeDestinoCartao, marginLeft: '0.5rem' }} title="Destino planejado: cartão de crédito (ainda não efetivado)">
                           Cartão{cartaoDestino ? `: ${cartaoDestino.nome}` : ''}
                         </span>
                       )}
-                      {disponivel && (
+                      {atrasado ? (
+                        <span style={{ ...estilosItem.badgeAtrasado, marginLeft: '0.5rem' }} title="Data prevista no passado e ainda não lançado/cancelado">
+                          Atrasado
+                        </span>
+                      ) : disponivel ? (
                         <span style={{ ...estilosItem.badgeDisponivel, marginLeft: '0.5rem' }}>
                           Disponível
                         </span>
-                      )}
+                      ) : null}
                     </span>
                     <span style={corTipo(item.tipo_op)}>{RÓTULO_TIPO(item.tipo_op)}</span>
                     <span style={{ ...estilosItem.valor, color: ehEntrada(item.tipo_op) ? '#4ade80' : '#f87171' }}>

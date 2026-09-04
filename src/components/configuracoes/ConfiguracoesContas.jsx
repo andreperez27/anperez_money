@@ -1,19 +1,17 @@
 import { useState } from 'react'
 import { useContas } from '../../hooks/useContas'
-import { useContaAtiva } from '../../context/ContaAtivaContext'
 import ModalFormulario from '../ModalFormulario'
-import { estilosComuns, formatoReal } from '../../lib/compartilhados'
+import { estilosComuns } from '../../lib/compartilhados'
 
 // Aba "Contas" da tela de Configurações (em sub-abas).
 //
 // Lista as contas REAIS do usuário (useContas — mesma fonte da página
-// ContasCorrentes), destacando a conta ativa (contexto global de conta ativa),
-// e permite criar uma nova conta. O botão "Editar" por conta fica de fora:
-// o hook useContas hoje expõe só criarConta (não há edição/exclusão de conta
-// no backend/RLS atuais) — não inventamos essa função aqui.
+// ContasCorrentes) sem exibir saldo nem marcação de conta ativa. Permite criar
+// uma nova conta. O botão "Editar" por conta fica de fora: o hook useContas
+// hoje expõe só criarConta (não há edição/exclusão de conta no backend/RLS
+// atuais) — não inventamos essa função aqui.
 export default function ConfiguracoesContas() {
   const { contas, carregando, erro, criarConta } = useContas()
-  const { contaAtiva } = useContaAtiva()
 
   const [abrindoNova, setAbrindoNova] = useState(false)
   const [nome, setNome] = useState('')
@@ -58,26 +56,14 @@ export default function ConfiguracoesContas() {
       {!carregando && !erro && contas.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {contas.map((conta) => {
-            const ehAtiva = conta.id === contaAtiva?.id
             return (
-              <div
-                key={conta.id}
-                style={
-                  ehAtiva
-                    ? { ...estilos.card, border: '1px solid #42A5F5' }
-                    : estilos.card
-                }
-              >
+              <div key={conta.id} style={estilos.card}>
                 <div style={estilos.cardLinha}>
                   <span style={estilos.ponto} />
-                  <span style={estilos.nome}>
-                    {conta.nome}
-                    {ehAtiva && <span style={estilos.seloAtiva}>ativa</span>}
-                  </span>
+                  <span style={estilos.nome}>{conta.nome}</span>
                 </div>
                 <div style={estilos.cardMeta}>
                   <span style={estilos.tipo}>{conta.tipo}</span>
-                  <span style={estilos.saldo}>{formatoReal.format(Number(conta.saldo_atual))}</span>
                 </div>
               </div>
             )
@@ -153,14 +139,6 @@ const estilos = {
     flexShrink: 0,
   },
   nome: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem' },
-  seloAtiva: {
-    fontSize: '0.68rem',
-    fontWeight: 'bold',
-    color: '#0b0f19',
-    background: '#42A5F5',
-    borderRadius: '999px',
-    padding: '0.1rem 0.5rem',
-  },
   cardMeta: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -168,7 +146,6 @@ const estilos = {
     gap: '0.5rem',
   },
   tipo: { color: '#9ca3af', fontSize: '0.85rem' },
-  saldo: { color: '#42A5F5', fontWeight: 'bold', fontSize: '0.9rem' },
   botaoAdicionar: {
     padding: '0.8rem',
     borderRadius: '12px',

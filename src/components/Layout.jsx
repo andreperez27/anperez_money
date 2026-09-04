@@ -114,6 +114,7 @@ export default function Layout() {
                 key={conta.id}
                 onClick={() => setContaAtiva(conta.id)}
                 style={ativa ? estilos.contaAtiva : estilos.conta}
+                className={ativa ? 'pill-conta pill-conta-ativa' : 'pill-conta'}
                 title={ativa ? 'Conta ativa' : `Usar ${conta.nome}`}
               >
                 {conta.nome}
@@ -128,23 +129,23 @@ export default function Layout() {
   function LinksMenu() {
     return (
       <>
-        <NavLink to="/" end style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Início
         </NavLink>
-        <NavLink to="/planejamento" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/planejamento" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Planejamento
         </NavLink>
-        <NavLink to="/ponto" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/ponto" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Ponto
         </NavLink>
-        <NavLink to="/contas" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/contas" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Contas Correntes
         </NavLink>
-        <NavLink to="/cartoes" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/cartoes" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Cartões
         </NavLink>
         <span style={estilos.separador} aria-hidden="true" />
-        <NavLink to="/configuracoes" style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
+        <NavLink to="/configuracoes" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Configurações
         </NavLink>
       </>
@@ -157,7 +158,7 @@ export default function Layout() {
 
   return (
     <div className="tela-inteira" style={estilos.pagina}>
-      <header style={{ ...estilos.cabecalho, ...(ehMobile ? estilos.cabecalhoMobile : null) }}>
+      <header style={{ ...estilos.cabecalho, ...(ehMobile ? estilos.cabecalhoMobile : null) }} className="header-chrome nav-chrome">
         <div style={estilos.linhaCabecalho}>
           <img src={logo} alt="ANPEREZ Money" style={estilos.logo} />
 
@@ -165,7 +166,7 @@ export default function Layout() {
           {!ehMobile && (
             <>
               <SeletorContas />
-              <nav style={estilos.menu}>
+              <nav style={estilos.menu} className="menu-desktop">
                 <LinksMenu />
               </nav>
               <div style={estilos.usuario}>
@@ -224,12 +225,13 @@ export default function Layout() {
 
       {/* Bottom nav (móvil): barra fija inferior, estilo app bancaria. */}
       {ehMobile && (
-        <nav style={estilos.bottomNav} aria-label="Navegación principal">
+        <nav style={estilos.bottomNav} className="bottom-nav nav-chrome" aria-label="Navegación principal">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
+              className={({ isActive }) => (isActive ? 'nav-ativo' : '')}
               style={({ isActive }) => ({
                 ...estilos.bottomNavItem,
                 ...(isActive ? estilos.bottomNavItemActivo : null),
@@ -247,7 +249,7 @@ export default function Layout() {
 
 const estilos = {
   pagina: {
-    fontFamily: 'san-serif',
+    fontFamily: "'Space Grotesk', system-ui, sans-serif",
     background: '#0b0f19',
     color: '#e5e7eb',
   },
@@ -302,27 +304,30 @@ const estilos = {
     paddingBottom: '0.25rem',
   },
   conta: {
-    padding: '0.35rem 0.7rem',
+    padding: '0.4rem 0.75rem',
     borderRadius: '999px',
     border: '1px solid #374151',
-    background: 'none',
+    background: 'rgba(255,255,255,0.02)',
     color: '#9ca3af',
     cursor: 'pointer',
     fontSize: '0.85rem',
+    fontWeight: 500,
     whiteSpace: 'nowrap',
     textAlign: 'left',
+    fontFamily: 'inherit',
   },
   contaAtiva: {
-    padding: '0.35rem 0.7rem',
+    padding: '0.4rem 0.75rem',
     borderRadius: '999px',
     border: '1px solid #42A5F5',
     background: '#42A5F5',
     color: '#0b0f19',
     cursor: 'pointer',
     fontSize: '0.85rem',
-    fontWeight: 'bold',
+    fontWeight: 700,
     whiteSpace: 'nowrap',
     textAlign: 'left',
+    fontFamily: 'inherit',
   },
   carregandoConta: { color: '#9ca3af', fontSize: '0.85rem' },
   botonPerfil: {
@@ -335,7 +340,7 @@ const estilos = {
     color: '#e5e7eb',
     cursor: 'pointer',
     fontSize: '1rem',
-    fontWeight: 'bold',
+    fontWeight: 700,
     fontFamily: 'inherit',
     lineHeight: 1,
   },
@@ -386,14 +391,14 @@ const estilos = {
     padding: '0.6rem 0.9rem',
     borderRadius: '8px',
     display: 'block',
+    fontWeight: 500,
   },
   linkActivo: {
-    color: '#42A5F5',
+    color: '#90caf9',
     textDecoration: 'none',
     padding: '0.6rem 0.9rem',
     borderRadius: '8px',
-    background: '#1f2937',
-    fontWeight: 'bold',
+    fontWeight: 600,
     display: 'block',
   },
   usuario: { display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 },
@@ -414,6 +419,7 @@ const estilos = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     flexShrink: 0,
+    fontWeight: 500,
   },
   bottomNav: {
     position: 'fixed',

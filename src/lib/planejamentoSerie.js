@@ -27,6 +27,7 @@ import {
   dataDaParcela,
 } from './parcelas.js'
 import { totalOcorrenciasRecorrencia, totalParcelasRecorrencia } from './recorrenciaCalc.js'
+import { semanaDeTrabalhoDaData } from './reconciliacaoPonto.js'
 
 // ----------------------------------------------------------------------------
 // Linhas prontas para INSERT no Supabase, a partir do contrato de uma série.
@@ -362,6 +363,14 @@ export function montarLinhasRecorrentes(dados) {
       total_parcelas: o.total_parcelas,
     }
     if (o.origem !== undefined) linha.origem = o.origem
+    if (o.origem === 'jornada') {
+      // Ocorrência vinculada ao Ponto: guarda EXPLICITAMENTE a semana ISO de
+      // TRABALHO que ela paga (a ANTERIOR à data_prevista). É o que permite a
+      // reconciliação fechar a semana no Ponto e substituir o valor previsto.
+      const { ano, semana } = semanaDeTrabalhoDaData(o.data_prevista)
+      linha.ano_semana_trabalho = ano
+      linha.semana_trabalho = semana
+    }
     if (o.conta_destino_id !== undefined) linha.conta_destino_id = o.conta_destino_id
     if (o.destino_padrao !== undefined) linha.destino_padrao = o.destino_padrao
     if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id

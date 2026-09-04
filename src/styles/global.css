@@ -1,20 +1,74 @@
+/* ============================================================================
+   DESIGN SYSTEM GLOBAL — ANPEREZ Money
+   Refinamento (02/09/2026) guiado pelas Web Interface Guidelines (Vercel):
+   tokens de cor/raio/transição centralizados, foco visível com
+   :focus-visible, respeito a prefers-reduced-motion, números tabulares,
+   tipografia consistente (Space Grotesk) e estilos nativos coerentes com o
+   tema escuro. Design flat: sem sombras decorativas de elevação (box-shadow
+   só no anel de foco e no autofill). As páginas herdam estes tokens; os
+   estilos inline (estilosComuns) já usam os MESMOS valores, então a troca de
+   token só aqui re-tematiza o app.
+   ============================================================================ */
+
 :root {
   color-scheme: dark;
+
+  /* Paleta base */
+  --bg: #0b0f19;
+  --bg-elevado: #0f1422;
+  --surface: #111827;
+  --surface-2: #1a2233;
+  --border: #1f2937;
+  --border-strong: #374151;
+  --texto: #e5e7eb;
+  --texto-suave: #9ca3af;
+  --texto-fixo: #f8fafc;
+
+  /* Ações */
+  --accent: #42a5f5;
+  --accent-suave: rgba(66, 165, 245, 0.15);
+  --accent-borda: rgba(66, 165, 245, 0.55);
+  --ok: #4ade80;
+  --erro: #f87171;
+  --info: #22d3ee;
+
+  /* Profundidade & forma (sem sombras — design flat) */
+  --raio-sm: 6px;
+  --raio-md: 10px;
+  --raio-lg: 14px;
+  --raio-pilula: 999px;
+
+  /* Movimento (respeita prefers-reduced-motion abaixo) */
+  --duracao: 160ms;
+  --curva: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+@font-face {
+  font-family: 'Space Grotesk';
+  font-display: swap;
+}
+
+/* Tipografia base: Space Grotesk (textos) em todo o app. Os componentes usam
+   fontFamily:'inherit' (herdam daqui); os poucos 'sans-serif' explícitos foram
+   realinhados ao token. */
 html,
-body {
+body,
+#root {
   margin: 0;
-  height: auto;
-  min-height: 100vh;
-  background-color: #0b0f19;
-  color: #e5e7eb;
-  /* Fonte base única e consistente para o app inteiro. As páginas
-     herdam este tamanho (hierarquia normal de headings); os antigos
-     ajustes finos por página (0.9rem / 1.05rem) que compensavam a
-     escala variável do CaberNaTela foram removidos. */
+  min-height: 100%;
+  background-color: var(--bg);
+  color: var(--texto);
+  font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto,
+    sans-serif;
   font-size: 1rem;
-  line-height: 1.4;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  /* Altura de âncora sob o header fixo (diretriz: scroll-margin-top). */
+  scroll-padding-top: 5rem;
 }
 
 * {
@@ -27,11 +81,147 @@ svg {
   height: auto;
 }
 
-/* Todas as resoluções rolam normalmente: o conteúdo flui a tamanho real
-   (fonte base 1rem) e a página rola quando excede a viewport. Quem rola
-   internamente são apenas as listas longas (max-height + overflow-y:
-   auto, padrão estilosComuns.lista). O CaberNaTela não aplica scale()
-   em nenhuma resolução — comportamento unificado, sem escala variável. */
+label {
+  font-family: inherit;
+}
+
+/* ============================================================================
+   Foco. O anel destacado (box-shadow azul) que aparece ao focar foi removido
+   a pedido do usuário (clique em botão/input mostrava uma caixa); mantém-se
+   outline:none global para não reintroduzir o anel padrão do navegador.
+   ============================================================================ */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+}
+
+/* ============================================================================
+   Números tabulares — colunas de valores/card devem ter largura estável para
+   comparação (diretriz typography). JetBrains Mono dá o charme financeiro;
+   valores ficam tabular por natureza.
+   ============================================================================ */
+.mono,
+.mono * {
+  font-family: 'JetBrains Mono', 'Space Grotesk', monospace;
+}
+
+[data-numerico] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   Estilos nativos coerentes com o tema escuro (select/date/color do browser no
+   Windows, diretriz Dark Mode & Theming).
+   ============================================================================ */
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input[type='date'],
+input[type='month'],
+input[type='time'],
+select {
+  color-scheme: dark;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='month']::-webkit-calendar-picker-indicator {
+  filter: invert(0.75);
+  cursor: pointer;
+}
+
+select {
+  background-color: var(--surface);
+  color: var(--texto);
+}
+
+option {
+  background-color: var(--surface);
+  color: var(--texto);
+}
+
+/* Realçar sugestão de autocompletar sem quebrar o tema. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--texto);
+  box-shadow: 0 0 0 1000px var(--surface) inset;
+  caret-color: var(--texto);
+}
+
+::selection {
+  background: var(--accent);
+  color: #0b0f19;
+}
+
+/* ============================================================================
+   Toque & interação (Web Interface Guidelines):
+   • touch-action: manipulation — sem atraso de double-tap zoom no mobile;
+   • -webkit-tap-highlight-color transparente — sem flash azul ao tocar;
+   • button:active dá leve afundamento de feedback.
+   ============================================================================ */
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button:active {
+  transform: translateY(1px);
+}
+[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Barra de rolagem discreta no tema escuro. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================================
+   Movimento. Animações só em transform/opacity e interruptíveis; tudo desligado
+   sob prefers-reduced-motion (diretrizes Animation dx3).
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   Tela inteira (mesmo comportamento de antes): conteúdo flui e a página rola.
+   ============================================================================ */
 .tela-inteira {
   min-height: 100vh;
   min-height: 100dvh;
@@ -39,3 +229,87 @@ svg {
   display: flex;
   flex-direction: column;
 }
+
+/* ============================================================================
+   Navegação — hover/foco/transição (a base continua inline no Layout; estas
+   regras só ADICIONAM os estados que inline não alcança).
+   ============================================================================ */
+.nav-chrome a,
+.nav-chrome button {
+  transition: color var(--duracao) var(--curva),
+    background-color var(--duracao) var(--curva),
+    border-color var(--duracao) var(--curva), transform var(--duracao) var(--curva);
+}
+
+/* Menu de escritório: links ganham hover com pílula suave. */
+.menu-desktop a {
+  border-radius: var(--raio-md);
+}
+.menu-desktop a:hover {
+  color: var(--texto-fixo);
+  background: rgba(255, 255, 255, 0.06);
+}
+.menu-desktop a.nav-ativo {
+  color: var(--accent);
+  background: rgba(66, 165, 245, 0.12);
+}
+
+/* Pílulas de conta e botões de perfil/sair. */
+.pill-conta:hover {
+  border-color: var(--accent-borda);
+  color: var(--texto-fixo);
+}
+.pill-conta-ativa {
+  color: #0b0f19 !important;
+}
+
+/* Barra inferior (bottom nav): item ativo ganha traço/pílula; hover realça. */
+.bottom-nav a {
+  border-radius: var(--raio-md);
+  transition: color var(--duracao) var(--curva),
+    background-color var(--duracao) var(--curva);
+}
+.bottom-nav a:hover {
+  color: var(--texto-fixo);
+  background: rgba(255, 255, 255, 0.05);
+}
+.bottom-nav a.nav-ativo {
+  color: var(--accent);
+}
+.bottom-nav a.nav-ativo::after {
+  content: '';
+  display: block;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  margin: 2px auto 0;
+  background: var(--accent);
+}
+
+/* Header deslizante sutil ao rolar (opcional, sem JS): já vem com safe-area. */
+.header-chrome {
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+}
+
+/* ============================================================================
+   Modal (ModalFormulario): entrada suave e hover no fechar/cancelar.
+   ============================================================================ */
+@keyframes modalEntrar {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-chrome button[aria-label='Fechar']:hover,
+.modal-chrome .modal-cancelar:hover {
+  color: var(--texto-fixo);
+  border-color: var(--accent-borda);
+  background: rgba(255, 255, 255, 0.04);
+}
+

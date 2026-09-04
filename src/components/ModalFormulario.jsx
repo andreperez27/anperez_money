@@ -46,6 +46,7 @@ export default function ModalFormulario({
       <div
         style={estilos.painel}
         onClick={(e) => e.stopPropagation()}
+        className="modal-chrome"
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
@@ -60,7 +61,7 @@ export default function ModalFormulario({
         {children}
 
         {mostrarCancelar && (
-          <button type="button" onClick={aoFechar} style={estilos.cancelar}>
+          <button type="button" onClick={aoFechar} style={estilos.cancelar} className="modal-cancelar">
             Cancelar
           </button>
         )}
@@ -74,13 +75,16 @@ const estilos = {
   overlay: {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0, 0, 0, 0.6)',
+    background: 'rgba(3, 6, 14, 0.7)',
+    backdropFilter: 'blur(6px)',
+    WebkitBackdropFilter: 'blur(6px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '1rem',
     zIndex: 1000,
     overflowY: 'auto',
+    overscrollBehavior: 'contain',
     boxSizing: 'border-box',
   },
   painel: {
@@ -88,6 +92,7 @@ const estilos = {
     maxWidth: '520px',
     maxHeight: '90vh',
     overflowY: 'auto',
+    overscrollBehavior: 'contain',
     background: '#111827',
     border: '1px solid #1f2937',
     borderRadius: '18px',
@@ -96,6 +101,7 @@ const estilos = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.9rem',
+    animation: 'modalEntrar 180ms cubic-bezier(0.4,0,0.2,1)',
   },
   cabecalho: {
     display: 'flex',
@@ -103,7 +109,7 @@ const estilos = {
     alignItems: 'center',
     gap: '0.5rem',
   },
-  titulo: { margin: 0, color: '#e5e7eb', fontSize: '1.25rem' },
+  titulo: { margin: 0, color: '#f8fafc', fontSize: '1.25rem', fontWeight: 700 },
   fechar: {
     background: 'transparent',
     border: '1px solid #374151',
@@ -114,6 +120,7 @@ const estilos = {
     fontSize: '0.9rem',
     lineHeight: 1,
     padding: '0.45rem 0.6rem',
+    transition: 'color 150ms ease, border-color 150ms ease, background 150ms ease',
   },
   cancelar: {
     width: '100%',
@@ -122,9 +129,11 @@ const estilos = {
     border: '1px solid #374151',
     background: 'transparent',
     color: '#9ca3af',
-    fontWeight: 'bold',
+    fontWeight: 600,
     cursor: 'pointer',
     fontFamily: 'inherit',
     fontSize: '0.95rem',
+    transition: 'color 150ms ease, border-color 150ms ease, background 150ms ease',
   },
 }
+

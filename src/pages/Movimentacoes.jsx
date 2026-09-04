@@ -1086,7 +1086,6 @@ const estilos = {
     fontWeight: 'bold',
     cursor: 'pointer',
     fontFamily: 'inherit',
-    boxShadow: '0 4px 14px rgba(66, 165, 245, 0.35)',
     // Acima do header fixo (z-30) e da bottom nav (z-20).
     zIndex: 40,
   },

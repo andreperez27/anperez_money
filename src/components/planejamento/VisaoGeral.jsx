@@ -7,6 +7,8 @@ import {
   RÓTULO_TIPO,
   ehEntrada,
   ehDisponivel,
+  ehAtrasado,
+  ehAjustadoPonto,
   badgeEstado,
   conteudoItem,
   MES_ABREV,
@@ -153,8 +155,10 @@ export default function VisaoGeral({
               <ul style={estilosItem.lista}>
                 {proximos.map((item) => {
                   const disponivel = ehDisponivel(item, dataHoje)
+                  const atrasado = ehAtrasado(item, dataHoje)
+                  const ajustadoPonto = ehAjustadoPonto(item, dataHoje)
                   const ehSerie = !!item.serie_id
-                  const ehRecorrente = item.origem === 'recorrente'
+                  const ehRecorrente = item.origem === 'recorrente' || item.origem === 'jornada'
                   const ehFerias = item.ferias === true
                   return (
                     <li key={item.id} style={estilos.linhaProximo}>
@@ -171,11 +175,20 @@ export default function VisaoGeral({
                             Férias
                           </span>
                         )}
-                        {disponivel && (
+                        {ajustadoPonto && (
+                          <span style={{ ...estilosItem.badgeJornada, marginLeft: '0.5rem' }} title="Valor real fechado do Ponto (fixo + HE + domingo/feriado)">
+                            Ajustado pelo Ponto
+                          </span>
+                        )}
+                        {atrasado ? (
+                          <span style={{ ...estilosItem.badgeAtrasado, marginLeft: '0.5rem' }} title="Data prevista no passado e ainda não lançado/cancelado">
+                            Atrasado
+                          </span>
+                        ) : disponivel ? (
                           <span style={{ ...estilosItem.badgeDisponivel, marginLeft: '0.5rem' }}>
                             Disponível
                           </span>
-                        )}
+                        ) : null}
                       </span>
                       <span style={badgeEstado(item.estado)}>
                         {RÓTULO_ESTADO[item.estado] ?? item.estado}

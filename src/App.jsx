@@ -27,8 +27,8 @@ function RequerLogin({ children }) {
 
   if (carregando) {
     return (
-      <div style={{ fontFamily: 'sans-serif', padding: '2rem', color: '#9ca3af' }}>
-        Carregando...
+      <div style={{ fontFamily: 'inherit', padding: '2rem', color: '#9ca3af' }}>
+        Carregando…
       </div>
     )
   }
@@ -48,8 +48,8 @@ function SomenteDeslogado({ children }) {
 
   if (carregando) {
     return (
-      <div style={{ fontFamily: 'sans-serif', padding: '2rem', color: '#9ca3af' }}>
-        Carregando...
+      <div style={{ fontFamily: 'inherit', padding: '2rem', color: '#9ca3af' }}>
+        Carregando…
       </div>
     )
   }

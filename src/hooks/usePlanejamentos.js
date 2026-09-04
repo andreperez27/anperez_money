@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { hoje } from '../lib/compartilhados'
 import { semanaIso, inicioDaSemanaIso } from '../lib/semana'
 import { calcularResumoPlanejamentos } from '../lib/planejamentoCalc'
 import {
@@ -10,6 +11,10 @@ import {
   calcularRegeneraçãoRecorrente,
 } from '../lib/planejamentoSerie.js'
 import { validarFaixaDePeriodo } from '../lib/periodos.js'
+import {
+  decidirAtualizacoes,
+  valorFechadoDaSemana,
+} from '../lib/reconciliacaoPonto.js'
 
 // Domínio de Planejamentos (ETAPA 06/E3).
 //
@@ -506,6 +511,100 @@ export function usePlanejamentos({ ano, semana } = {}) {
     return data ?? []
   }
 
+  // --- RECONCILIAÇÃO COM O PONTO (ETAPA 06/E5-G) -----------------------------
+  // Lazy: ao carregar o Planejamento, percorre TODAS as ocorrências origin
+  // 'jornada' ainda 'previsto' cuja semana de trabalho JÁ FECHOU e, se o valor
+  // real do Ponto (fixo + HE + dom/fer) difere do previsto, atualiza o valor
+  // da ocorrência. Fica aqui, não num cron: é disparada no carregamento dos
+  // dados (mesma filosofia da regra "fatura vencida é considerada paga").
+  // Ocorrências 'realizado'/'cancelado' ou com semana ainda aberta nunca são
+  // tocadas; falhas ao ler o Ponto não derrubam a listagem.
+  async function reconciliarComPonto() {
+    const { data: jornadas, error } = await supabase
+      .from('planejamentos')
+      .select('*')
+      .eq('estado', 'previsto')
+      .eq('origem', 'jornada')
+    if (error) throw new Error(error.message)
+    if (!jornadas || jornadas.length === 0) return
+
+    // Config (fixo/HE/dom) e férias do Ponto — globais; lidas uma vez.
+    const [cfgRes, feriasRes] = await Promise.all([
+      supabase.from('ponto_config').select('chave, valor'),
+      supabase.from('ponto_ferias').select('data_inicio, data_fim'),
+    ])
+    if (cfgRes.error) throw new Error(cfgRes.error.message)
+    if (feriasRes.error) throw new Error(feriasRes.error.message)
+    const mapaCfg = {}
+    for (const l of cfgRes.data ?? []) mapaCfg[l.chave] = Number(l.valor)
+    const fixoSemana = mapaCfg.VALOR_FIXO_SEMANA ?? 1650
+    const ferias = feriasRes.data ?? []
+
+    // Cache das exceções de cada semana (evita re-buscar a mesma semana várias
+    // vezes quando há mais de uma ocorrência vinculada a ela).
+    const cacheExcecoes = new Map()
+    const buscarValorRealDaSemana = async ({ inicioISO, fimISO }) => {
+      let excs = cacheExcecoes.get(inicioISO + '|' + fimISO)
+      if (excs === undefined) {
+        const { data, error: err } = await supabase
+          .from('ponto_excecoes')
+          .select('*')
+          .gte('data', inicioISO)
+          .lte('data', fimISO)
+        if (err) throw new Error(err.message)
+        excs = data ?? []
+        cacheExcecoes.set(inicioISO + '|' + fimISO, excs)
+      }
+      return valorFechadoDaSemana({
+        excecoes: excs,
+        config: { fixoSemana },
+        ferias,
+        inicioISO,
+        fimISO,
+      })
+    }
+
+    const updates = await decidirAtualizacoes({
+      linhas: jornadas,
+      hoje: hoje(),
+      buscarValorRealDaSemana,
+    })
+
+    // Valores podem diferir por linha → atualiza individualmente (são poucas;
+    // Supabase não aplica payloads distintos num update em lote único).
+    for (const u of updates) {
+      const { error: errUpd } = await supabase
+        .from('planejamentos')
+        .update({ valor: u.valor })
+        .eq('id', u.id)
+      if (errUpd) throw new Error(errUpd.message)
+    }
+
+    if (updates.length > 0 && alvo) await atualizar()
+  }
+
+  // Dispara a reconciliação de forma LAZY no carregamento: após a listagem
+  // montar, verifica (em segundo plano, sem bloquear a renderização) se há
+  // ocorrências jornada a reconciliar. O guarda em useState/useEffect evita
+  // repetir a cada mudança de estado — roda uma vez por montagem do hook.
+  const [reconciliei, setReconciliei] = useState(false)
+  useEffect(() => {
+    if (reconciliei || !alvo) return
+    let ativo = true
+    reconciliarComPonto()
+      .catch(() => {
+        // Falha silenciosa: a reconciliação re-tenta na próxima navegação;
+        // nunca quebra a experiência de listar planejamentos.
+      })
+      .finally(() => {
+        if (ativo) setReconciliei(true)
+      })
+    return () => {
+      ativo = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alvo, reconciliei])
+
   // Período da semana vigente, SEMPRE pela fonte única semana.js.
   const periodo = useMemo(() => {
     if (!alvo) return null
@@ -545,5 +644,6 @@ export function usePlanejamentos({ ano, semana } = {}) {
     criarSerieRecorrente,
     cancelarSerieAPartirDe,
     regenerarSerie,
+    reconciliarComPonto,
   }
 }

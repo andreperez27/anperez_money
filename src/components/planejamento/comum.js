@@ -11,6 +11,8 @@
 //   • badge n/N identifica parcelas de série.
 // ============================================================================
 
+import { semanaIso, inicioDaSemanaIso } from '../../lib/semana.js'
+
 export const RÓTULO_ESTADO = {
   previsto: 'Previsto',
   realizado: 'Realizado',
@@ -49,6 +51,33 @@ export function rotuloTitulo(periodo) {
 // Tag "Disponível" — mesma regra derivada validada na E5-E (nunca persistida).
 export const ehDisponivel = (item, dataHoje) =>
   item.estado === 'previsto' && item.data_prevista <= dataHoje
+
+// Tag "Atrasado" — previsto cuja data já passou e ainda não foi lançado nem
+// cancelado. A data ORIGINAL é mantida (não posterga sozinho); o indicador
+// some ao realizar/cancelar. Aplica-se a qualquer origem (manual, recorrente,
+// jornada). Especificamente o item que cairia aqui (data < hoje) também passa
+// em ehDisponivel — aqui usamos ESTRITA (data < hoje) para só marcar o passado.
+export const ehAtrasado = (item, dataHoje) =>
+  item.estado === 'previsto' && String(item.data_prevista) < String(dataHoje)
+
+// Uma ocorrência de origem 'jornada' está RECONCILIADA com o valor real quando
+// a semana de trabalho dela já fechou (hoje > domingo da semana de trabalho) —
+// naquele ponto o Ponto tem o valor definitivo e a estimativa foi/é substituída.
+// Uma semana ainda aberta significa que ainda é só previsão (sem badge).
+export const ehAjustadoPonto = (item, dataHoje) => {
+  if (item.origem !== 'jornada') return false
+  if (item.estado === 'cancelado') return false
+  if (!Number.isInteger(item.semana_trabalho) || !Number.isInteger(item.ano_semana_trabalho)) {
+    // Origem jornada legada/antiga sem referência guardada: sara é tratada.
+    return false
+  }
+  try {
+    const fim = semanaIso(inicioDaSemanaIso(item.ano_semana_trabalho, item.semana_trabalho)).fim
+    return String(dataHoje) > String(fim)
+  } catch {
+    return false
+  }
+}
 
 // Cor do texto conforme o tipo do lançamento planejado.
 export function corTipo(tipoOp) {
@@ -113,6 +142,10 @@ export const estilosItem = {
   // VERDE-LIMÃO, sem botão de pagar (só a fatura REAL paga).
   badgeProjecao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(163, 230, 53, 0.15)', color: '#a3e635', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
   badgeDisponivel: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Previsto com data no PASSADO ainda não lançado/cancelado — tom VERMELHO
+  // (alerta), distinto do coral do "Ajustado pelo Ponto" (#fb923c) para não
+  // confundir atraso com ajuste de valor.
+  badgeAtrasado: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(248, 113, 113, 0.15)', color: '#f87171', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
   // Marcador de FÉRIAS (sintético, R$ 0, aviso de data futura) — tom CIANO,
   // distinto de fatura (violeta) / projeção (verde-limão) / cartão (azul).
   badgeFerias: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(34, 211, 238, 0.15)', color: '#22d3ee', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
@@ -122,4 +155,9 @@ export const estilosItem = {
   // deixar claro que é intenção (não efetivado), diferente do badge de compra
   // já lançada e do "Disponível" (amarelo).
   badgeDestinoCartao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(66, 165, 245, 0.15)', color: '#42A5F5', fontSize: '0.7rem', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Ocorrência VINCULADA AO PONTO e já reconciliada — o valor exibido não é
+  // mais a estimativa da série, é o valor REAL fechado (fixo + HE + dom/fer).
+  // Tom CORAL/LARANJA, distinto de fatura (violeta), projeção (verde-limão),
+  // férias (ciano), disponível (amarelo) e previsto (azul).
+  badgeJornada: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(251, 146, 60, 0.15)', color: '#fb923c', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
 }

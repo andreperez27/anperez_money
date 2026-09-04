@@ -29,8 +29,9 @@ import { diaDaSemanaIso } from '../../lib/parcelas'
 // Props:
 //   • nome           — nome da despesa (ex.: "Condomínio", "DAS-MEI"). Vira a
 //                      descrição "<nome> <MÊS/ANO>" da previsão inicial.
-//   • tipoOp         — 'Saida' (padrão) ou 'Entrada'. Apenas informativo para
-//                      casos incomuns; o padrão do domínio é despesa.
+//   • tipoOp         — 'Saida' (padrão) ou 'Entrada'. Estado inicial do tipo e
+//                      valor usado quando permiteTipoOp é 'false' (CONDOMÍNIO/
+//                      DAS-MEI são sempre despesa → fixo 'Saida').
 //   • contaPadrao    — id de conta opcional registrado como conta_destino_id.
 //   • destinoPadrao/cartaoPadraoId — direcionamento Conta/Cartão (opcional).
 //   • calcularValor(mesAlvo 'YYYY-MM') → { valor, detalhamento } — função
@@ -54,6 +55,11 @@ import { diaDaSemanaIso } from '../../lib/parcelas'
 //                      (a 1ª ocorrência; o passo é 7 dias corridos). Quando
 //                      'false' (padrão — Condomínio/DAS-MEI), nada muda: segue
 //                      mensal estrito.
+//   • permiteTipoOp  — se 'true', mostra o seletor Entrada/Despesa (editável
+//                      antes de gerar). Útil no formulário genérico (o "Pagamento
+//                      fixo Semanal" abre como "Entrada"; o mensal como quiser).
+//                      Quando 'false' (padrão — Condomínio/DAS-MEI), permanece
+//                      o tipoOp da prop (geralmente 'Saida'), sem seletor.
 //   • aoResetarCamposExtra — callback opcional para o PAI limpar os campos que
 //                      ele injeta como children (ex.: descrição/valor no
 //                      Lancamentos, gás/água no GeradorCondominio). O próprio
@@ -76,6 +82,7 @@ export default function GeradorRecorrenciaMensal({
   calcularValor,
   children,
   permiteSemanal = false,
+  permiteTipoOp = false,
   aoCriarSerie,
   aoCriar,
   aoPosMutacao,
@@ -99,6 +106,14 @@ export default function GeradorRecorrenciaMensal({
   const [periodicidade, setPeriodicidade] = useState('mensal')
   const [diaSemana, setDiaSemana] = useState(() => diaDaSemanaIso(hoje()))
   const [dataInicio, setDataInicio] = useState(() => hoje())
+  // Vincula a série SEMANAL ao Ponto (origem 'jornada'): cada ocorrência passa
+  // a guardar a semana de trabalho e o valor previsto será substituído pelo
+  // valor real fechado do Ponto assim que a semana encerrar (reconciliação).
+  const [vinculadoPonto, setVinculadoPonto] = useState(false)
+  // Tipo do lançamento (Entrada/Saida) EDITÁVEL quando permiteTipoOp. Inicia na
+  // prop tipoOp (o formulário genérico abre como 'Entrada' — salário); o
+  // Condomínio/DAS-MEI não passam permiteTipoOp → segue fixo 'Saida'.
+  const [tipoOpSel, setTipoOpSel] = useState(tipoOp)
 
   const ehSemanal = periodicidade === 'semanal'
 
@@ -132,6 +147,8 @@ export default function GeradorRecorrenciaMensal({
     setPeriodicidade('mensal')
     setDiaSemana(diaDaSemanaIso(hoje()))
     setDataInicio(hoje())
+    setVinculadoPonto(false)
+    setTipoOpSel(tipoOp)
   }
 
   // Painel de resumo da extensão para o usuário decidir antes de gerar.
@@ -168,7 +185,7 @@ export default function GeradorRecorrenciaMensal({
       // snake_case aqui — a lib lê tipoOp/contaDestinoId/destinoPadrao/
       // cartaoPadraoId (bug corrigido em 01/09/2026).
       const serieDados = {
-        tipoOp,
+        tipoOp: tipoOpSel,
         // Recorrência NÃO é uma compra de um mês específico: a descrição é o
         // nome puro (sem a tag "SET/2026" do mês de criação). Cada ocorrência
         // da série já tem a própria data_prevista.
@@ -177,7 +194,10 @@ export default function GeradorRecorrenciaMensal({
         totalParcelas,
         dataPrimeiraParcela,
         periodicidade: ehSemanal ? 'semanal' : 'mensal',
-        origem: 'recorrente',
+        // Vínculo ao Ponto: série semanal opcionalmente nasce como origem
+        // 'jornada' — cada ocorrência guarda a semana de trabalho e o valor é
+        // reconciliado com o fechado do Ponto quando a semana encerrar.
+        origem: ehSemanal && vinculadoPonto ? 'jornada' : 'recorrente',
         observacao: montarObservacaoCondominio(previa.detalhamento),
         serieDataTermino: dataTermino || undefined,
       }
@@ -196,7 +216,7 @@ export default function GeradorRecorrenciaMensal({
       } else {
         // Fallback legado (avulso de UM mês) — mantido p/ GeradorDasMei ref.
         const payloadAvulso = {
-          tipo_op: tipoOp,
+          tipo_op: tipoOpSel,
           descricao: `${nome} ${rotuloMes}`,
           valor: previa.total,
           data_prevista: dataPrimeiraParcela,
@@ -224,6 +244,33 @@ export default function GeradorRecorrenciaMensal({
   return (
     <form onSubmit={aoGerar} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }} noValidate>
       <div style={estilos.grade}>
+        {permiteTipoOp && (
+          <div style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
+            <span style={estilos.rotuloTipo}>Tipo de lançamento</span>
+            <div style={estilos.toggle}>
+              <label style={estilos.radioTipo}>
+                <input
+                  type="radio"
+                  name="tipo_op_serie"
+                  value="Entrada"
+                  checked={tipoOpSel === 'Entrada'}
+                  onChange={() => setTipoOpSel('Entrada')}
+                />
+                Entrada
+              </label>
+              <label style={estilos.radioTipo}>
+                <input
+                  type="radio"
+                  name="tipo_op_serie"
+                  value="Saida"
+                  checked={tipoOpSel === 'Saida'}
+                  onChange={() => setTipoOpSel('Saida')}
+                />
+                Despesa
+              </label>
+            </div>
+          </div>
+        )}
         {permiteSemanal && (
           <label style={estilos.rotuloCampo}>
             Periodicidade
@@ -278,6 +325,14 @@ export default function GeradorRecorrenciaMensal({
               Data de início (1ª ocorrência)
               <input style={estilosComuns.input} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
             </label>
+            <label style={estilos.vinculoPonto}>
+              <input
+                type="checkbox"
+                checked={vinculadoPonto}
+                onChange={(e) => setVinculadoPonto(e.target.checked)}
+              />
+              Vincular ao Ponto (ajuste pelo valor fechado)
+            </label>
           </>
         )}
         <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
@@ -313,6 +368,10 @@ export default function GeradorRecorrenciaMensal({
 const estilos = {
   grade: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' },
   rotuloCampo: { display: 'flex', flexDirection: 'column', gap: '0.25rem', color: '#9ca3af', fontSize: '0.8rem' },
+  rotuloTipo: { color: '#9ca3af', fontSize: '0.8rem' },
+  toggle: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
+  radioTipo: { display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#e5e7eb', cursor: 'pointer', fontSize: '0.9rem' },
+  vinculoPonto: { display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#e5e7eb', fontSize: '0.8rem', cursor: 'pointer' },
   totalLinha: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', borderRadius: '8px', background: '#111827', border: '1px solid #1f2937' },
   total: { color: '#4ade80', fontSize: '1.1rem' },
 }
