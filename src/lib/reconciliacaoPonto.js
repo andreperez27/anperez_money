@@ -25,7 +25,7 @@
 // ============================================================================
 
 import { semanaIso, inicioDaSemanaIso } from './semana.js'
-import { fecharPeriodo } from './pontoCalc.js'
+import { fecharPeriodo, previstoAReceberDaSemana } from './pontoCalc.js'
 
 const MS_DIA = 86_400_000
 
@@ -55,18 +55,25 @@ export function semanaDeTrabalhoDaData(dataPrevista) {
 
 // ----------------------------------------------------------------------------
 // 2) VALOR FECHADO da semana de trabalho (mesmo cálculo do card "Previsto a
-//    receber" do Ponto): fixoSemana + HE + domingo/feriado.
+//    receber" do Ponto): fixoSemana (já com o desconto por feriado na semana,
+//    regra 04/09/2026) + HE + domingo/feriado.
 // ----------------------------------------------------------------------------
 // Reusa fecharPeriodo (src/lib/pontoCalc.js) sobre as EXCEÇÕES da janela
 // [inicioISO, fimISO] — o mesmo que o usePonto alimenta com excecoes/ferias.
 // config.fixoSemana vem de ponto_config (VALOR_FIXO_SEMANA); os valores HE e
 // dom/fer já vêm congelados nas linhas ponto_excecoes (valor_he/valor_domfer).
+// feriados (ponto_feriados) entra no desconto proporcional do fixo — dia útil
+// com feriado abate 1/6 do fixo; domingo com feriado não desconta.
 // ----------------------------------------------------------------------------
-export function valorFechadoDaSemana({ excecoes, config, ferias = [], inicioISO, fimISO } = {}) {
+export function valorFechadoDaSemana({ excecoes, config, ferias = [], feriados = [], inicioISO, fimISO } = {}) {
   const resumo = fecharPeriodo(excecoes, { inicioISO, fimISO }, ferias)
-  const fixo = Number(config?.fixoSemana ?? 0)
-  const valor = Math.round((fixo + resumo.valorHe + resumo.valorDomfer) * 100) / 100
-  return valor
+  return previstoAReceberDaSemana({
+    fixoSemana: Number(config?.fixoSemana ?? 0),
+    resumo,
+    feriados,
+    inicioISO,
+    fimISO,
+  }).valor
 }
 
 // ----------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import {
   classificarTurnoParaUI,
   qtdDiasIntervalo,
   QUOTA_FERIAS_ANUAL,
+  previstoAReceberDaSemana,
 } from '../lib/pontoCalc'
 
 // Página Ponto Inteligente (ETAPA 07/08).
@@ -92,6 +93,20 @@ export default function Ponto() {
       return null
     }
   }, [modal, data, entrada, saida, feriados, config])
+
+  // "Previsto a receber" da semana visível: fixo (já descontado por feriados)
+  // + HE + diárias dom/fer. Mesmo cálculo da reconciliação do Planejamento.
+  const previstoDaSemana = useMemo(
+    () =>
+      previstoAReceberDaSemana({
+        fixoSemana: config.fixoSemana ?? 0,
+        resumo,
+        feriados,
+        inicioISO: janela.inicioISO,
+        fimISO: janela.fimISO,
+      }),
+    [config.fixoSemana, resumo, feriados, janela.inicioISO, janela.fimISO],
+  )
 
   // Quando o período visível muda (setas da semana), o hook recarrega sozinho.
   useEffect(() => {
@@ -252,12 +267,20 @@ export default function Ponto() {
                   <li style={estilosResumo.card}>
                     <span style={estilosResumo.rotulo}>Previsto a receber</span>
                     <span style={estilosResumo.valor}>
-                      {formatoReal.format(
-                        (config.fixoSemana ?? 0) + resumo.valorHe + resumo.valorDomfer,
-                      )}
+                      {formatoReal.format(previstoDaSemana.valor)}
                     </span>
                     <span style={estilosResumo.meta}>
-                      fixo {formatoReal.format(config.fixoSemana ?? 0)} + HE + diárias
+                      fixo{' '}
+                      {formatoReal.format(
+                        (config.fixoSemana ?? 0) - previstoDaSemana.desconto,
+                      )}
+                      {previstoDaSemana.desconto > 0 && (
+                        <span style={{ color: '#7c3aed' }}>
+                          {' '}
+                          (−{formatoReal.format(previstoDaSemana.desconto)} feriado)
+                        </span>
+                      )}{' '}
+                      + HE + diárias
                     </span>
                   </li>
                 </ul>

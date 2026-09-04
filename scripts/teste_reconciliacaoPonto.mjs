@@ -100,6 +100,49 @@ verificar('V3 — fixo + hora extra', () => {
     2330,
   )
 })
+verificar('V4 — semana com feriado em DIA ÚTIL: fixo é descontado (2130 − 355)', () => {
+  // 04/09/2026 = sexta (dia útil). 2130/6 = 355 de desconto no fixo.
+  const feriados = [{ data: '2026-09-04' }]
+  assert.equal(
+    valorFechadoDaSemana({
+      excecoes: [],
+      config: CONFIG,
+      feriados,
+      inicioISO: '2026-08-31',
+      fimISO: '2026-09-06',
+    }),
+    1775,
+  )
+})
+verificar('V5 — semana com feriado em DOMINGO: fixo mantido', () => {
+  // 06/09/2026 = domingo (folga padrão, fora da base dos 6 dias) → sem desconto.
+  const feriados = [{ data: '2026-09-06' }]
+  assert.equal(
+    valorFechadoDaSemana({
+      excecoes: [],
+      config: CONFIG,
+      feriados,
+      inicioISO: '2026-08-31',
+      fimISO: '2026-09-06',
+    }),
+    2130,
+  )
+})
+verificar('P7 — reconciliação usa o desconto do feriado', async () => {
+  const updates = await decidirAtualizacoes({
+    linhas: [linha('j7', { ...SEMANA_FECHADA, valor: 2130 })],
+    hoje: HOJE,
+    buscarValorRealDaSemana: async () =>
+      valorFechadoDaSemana({
+        excecoes: [],
+        config: CONFIG,
+        feriados: [{ data: '2026-09-04' }],
+        inicioISO: '2026-08-31',
+        fimISO: '2026-09-06',
+      }),
+  })
+  assert.deepEqual(updates, [{ id: 'j7', valor: 1775 }])
+})
 
 // ---------------------------------------------------------------------------
 // decidirAtualizacoes — os 5 cenários do Passo 5

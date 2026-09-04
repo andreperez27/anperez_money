@@ -335,6 +335,43 @@ export function cargaEsperadaHoras(inicioISO, fimISO, feriados = [], ferias = []
 }
 
 // ---------------------------------------------------------------------------
+// Desconto do fixo semanal por feriado (regra 04/09/2026)
+// ---------------------------------------------------------------------------
+// O fixo semanal cobre os 6 DIAS ÚTEIS da semana (seg–sáb). Quando a semana
+// fecha com um feriado que cai num dia útil, o trabalhador não trabalha esse
+// dia (não há jornada a cumprir ali) → desconta 1/6 do fixo POR feriado de
+// segunda a sábado. Feriado em DOMINGO não desconta: o domingo já é folga
+// padrão, está FORA da base dos 6 dias — só conta como diária dom/fer paga.
+// Vários feriados na mesma semana (seg–sáb) somam o desconto. A base é sempre
+// config.fixoSemana vinda de ponto_config (VALOR_FIXO_SEMANA) — nunca número
+// fixo no código, para o desconto acompanhar reajuste futuro.
+// feriados aceita { data: 'YYYY-MM-DD' } ou 'YYYY-MM-DD' (mesma convenção de
+// ehFeriado). Se não houver janela, considera TODOS os feriados recebidos.
+export function descontoFeriadosDoFixo(fixoSemana, feriados = [], inicioISO, fimISO) {
+  const fixo = Number(fixoSemana) || 0
+  const dentro = (data) => !inicioISO || !fimISO || (data >= inicioISO && data <= fimISO)
+  const total = feriados.reduce((acc, f) => {
+    const data = typeof f === 'string' ? f : f.data
+    if (dentro(data) && diaSemanaIso(data) !== 6) return acc + fixo / 6
+    return acc
+  }, 0)
+  return Math.round(total * 100) / 100
+}
+
+// "Previsto a receber" da semana (MESMO cálculo do card do Ponto e do valor
+// reconciliado no Planejamento): fixo já com o desconto de feriados + HE +
+// diárias dom/fer. Consumida por Ponto.jsx e reconciliação para nunca divergir.
+export function previstoAReceberDaSemana({ fixoSemana = 0, resumo = {}, feriados = [], inicioISO, fimISO } = {}) {
+  const fixo = Number(fixoSemana) || 0
+  const desconto = descontoFeriadosDoFixo(fixo, feriados, inicioISO, fimISO)
+  const valor = fixo - desconto + Number(resumo.valorHe || 0) + Number(resumo.valorDomfer || 0)
+  return {
+    valor: Math.round(valor * 100) / 100,
+    desconto,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fechamento (resumo) de um período — espelha o relatório do app antigo,
 // que SUMÁRIAVA as linhas da tabela registros. Aqui a matéria-prima são as
 // exceções da tabela ponto_excecoes (o resto do período é carga cumprida) e

@@ -39,6 +39,8 @@ import {
   saldoFeriasNoAno,
   diasIntervaloNaJanela,
   fecharPeriodo,
+  descontoFeriadosDoFixo,
+  previstoAReceberDaSemana,
 } from '../src/lib/pontoCalc.js'
 
 let passou = 0
@@ -400,6 +402,84 @@ caso('cargaCumpridaHoras: dom/fer ENTRA na carga, saldo soma HE + domfer', () =>
   assert.equal(resumo.domferQtd, 1)
   // resumo.horas é a soma bruta (9,5 + 6,5 = 16) — NÃO é a carga cumprida.
   assert.equal(resumo.horas, 16)
+})
+
+// ---------------------------------------------------------------------------
+// 9) Desconto do fixo por feriado na semana (regra 04/09/2026)
+// ---------------------------------------------------------------------------
+// Semana 31/08/2026 (seg) → 06/09/2026 (dom). Fixo 2130 → por feriado útil
+// (seg–sáb) descorna 2130/6 = 355. Feriado em domingo (06/09) não desconta.
+const SEMANA_FERIADO = { inicioISO: '2026-08-31', fimISO: '2026-09-06' }
+
+caso('desconto: feriado em DIA ÚTIL (sexta) desconta 1/6 do fixo', () => {
+  assert.equal(
+    descontoFeriadosDoFixo(2130, [{ data: '2026-09-04' }], SEMANA_FERIADO.inicioISO, SEMANA_FERIADO.fimISO),
+    355,
+  )
+})
+caso('desconto: feriado em DOMINGO não desconta', () => {
+  assert.equal(
+    descontoFeriadosDoFixo(2130, [{ data: '2026-09-06' }], SEMANA_FERIADO.inicioISO, SEMANA_FERIADO.fimISO),
+    0,
+  )
+})
+caso('desconto: vários feriados úteis somam o desconto', () => {
+  assert.equal(
+    descontoFeriadosDoFixo(
+      2130,
+      [{ data: '2026-09-02' }, { data: '2026-09-04' }],
+      SEMANA_FERIADO.inicioISO,
+      SEMANA_FERIADO.fimISO,
+    ),
+    710,
+  )
+})
+caso('desconto: feriado FORA da janela não conta', () => {
+  assert.equal(
+    descontoFeriadosDoFixo(2130, [{ data: '2026-09-10' }], SEMANA_FERIADO.inicioISO, SEMANA_FERIADO.fimISO),
+    0,
+  )
+})
+caso('desconto: sem janela considera todos os feriados recebidos', () => {
+  assert.equal(descontoFeriadosDoFixo(2130, [{ data: '2026-09-04' }]), 355)
+})
+caso('desconto: aceita feriados como string no array', () => {
+  assert.equal(
+    descontoFeriadosDoFixo(2130, ['2026-09-04'], SEMANA_FERIADO.inicioISO, SEMANA_FERIADO.fimISO),
+    355,
+  )
+})
+caso('previstoAReceberDaSemana: fixo − desconto(feriado útil) + HE + diárias', () => {
+  const resumo = { valorHe: 200, valorDomfer: 480 }
+  const r = previstoAReceberDaSemana({
+    fixoSemana: 2130,
+    resumo,
+    feriados: [{ data: '2026-09-04' }],
+    inicioISO: SEMANA_FERIADO.inicioISO,
+    fimISO: SEMANA_FERIADO.fimISO,
+  })
+  // 2130 − 355 + 200 + 480 = 2455
+  assert.equal(r.valor, 2455)
+  assert.equal(r.desconto, 355)
+})
+caso('previstoAReceberDaSemana: feriado em domingo mantém o fixo inteiro', () => {
+  const resumo = { valorHe: 0, valorDomfer: 480 }
+  const r = previstoAReceberDaSemana({
+    fixoSemana: 2130,
+    resumo,
+    feriados: [{ data: '2026-09-06' }],
+    inicioISO: SEMANA_FERIADO.inicioISO,
+    fimISO: SEMANA_FERIADO.fimISO,
+  })
+  // 2130 − 0 + 0 + 480 = 2610
+  assert.equal(r.valor, 2610)
+  assert.equal(r.desconto, 0)
+})
+caso('previstoAReceberDaSemana: sem feriados mantém o soma normal', () => {
+  const resumo = { valorHe: 200, valorDomfer: 0 }
+  const r = previstoAReceberDaSemana({ fixoSemana: 2130, resumo })
+  assert.equal(r.valor, 2330)
+  assert.equal(r.desconto, 0)
 })
 
 console.log(`\n${passou} ok, ${falhou} falharam`)

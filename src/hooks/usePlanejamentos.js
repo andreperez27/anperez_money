@@ -528,17 +528,20 @@ export function usePlanejamentos({ ano, semana } = {}) {
     if (error) throw new Error(error.message)
     if (!jornadas || jornadas.length === 0) return
 
-    // Config (fixo/HE/dom) e férias do Ponto — globais; lidas uma vez.
-    const [cfgRes, feriasRes] = await Promise.all([
+    // Config (fixo/HE/dom), férias e feriados do Ponto — globais; lidos uma vez.
+    const [cfgRes, feriasRes, feriadosRes] = await Promise.all([
       supabase.from('ponto_config').select('chave, valor'),
       supabase.from('ponto_ferias').select('data_inicio, data_fim'),
+      supabase.from('ponto_feriados').select('data'),
     ])
     if (cfgRes.error) throw new Error(cfgRes.error.message)
     if (feriasRes.error) throw new Error(feriasRes.error.message)
+    if (feriadosRes.error) throw new Error(feriadosRes.error.message)
     const mapaCfg = {}
     for (const l of cfgRes.data ?? []) mapaCfg[l.chave] = Number(l.valor)
     const fixoSemana = mapaCfg.VALOR_FIXO_SEMANA ?? 1650
     const ferias = feriasRes.data ?? []
+    const feriados = feriadosRes.data ?? []
 
     // Cache das exceções de cada semana (evita re-buscar a mesma semana várias
     // vezes quando há mais de uma ocorrência vinculada a ela).
@@ -559,6 +562,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
         excecoes: excs,
         config: { fixoSemana },
         ferias,
+        feriados,
         inicioISO,
         fimISO,
       })
