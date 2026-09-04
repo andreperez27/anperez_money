@@ -66,6 +66,10 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   Ponto; Configurações e troca de senha no menu de perfil com rota
   `/configuracoes/senha`; Configurações enxuta; cards Contas/Cartões ciclando
   e Ponto/Planejamento com valor real) — 48 testes.
+  11ª leva: **desconto do fixo semanal por feriado** (`pontoCalc.js`: feriado
+  de segunda a sábado desconta 1/6 do fixo dinamicamente de ponto_config;
+  domingo não desconta; fonte única `previstoAReceberDaSemana` no card
+  "Previsto a receber" e na reconciliação do Planejamento) — 57 testes.
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -165,7 +169,7 @@ completo daquele dia.
    as contas + patrimônio; card Cartões ciclando por limite disponível via RPC
    `calcular_limite_disponivel`/novo `useLimitesCartoes`; cards Ponto e
    Planejamento com valor real via `useResumoPonto`/`useResumoPlanejamento`).
-- [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system. Migration 28 **aplicada** no Supabase.
+- [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system; **desconto do fixo semanal por feriado** (regra 04/09/2026: feriado de seg–sáb desconta 1/6 do fixo, domingo não; fonte única `previstoAReceberDaSemana` no card e na reconciliação). Migration 28 **aplicada** no Supabase.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
