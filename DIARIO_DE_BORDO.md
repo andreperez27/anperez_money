@@ -165,7 +165,7 @@ completo daquele dia.
    as contas + patrimônio; card Cartões ciclando por limite disponível via RPC
    `calcular_limite_disponivel`/novo `useLimitesCartoes`; cards Ponto e
    Planejamento com valor real via `useResumoPonto`/`useResumoPlanejamento`).
-- [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system. Migration 28 **pendente de aplicar** no Supabase.
+- [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system. Migration 28 **aplicada** no Supabase.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
