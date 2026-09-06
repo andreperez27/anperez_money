@@ -70,6 +70,12 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   de segunda a sábado desconta 1/6 do fixo dinamicamente de ponto_config;
   domingo não desconta; fonte única `previstoAReceberDaSemana` no card
   "Previsto a receber" e na reconciliação do Planejamento) — 57 testes.
+- **Relatórios**: primeira aba "Recebido & horas" com dados reais — recebidos
+  históricos da planilha (origem `historico_planilha`, excluída do resto do
+  app, regra do corte em 2026), extras em R$ (HE + dom/fer), granularidade
+  semanal com data de recebimento, fixo histórico por época (VALOR SEMANAL da
+  planilha) e média dividida só pelos períodos com lançamento; seletor de
+  período Mês/Trimestre/Semestre/Ano/Personalizado — 27 testes.
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -170,6 +176,7 @@ completo daquele dia.
    `calcular_limite_disponivel`/novo `useLimitesCartoes`; cards Ponto e
    Planejamento com valor real via `useResumoPonto`/`useResumoPlanejamento`).
 - [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system; **desconto do fixo semanal por feriado** (regra 04/09/2026: feriado de seg–sáb desconta 1/6 do fixo, domingo não; fonte única `previstoAReceberDaSemana` no card e na reconciliação). Migration 28 **aplicada** no Supabase.
+- [diario/2026-09-05.md](diario/2026-09-05.md) — Relatório **"Recebido & horas"** com dados reais: migração dos recebidos da planilha (Entradas Consolidadas → `planejamentos` com origem `historico_planilha`, migration 29) e das horas 2025 do Ponto (migration 24), regra do corte (planilha só até 2025, app é a fonte a partir de 2026), extras em R$ + granularidade semanal, fixo histórico por período (coluna VALOR SEMANAL, migration 30 + backfill de 250 linhas), média dividida só pelos períodos com lançamento e legendas "Ano 2026". Suíte 27/27, build ok.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +

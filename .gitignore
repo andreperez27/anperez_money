@@ -60,4 +60,23 @@ __pycache__/
 *.pyc
 scripts/relatorio_migracao.md
 scripts/relatorio_migracao_cartoes.md
+scripts/relatorio_migracao_recebido.md
+scripts/relatorio_importacao_ponto_2025.md
 scripts/backups/
+
+# ==========================================================================
+# Configuração local de ferramentas de desenvolvimento (opencode/agentes) —
+# NÃO COMMITAR. Válido para os próximos commits também.
+# ==========================================================================
+# .agents/ contém os scripts/instruções locais de skills e subagentes.
+.agents/
+# skills-lock.json gerencia as versões locais das skills baixadas.
+skills-lock.json
+# opencode.json é a config local do opencode (expõe project-ref do Supabase).
+opencode.json
+
+# ==========================================================================
+# Artefatos locais de apoio (mockups/backups em obras) — não versionar
+# ==========================================================================
+files.zip
+layout_pagina_relatorios.html
