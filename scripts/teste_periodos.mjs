@@ -17,6 +17,9 @@ import {
   definirPeriodo,
   deslocarPeriodo,
   ehPeriodoAtual,
+  definirPeriodoPersonalizado,
+  validarFaixaDePeriodo,
+  TIPOS_DE_PERIODO,
 } from '../src/lib/periodos.js'
 
 let passou = 0
@@ -257,6 +260,58 @@ caso('P7 — funciona igual para semestre', () => {
   const p = definirPeriodo('semestre', '2026-08-26')
   assert.equal(ehPeriodoAtual('semestre', p, '2026-12-31'), true)
   assert.equal(ehPeriodoAtual('semestre', p, '2027-01-01'), false)
+})
+
+// ---------------------------------------------------------------------------
+// PERSONALIZADO — faixa livre [inicio, fim] com a mesma validação do extrato
+caso('V1 — personalizado simples: 01/04/2026 → 30/06/2026', () => {
+  assert.deepEqual(definirPeriodoPersonalizado('2026-04-01', '2026-06-30'), {
+    tipo: 'personalizado',
+    inicio: '2026-04-01',
+    fim: '2026-06-30',
+  })
+})
+caso('V2 — personalizado de um dia só (inicio == fim)', () => {
+  assert.deepEqual(definirPeriodoPersonalizado('2026-08-26', '2026-08-26'), {
+    tipo: 'personalizado',
+    inicio: '2026-08-26',
+    fim: '2026-08-26',
+  })
+})
+caso('V3 — personalizado cruzando ano', () => {
+  assert.deepEqual(definirPeriodoPersonalizado('2025-12-25', '2026-01-05'), {
+    tipo: 'personalizado',
+    inicio: '2025-12-25',
+    fim: '2026-01-05',
+  })
+})
+caso('V4 — personalizado REJEITA faixa invertida (30/06 depois de 01/04, invertida)', () => {
+  assert.throws(
+    () => definirPeriodoPersonalizado('2026-06-30', '2026-04-01'),
+    /início .* depois do fim/,
+  )
+})
+caso('V5 — personalizado REJEITA data malformada', () => {
+  assert.throws(() => definirPeriodoPersonalizado('2026-04-01', '30/06/2026'), /YYYY-MM-DD/)
+})
+caso('V6 — validarFaixaDePeriodo serve de guarda do personalizado', () => {
+  const { inicio, fim } = validarFaixaDePeriodo('2026-04-01', '2026-06-30')
+  assert.deepEqual(definirPeriodoPersonalizado(inicio, fim), {
+    tipo: 'personalizado',
+    inicio: '2026-04-01',
+    fim: '2026-06-30',
+  })
+})
+caso('V7 — ehPeriodoAtual funciona no personalizado (limites inclusivos)', () => {
+  const p = definirPeriodoPersonalizado('2026-04-01', '2026-06-30')
+  assert.equal(ehPeriodoAtual('personalizado', p, '2026-04-01'), true)
+  assert.equal(ehPeriodoAtual('personalizado', p, '2026-05-15'), true)
+  assert.equal(ehPeriodoAtual('personalizado', p, '2026-06-30'), true)
+  assert.equal(ehPeriodoAtual('personalizado', p, '2026-03-31'), false)
+  assert.equal(ehPeriodoAtual('personalizado', p, '2026-07-01'), false)
+})
+caso('V8 — personalizado NÃO entra em TIPOS_DE_PERIODO (não muda Planejamento)', () => {
+  assert.equal(TIPOS_DE_PERIODO.includes('personalizado'), false)
 })
 
 // ---------------------------------------------------------------------------

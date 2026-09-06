@@ -7,7 +7,7 @@
 //
 // Representação única de período (contrato estável):
 //   { tipo, inicio, fim, ...metadados }
-//   • tipo: 'semana' | 'mes' | 'trimestre' | 'semestre' | 'ano'
+//   • tipo: 'semana' | 'mes' | 'trimestre' | 'semestre' | 'ano' | 'personalizado'
 //   • inicio/fim: datas civis 'YYYY-MM-DD' INCLUSIVAS, sempre inicio <= fim
 //   • metadados mínimos por tipo (só o que identifica o período):
 //       semana    → ano, semana        (ISO 8601, via src/lib/semana.js)
@@ -279,4 +279,15 @@ export function validarFaixaDePeriodo(inicioISO, fimISO) {
     )
   }
   return { inicio, fim }
+}
+
+// Período PERSONALIZADO (Relatórios): qualquer faixa civil [inicio, fim] com a
+// mesma validação estrita de validarFaixaDePeriodo. Não tem metadados nem
+// navegação ‹ › — só a faixa em si.
+//
+//   definirPeriodoPersonalizado('2026-04-01', '2026-06-30')
+//     → { tipo:'personalizado', inicio:'2026-04-01', fim:'2026-06-30' }
+export function definirPeriodoPersonalizado(inicioISO, fimISO) {
+  const { inicio, fim } = validarFaixaDePeriodo(inicioISO, fimISO)
+  return montarPeriodo('personalizado', {}, inicio, fim)
 }

@@ -30,11 +30,11 @@ import {
 //   combinação inconsistente é impossível por este caminho.
 // - CANCELAR ≠ EXCLUIR: cancelarPlanejamento grava estado 'cancelado'
 //   preservando o registro; excluirPlanejamento é a destrutiva separada.
-// - Origens (manual/jornada/recorrente/outro) são tratadas de forma
-//   genérica — nenhuma regra especial ainda.
+// - Origens (manual/jornada/recorrente/outro/historico_planilha) são
+//   tratadas de forma genérica — nenhuma regra especial ainda.
 const TIPOS_OP = ['Entrada', 'Saida']
 const ESTADOS = ['previsto', 'realizado', 'cancelado']
-const ORIGENS = ['manual', 'jornada', 'recorrente', 'outro']
+const ORIGENS = ['manual', 'jornada', 'recorrente', 'outro', 'historico_planilha']
 
 // Validação completa da CRIAÇÃO antes do INSERT — só para barrar chamadas
 // obviamente inválidas; a proteção definitiva continua sendo os CHECKs do
@@ -57,7 +57,7 @@ function validarCriacao({ tipo_op, descricao, valor, data_prevista, estado, orig
     throw new Error('Estado inválido (previsto, realizado ou cancelado).')
   }
   if (origem !== undefined && !ORIGENS.includes(origem)) {
-    throw new Error('Origem inválida (manual, jornada, recorrente ou outro).')
+    throw new Error('Origem inválida (manual, jornada, recorrente, outro ou historico_planilha).')
   }
   return {
     descricao: descricao.trim(),
@@ -90,6 +90,9 @@ export function usePlanejamentos({ ano, semana } = {}) {
         .select('*')
         .eq('ano_semana', alvo.ano)
         .eq('semana', alvo.semana)
+        // Registros vindos da planilha são SÓ para o relatório de Recebido &
+        // horas — fora da semana do app (não duplicam o recorrente semanal).
+        .neq('origem', 'historico_planilha')
         // Ordenação determinística: dois planejamentos da mesma data não
         // trocam de posição entre buscas (mesmo critério de desempate do
         // extrato: campo principal + criado_em + id). O desempate extra por
@@ -132,6 +135,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
       .select('*')
       .eq('ano_semana', alvo.ano)
       .eq('semana', alvo.semana)
+      .neq('origem', 'historico_planilha')
       .order('data_prevista')
       .order('parcela_numero')
       .order('criado_em')
@@ -157,14 +161,21 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // calcularResumoPlanejamentos/agruparPorMes/agruparPorSemanaISO.
   // Usa o índice idx_planejamentos_data_prevista; RLS continua filtrando
   // o user_id no banco (nenhum filtro manual aqui, como em todo o hook).
-  async function listarPorPeriodo(inicioISO, fimISO) {
+  // Por padrão EXCLUI os registros da planilha (origem 'historico_planilha')
+  // — eles servem só ao relatório de Recebido & horas. Quem precisar deles
+  // (o relatório) passa incluirHistorico=true.
+  async function listarPorPeriodo(inicioISO, fimISO, incluirHistorico = false) {
     const { inicio, fim } = validarFaixaDePeriodo(inicioISO, fimISO)
 
-    const { data, error } = await supabase
+    let consulta = supabase
       .from('planejamentos')
       .select('*')
       .gte('data_prevista', inicio)
       .lte('data_prevista', fim)
+    if (!incluirHistorico) {
+      consulta = consulta.neq('origem', 'historico_planilha')
+    }
+    const { data, error } = await consulta
       // Ordenação IDÊNTICA à consulta semanal: determinismo garantido pelos
       // mesmos desempates (data → parcela → criado_em → id).
       .order('data_prevista')
@@ -254,7 +265,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     }
     if (origem !== undefined) {
       if (!ORIGENS.includes(origem)) {
-        throw new Error('Origem inválida (manual, jornada, recorrente ou outro).')
+        throw new Error('Origem inválida (manual, jornada, recorrente, outro ou historico_planilha).')
       }
       payload.origem = origem
     }
