@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCartoes } from '../hooks/useCartoes'
 import { estilosComuns, hoje } from '../lib/compartilhados'
+import SeletorCategoria from './SeletorCategoria'
 
 // Formulário de lançamento de compra/despesa no cartão.
 //
@@ -17,6 +18,7 @@ export default function CompraForm({ cartaoIdInicial = '', aoLancar }) {
 
   const [cartaoId, setCartaoId] = useState(cartaoIdInicial)
   const [descricao, setDescricao] = useState('')
+  const [categoria, setCategoria] = useState('')
   const [valor, setValor] = useState('')
   const [data, setData] = useState(hoje())
   const [parcelas, setParcelas] = useState('1')
@@ -32,6 +34,10 @@ export default function CompraForm({ cartaoIdInicial = '', aoLancar }) {
     }
     if (!descricao.trim()) {
       setMensagem({ tipo: 'erro', texto: 'Informe a descrição da compra.' })
+      return
+    }
+    if (!categoria) {
+      setMensagem({ tipo: 'erro', texto: 'Selecione a categoria da compra.' })
       return
     }
     if (!valorNum || valorNum <= 0) {
@@ -51,10 +57,12 @@ export default function CompraForm({ cartaoIdInicial = '', aoLancar }) {
         cartao_id: cartaoId,
         data,
         descricao: descricao.trim(),
+        categoria,
         valor_total: valorNum,
         n_parcelas: qtd,
       })
       setDescricao('')
+      setCategoria('')
       setValor('')
       setData(hoje())
       setParcelas('1')
@@ -86,6 +94,12 @@ export default function CompraForm({ cartaoIdInicial = '', aoLancar }) {
         value={descricao}
         onChange={(e) => setDescricao(e.target.value)}
         style={estilosComuns.input}
+      />
+
+      <SeletorCategoria
+        obrigatorio
+        value={categoria}
+        onChange={(e) => setCategoria(e.target.value)}
       />
 
       <div style={estilos.grade}>

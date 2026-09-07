@@ -14,6 +14,7 @@ import { useContaAtiva } from '../context/ContaAtivaContext'
 import useMediaQuery from '../hooks/useMediaQuery'
 import SeletorPeriodo from '../components/SeletorPeriodo'
 import ModalFormulario from '../components/ModalFormulario'
+import SeletorCategoria from '../components/SeletorCategoria'
 import { estilosComuns, formatarData, formatoReal, hoje, dataCivil } from '../lib/compartilhados'
 import { resumirMovimentacoes, saldoNoFimDoPeriodo, saldosProgressivos } from '../lib/extratoCalc'
 
@@ -809,12 +810,11 @@ export default function Movimentacoes() {
                 onChange={(e) => setDescricao(e.target.value)}
                 style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
               />
-              <input
-                type="text" placeholder="Categoria"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                style={estilosComuns.input}
-              />
+              <SeletorCategoria
+                  obrigatorio={!movEmEdicao}
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                />
             </div>
             <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
               {enviando

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useCartoes } from '../hooks/useCartoes'
 import { estilosComuns, dataCivil } from '../lib/compartilhados'
 import ModalFormulario from './ModalFormulario'
+import SeletorCategoria from './SeletorCategoria'
 
 // Formulário de EDIÇÃO de uma compra do cartão (aberto pelo lápis da linha),
 // apresentado em modal centralizado (padrão aprovado).
@@ -19,6 +20,7 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
   const { editarCompra } = useCartoes(null)
 
   const [descricao, setDescricao] = useState(compra.descricao ?? '')
+  const [categoria, setCategoria] = useState(compra.categoria ?? '')
   const [valor, setValor] = useState(compra.valor_total != null ? String(compra.valor_total) : '')
   const [data, setData] = useState(compra.data ?? dataCivil(new Date()))
   const [parcelas, setParcelas] = useState(compra.n_parcelas != null ? String(compra.n_parcelas) : '1')
@@ -51,6 +53,7 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
         descricao: descricao.trim(),
         valor_total: valorNum,
         n_parcelas: qtd,
+        categoria: categoria.trim() || null,
       })
       if (aoSalvar) aoSalvar()
       aoCancelar()
@@ -70,6 +73,11 @@ export default function EditarCompraForm({ compra, aoSalvar, aoCancelar }) {
           value={descricao}
           onChange={(e) => setDescricao(e.target.value)}
           style={estilosComuns.input}
+        />
+
+        <SeletorCategoria
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
         />
 
         <div style={estilos.grade}>

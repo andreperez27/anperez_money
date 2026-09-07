@@ -82,13 +82,14 @@ export function useCartoes(contaId, { incluirInativos = false } = {}) {
   // Lançar compra/despesa no cartão via RPC atômica criar_compra (o banco
   // gera as parcelas nos meses corretos de fatura e calcula tudo — nada de
   // recálculo de limite/fatura no React). Retorna o id da compra.
-  async function criarCompra({ cartao_id, data, descricao, valor_total, n_parcelas }) {
+  async function criarCompra({ cartao_id, data, descricao, valor_total, n_parcelas, categoria }) {
     const { data: compraId, error } = await supabase.rpc('criar_compra', {
       p_cartao_id: cartao_id,
       p_data: data,
       p_descricao: descricao,
       p_valor_total: valor_total,
       p_n_parcelas: n_parcelas,
+      p_categoria: categoria,
     })
     if (error) throw new Error(error.message)
 
@@ -101,13 +102,14 @@ export function useCartoes(contaId, { incluirInativos = false } = {}) {
   // Editar uma compra via RPC atômica editar_compra (o banco recalcula as
   // parcelas ou só atualiza descricao/data, bloqueando fatura paga). A
   // mensagem de exceção do banco é propagada verbatim para a tela.
-  async function editarCompra({ compra_id, data, descricao, valor_total, n_parcelas }) {
+  async function editarCompra({ compra_id, data, descricao, valor_total, n_parcelas, categoria }) {
     const { error } = await supabase.rpc('editar_compra', {
       p_compra_id: compra_id,
       p_data: data,
       p_descricao: descricao,
       p_valor_total: valor_total,
       p_n_parcelas: n_parcelas,
+      p_categoria: categoria,
     })
     if (error) throw new Error(error.message)
 

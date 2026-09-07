@@ -7,6 +7,7 @@ import { useMovimentacoes } from '../hooks/useMovimentacoes'
 import { useTransferencias } from '../hooks/useTransferencias'
 import { useResumoMes } from '../hooks/useResumoMes'
 import ModalFormulario from '../components/ModalFormulario'
+import SeletorCategoria from '../components/SeletorCategoria'
 import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
 
 // "Contas Correntes" — referência de design da tela "Gestão de Contas
@@ -523,10 +524,10 @@ export default function ContasCorrentes() {
                   value={descricao} onChange={(e) => setDescricao(e.target.value)}
                   style={{ ...estilosComuns.input, gridColumn: 'span 2' }}
                 />
-                <input
-                  type="text" placeholder="Categoria"
-                  value={categoria} onChange={(e) => setCategoria(e.target.value)}
-                  style={estilosComuns.input}
+                <SeletorCategoria
+                  obrigatorio
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
                 />
               </div>
               <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>

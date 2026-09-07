@@ -51,7 +51,7 @@ export function useCompras(cartaoId, mesFatura) {
       await Promise.all([
         supabase
           .from('parcelas')
-          .select('*, compras(id, descricao, data, valor_total, n_parcelas)')
+          .select('*, compras(id, descricao, data, valor_total, n_parcelas, categoria)')
           .eq('mes_fatura', mesFatura)
           .in('compra_id', idsCompras)
           .order('numero'),
@@ -136,7 +136,7 @@ export function useExtratoCartao(cartaoId, { inicio, fim, incluirInativas = fals
 
     let queryParcelas = supabase
       .from('parcelas')
-      .select('*, compras(id, descricao, data, valor_total, n_parcelas)')
+      .select('*, compras(id, descricao, data, valor_total, n_parcelas, categoria)')
       .in('compra_id', ids)
     if (inicio) queryParcelas = queryParcelas.gte('mes_fatura', inicio)
     if (fim) queryParcelas = queryParcelas.lte('mes_fatura', fim)
