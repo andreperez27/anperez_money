@@ -9,6 +9,16 @@
 //             extras?: [n] }                    → barras simples; extras (se
 //             presente com o mesmo tamanho) pinta uma FATIA LARANJA na base
 //             de cada coluna (parte dos extras do total daquele bucket)
+//           { rotulos: [String],
+//             buckets: [{ colunas: [{ cor?, valor?,
+//                                   fatias?: [{ cor, valor }] }] }] }
+//                                                → barras por BUCKET com
+//             colunas LADO A LADO dentro do bucket; cada coluna é uma barra
+//             sólida (cor + valor) ou, se tiver `fatias`, uma barra EMPILHADA
+//             em fatias coloridas (a soma das fatias == valor da coluna).
+//             Usado pela aba "Entradas x despesas" (entradas empilhadas por
+//             categoria ao lado da despesa). rotulos e buckets têm o mesmo
+//             tamanho (um bucket por rótulo; sem bucket → só o rótulo no eixo).
 //   linhas  [{ label, valor, cor? }]           → lista detalhada (2 colunas)
 //           OU [{ celulas: [{ texto, cor?, forte? }] }] → lista em 4 colunas
 // Qualquer uma das três vazia/undefined renderiza o estado "Em construção"
@@ -31,21 +41,44 @@ function BlocoEmConstrucao() {
 
 export default function RelatorioTemplate({ cards, grafico, linhas }) {
   const temCards = Array.isArray(cards) && cards.length > 0
-  const temGrafico =
+  const temGraficoSimples =
     grafico &&
     Array.isArray(grafico.rotulos) &&
     Array.isArray(grafico.valores) &&
     grafico.rotulos.length > 0 &&
     grafico.rotulos.length === grafico.valores.length
-  const temLinhas = Array.isArray(linhas) && linhas.length > 0
+  const temGraficoBuckets =
+    grafico &&
+    Array.isArray(grafico.rotulos) &&
+    Array.isArray(grafico.buckets) &&
+    grafico.rotulos.length > 0 &&
+    grafico.rotulos.length === grafico.buckets.length
+  const temGrafico = temGraficoSimples || temGraficoBuckets
 
-  const maxValor = temGrafico ? Math.max(...grafico.valores) || 1 : 1
+  // Máximo do gráfico (base das alturas). No modo buckets considera o MAIOR
+  // valor de coluna (soma das fatias, se houver) entre todos os buckets.
+  const maxValor = temGrafico
+    ? temGraficoBuckets
+      ? Math.max(
+          1,
+          ...grafico.buckets.flatMap((b) =>
+            (b.colunas ?? []).map((c) =>
+              Array.isArray(c.fatias)
+                ? c.fatias.reduce((a, f) => a + Number(f.valor), 0)
+                : Number(c.valor),
+            ),
+          ),
+        )
+      : Math.max(...grafico.valores) || 1
+    : 1
   // Fatia de extras por coluna, somente quando a série existe e bate o tamanho.
   const temExtras =
-    temGrafico &&
+    temGraficoSimples &&
     Array.isArray(grafico.extras) &&
     grafico.extras.length === grafico.valores.length &&
     grafico.extras.some((e) => Number(e) > 0)
+
+  const temLinhas = Array.isArray(linhas) && linhas.length > 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -67,31 +100,73 @@ export default function RelatorioTemplate({ cards, grafico, linhas }) {
         )}
       </section>
 
-      {/* Gráfico — barras simples proporcionais */}
+      {/* Gráfico — barras proporcionais (simples OU buckets com colunas lado a lado) */}
       <section aria-label="Gráfico">
         {temGrafico ? (
           <div style={estilos.cardGrafico}>
             <div style={estilos.barras}>
-              {grafico.valores.map((v, i) => {
-                const extras = temExtras ? Math.min(Number(grafico.extras[i]) || 0, v) : 0
-                const alturaTotal = Math.round((v / maxValor) * 100)
-                const alturaExtras = extras > 0 ? Math.min(Math.round((extras / maxValor) * 100), alturaTotal) : 0
-                const alturaAzul = alturaTotal - alturaExtras
-                return (
-                  <div key={i} style={estilos.coluna}>
-                    {alturaAzul > 0 && <div style={{ ...estilos.barra, height: `${alturaAzul}%` }} />}
-                    {alturaExtras > 0 && (
-                      <div
-                        style={{
-                          ...estilos.barraExtras,
-                          height: `${alturaExtras}%`,
-                          borderRadius: alturaAzul > 0 ? '0 0 3px 3px' : '3px',
-                        }}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+              {temGraficoBuckets
+                ? grafico.buckets.map((bucket, i) => (
+                    <div key={i} style={estilos.bucket}>
+                      {(bucket.colunas ?? []).map((coluna, j) => {
+                        const totalColuna = Array.isArray(coluna.fatias)
+                          ? coluna.fatias.reduce((a, f) => a + Number(f.valor), 0)
+                          : Number(coluna.valor)
+                        const alturaTotal = Math.round((totalColuna / maxValor) * 100)
+                        return Array.isArray(coluna.fatias) ? (
+                          <div key={j} style={estilos.bucketColuna}>
+                            {coluna.fatias.map((fatia, k) => {
+                              const altura = Math.round((Number(fatia.valor) / maxValor) * 100)
+                              return (
+                                altura > 0 && (
+                                  <div
+                                    key={k}
+                                    style={{
+                                      ...estilos.barraFatia,
+                                      height: `${altura}%`,
+                                      background: fatia.cor,
+                                    }}
+                                  />
+                                )
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div key={j} style={estilos.bucketColuna}>
+                            {alturaTotal > 0 && (
+                              <div
+                                style={{
+                                  ...estilos.barra,
+                                  background: coluna.cor ?? estilos.barra.background,
+                                  height: `${alturaTotal}%`,
+                                }}
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))
+                : grafico.valores.map((v, i) => {
+                    const extras = temExtras ? Math.min(Number(grafico.extras[i]) || 0, v) : 0
+                    const alturaTotal = Math.round((v / maxValor) * 100)
+                    const alturaExtras = extras > 0 ? Math.min(Math.round((extras / maxValor) * 100), alturaTotal) : 0
+                    const alturaAzul = alturaTotal - alturaExtras
+                    return (
+                      <div key={i} style={estilos.coluna}>
+                        {alturaAzul > 0 && <div style={{ ...estilos.barra, height: `${alturaAzul}%` }} />}
+                        {alturaExtras > 0 && (
+                          <div
+                            style={{
+                              ...estilos.barraExtras,
+                              height: `${alturaExtras}%`,
+                              borderRadius: alturaAzul > 0 ? '0 0 3px 3px' : '3px',
+                            }}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
             </div>
             <div style={estilos.eixo}>
               {grafico.rotulos.map((rotulo, i) => (
@@ -184,6 +259,29 @@ const estilos = {
     flexDirection: 'column',
     justifyContent: 'flex-end',
     alignItems: 'stretch',
+  },
+  // Bucket (modo múltiplas colunas): ocupa uma fração do eixo e agrupa as
+  // colunas lado a lado dentro de si (entradas empilhadas + despesa).
+  bucket: {
+    flex: 1,
+    height: '100%',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  bucketColuna: {
+    height: '100%',
+    flex: 1,
+    maxWidth: 14,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-end',
+    alignItems: 'stretch',
+  },
+  barraFatia: {
+    width: '100%',
+    transition: 'height 200ms ease',
   },
   barra: {
     width: '100%',

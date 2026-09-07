@@ -48,18 +48,22 @@
 //     - `valorHorasExtras` fatia desta linha dos extras da semana de trabalho
 //       — ver Regra de extras abaixo.
 //
-//   • planejamentosRealizados  lista de itens do Planejamento (origem manual,
+//   • planejamentosRealizados  lista de itens do Planejamento (origens manual,
 //     jornada, recorrente, outro, historico_planilha). Só contam como Recebido:
 //     tipo_op='Entrada', estado='realizado', valor > 0 e data_prevista DENTRO
-//     do período — a lib aplica o filtro sozinha (defensiva). EXCEÇÃO de
-//     origem: planilha ('historico_planilha') só conta antes de 24/08/2026 —
-//     a partir da semana 34/2026 (primeiro lançamento digitado no app) a fonte
-//     é o próprio app (regra 05/09/2026).
+//     do período — a lib aplica o filtro sozinha (defensiva). EXCLUSÕES de
+//     origem explícitas (decisão 06/09/2026):
+//       - 'historico_planilha' só conta antes de 24/08/2026 (a partir da
+//         semana 34/2026 a fonte é o próprio app — regra 05/09/2026);
+//       - 'historico_acordo' e 'historico_outros' NUNCA contam aqui — o Acordo
+//         trabalhista tem aba própria e Outros não é pagamento de trabalho.
 //     Cada item também PODE trazer `valor_semanal` (opcional): a coluna B
 //     "VALOR SEMANAL" da planilha — o FIXO de referência da época (1.400 em
 //     2025, 1.600 no início de 2026, 1.650 de março/2026 em diante). Só as
 //     linhas origem 'historico_planilha' carregam (migration 30; backfill do
-//     script de reconciliação).
+//     script de reconciliação). PODE trazer também `valor_extra_historico`
+//     (migration 31): a coluna C "HorasExtras" da planilha — o excedente REAL
+//     da semana, que o relatório usa DIRETO como extra, sem fórmula.
 //   • fixoSemana                o valor fixo SEMANAL padrão do Ponto
 //     (ponto_config.VALOR_FIXO_SEMANA, config.fixoSemana do usePonto) — a base
 //     que a semana de trabalho normal paga. Serve de régua dos extras quando a
@@ -105,23 +109,25 @@
 //     não 400. Só neste relatório; os cards do Ponto continuam como estão.
 //   • Os extras aparecem NAS LINHAS dos pagamentos que cobrem W, enlaçados
 //     pelo mesmo dado gravado: as colunas ano_semana_trabalho/semana_trabalho
-//     (referente). Pagamento SEM colunas (histórico da planilha, seguro,
-//     netflix...) não casa com semana → jamais ganha extra. DETALHE: o histórico
-//     da planilha TEM colunas de trabalho (backfill do script de reconciliação),
-//     então os pagamentos antigos PODEM ganhar extra — contra a sua própria
-//     época, não a de hoje (ver base histórica abaixo).
+//     (referente). Pagamento SEM colunas (histórico do seguro, netflix...)
+//     não casa com semana → jamais ganha extra pela fórmula. DETALHE: o
+//     histórico da planilha TEM o excedente GRAVADO (valor_extra_historico,
+//     migration 31) — ele vira o extra DIRETO da linha, sem fórmula nem rateio.
 //   • BASE HISTÓRICA (migration 30, decisão 06/09/2026): quando TODAS as
 //     parcelas que cobrem W carregam `valor_semanal`, a base da semana é a
 //     SOMA delas (junho parcelado: 825 + 825 = 1.650) e vale NO LUGAR do
 //     fixoSemana da config. Se qualquer parcela não tiver (lançamentos do
 //     próprio app), a base é o fixoSemana atual. Assim a semana de 05/01/2026
 //     (paga 14/01) usa a base 1.600 da época → 2.760 − 1.600 = 1.160 (bate com
-//     o Ponto), e não 1.110 (2.760 − 1.650 de hoje).
+//     o Ponto), e não 1.110 (2.760 − 1.650 de hoje). A base histórica vale
+//     apenas para as linhas SEM valor_extra_historico (a fórmula).
 //   • Quando VÁRIOS pagamentos parcelam a mesma semana W (ex.: junho, parcelas
 //     de 50%), o total de extras de W (Σ valores − fixo) é RATEADO de forma
 //     proporcional ao valor de cada parcela: cada linha mostra a fatia do
 //     pedaço que pagou. Soma das fatias == extra da semana; a semana conta UMA
-//     única vez no total do mês/card/gráfico (nada duplica).
+//     única vez no total do mês/card/gráfico (nada duplica). O rateio vale só
+//     na fórmula (linhas sem valor_extra_historico); linhas com o valor
+//     gravado já trazem a fatia exata da fonte.
 //   • Sem pagamento no período cobrindo W → não há onde mostrar (extras só
 //     aparecem onde há a linha que os paga).
 //
@@ -246,7 +252,12 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
         Number(p.valor) > 0 &&
         // Planilha vale só até a semana 34/2026 (o app é a fonte a partir
         // daí — primeiro lançamento digitado em 24/08/2026).
-        !(p.origem === 'historico_planilha' && String(p.data_prevista) >= CORTE_APOS_PLANILHA),
+        !(p.origem === 'historico_planilha' && String(p.data_prevista) >= CORTE_APOS_PLANILHA) &&
+        // Acordo trabalhista e recebimentos avulsos saem do "Recebido & horas"
+        // (decisão 06/09/2026): o Acordo tem aba própria (origine
+        // historico_acordo) e Outros (historico_outros) não é salário — ambos
+        // NÃO fazem parte da conta "o que entrou como pagamento de trabalho".
+        !['historico_acordo', 'historico_outros'].includes(p.origem),
     )
 
   // UMA LINHA POR PAGAMENTO REALIZADO (regra 06/09/2026): mesmo que dois ou
@@ -271,6 +282,10 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       semana,
       valor: Number(p.valor),
       valorSemanal: p.valor_semanal === null || p.valor_semanal === undefined ? null : Number(p.valor_semanal),
+      valorExtraHistorico:
+        p.valor_extra_historico === null || p.valor_extra_historico === undefined
+          ? null
+          : Number(p.valor_extra_historico),
       valorHorasExtras: 0,
       referente,
       descricao: String(p.descricao ?? '').trim(),
@@ -298,10 +313,31 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
   // Vários pagamentos pela MESMA W → o extra da semana é RATEADO
   // proporcionalmente ao valor de cada parcela (cada linha mostra a fatia que
   // pagou; a semana conta UMA vez nos totais).
+  //
+  // EXCEÇÃO HISTÓRICO DA PLANILHA (decisão 06/09/2026): as linhas origem
+  // 'historico_planilha' carregam `valor_extra_historico` (migration 31 — a
+  // coluna C "HorasExtras" da planilha, o excedente REAL da semana). Nestas
+  // linhas o extra é ESSE valor gravado DIRETO — nada de fórmula de subtração
+  // nem rateio (o número já é o da fonte). A fórmula continua valendo apenas
+  // para linhas reconciliadas pelo Ponto ou que não tenham o dado histórico.
   const valorFixo = Number(fixoSemana) || 0
-  const pagamentosPorReferente = new Map()
+  const itensComExtraDireto = []
+  const itensSemExtraDireto = []
   for (const it of itens) {
-    if (!it.referente) continue // sem semana de trabalho gravada (planilha, seguro...) → não ganha extra
+    if (it.valorExtraHistorico !== null && it.valorExtraHistorico !== undefined && it.valorExtraHistorico > 0) {
+      it.valorHorasExtras = arre2(it.valorExtraHistorico)
+      totalValorHorasExtras = arre2(totalValorHorasExtras + it.valorHorasExtras)
+      itensComExtraDireto.push(it)
+    } else {
+      itensSemExtraDireto.push(it)
+    }
+  }
+
+  // Continua agrupado por semana de trabalho SOMENTE para as linhas sem o
+  // extra gravado (origens do app/Ponto — reconciliação do Ponto).
+  const pagamentosPorReferente = new Map()
+  for (const it of itensSemExtraDireto) {
+    if (!it.referente) continue // sem semana de trabalho gravada (seguro, netflix...) → não ganha extra
     if (!pagamentosPorReferente.has(it.referente)) {
       pagamentosPorReferente.set(it.referente, [])
     }

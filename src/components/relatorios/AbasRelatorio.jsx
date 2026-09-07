@@ -3,13 +3,15 @@
 // ============================================================================
 // Pílulas roláveis horizontalmente (mesma linguagem visual das abas de
 // Configurações e do detalhe do Cartão, com a ativa preenchida em #42A5F5).
-// A ordem é fixa: Recebido & horas, Patrimônio, Entradas x despesas, Cartões,
-// Planejado x real. Trocar de aba NÃO reseta o período — quem guarda o
-// período é a página; este componente só comunica qual aba está selecionada.
+// A ordem é fixa: Recebido & horas, Acordo trabalhista, Patrimônio, Entradas
+// x despesas, Cartões, Planejado x real. Trocar de aba NÃO reseta o período —
+// quem guarda o período é a página; este componente só comunica qual aba está
+// selecionada.
 // ============================================================================
 
 const ABAS = [
   { chave: 'recebido-horas', rotulo: 'Recebido & horas' },
+  { chave: 'acordo-trabalhista', rotulo: 'Acordo trabalhista' },
   { chave: 'patrimonio', rotulo: 'Patrimônio' },
   { chave: 'entradas-x-despesas', rotulo: 'Entradas x despesas' },
   { chave: 'cartoes', rotulo: 'Cartões' },

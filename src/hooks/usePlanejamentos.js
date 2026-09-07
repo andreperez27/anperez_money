@@ -90,9 +90,12 @@ export function usePlanejamentos({ ano, semana } = {}) {
         .select('*')
         .eq('ano_semana', alvo.ano)
         .eq('semana', alvo.semana)
-        // Registros vindos da planilha são SÓ para o relatório de Recebido &
-        // horas — fora da semana do app (não duplicam o recorrente semanal).
-        .neq('origem', 'historico_planilha')
+        // Registros do HISTÓRICO (qualquer origem com prefixo 'historico_',
+        // ex.: historico_planilha, historico_acordo, historico_outros) são SÓ
+        // para os relatórios — fora da semana do app (não duplicam nem o
+        // recorrente semanal nem os depósitos antigos). Só os relatórios leem
+        // essas origens, cada um filtrando a sua.
+        .not('origem', 'like', 'historico_%')
         // Ordenação determinística: dois planejamentos da mesma data não
         // trocam de posição entre buscas (mesmo critério de desempate do
         // extrato: campo principal + criado_em + id). O desempate extra por
@@ -135,7 +138,8 @@ export function usePlanejamentos({ ano, semana } = {}) {
       .select('*')
       .eq('ano_semana', alvo.ano)
       .eq('semana', alvo.semana)
-      .neq('origem', 'historico_planilha')
+      // Histórico (origem 'historico_*') fica fora — SÓ os relatórios leem.
+      .not('origem', 'like', 'historico_%')
       .order('data_prevista')
       .order('parcela_numero')
       .order('criado_em')
@@ -161,9 +165,11 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // calcularResumoPlanejamentos/agruparPorMes/agruparPorSemanaISO.
   // Usa o índice idx_planejamentos_data_prevista; RLS continua filtrando
   // o user_id no banco (nenhum filtro manual aqui, como em todo o hook).
-  // Por padrão EXCLUI os registros da planilha (origem 'historico_planilha')
-  // — eles servem só ao relatório de Recebido & horas. Quem precisar deles
-  // (o relatório) passa incluirHistorico=true.
+  // Por padrão EXCLUI os registros do HISTÓRICO (qualquer origem de prefixo
+  // 'historico_', ex.: historico_planilha/acordo/outros) — eles servem SÓ aos
+  // relatórios (Recebido & horas lê historico_planilha; Acordo trabalhista
+  // lê historico_acordo; e assim por diante). Quem precisar deles (o
+  // relatório) passa incluirHistorico=true.
   async function listarPorPeriodo(inicioISO, fimISO, incluirHistorico = false) {
     const { inicio, fim } = validarFaixaDePeriodo(inicioISO, fimISO)
 
@@ -173,7 +179,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
       .gte('data_prevista', inicio)
       .lte('data_prevista', fim)
     if (!incluirHistorico) {
-      consulta = consulta.neq('origem', 'historico_planilha')
+      consulta = consulta.not('origem', 'like', 'historico_%')
     }
     const { data, error } = await consulta
       // Ordenação IDÊNTICA à consulta semanal: determinismo garantido pelos

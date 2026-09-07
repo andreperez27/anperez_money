@@ -9,16 +9,20 @@ import SeletorPeriodoRelatorio from '../components/relatorios/SeletorPeriodoRela
 import AbasRelatorio from '../components/relatorios/AbasRelatorio'
 import RelatorioTemplate from '../components/relatorios/RelatorioTemplate'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
+import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
+import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
 
 // ============================================================================
 // RELATÓRIOS
 // ============================================================================
 // Orquestrador: seletor de período no topo, abas de tópico abaixo (trocar de
 // aba NÃO reseta o período — as duas coisas são estados independentes) e o
-// RelatorioTemplate na aba ativa. A aba "Recebido & horas" já busca dados
-// reais (useRelatorioRecebidoHoras); as quatro restantes ainda recebem as
-// props vazias e o visual fica em "Em construção" em cada bloco. O exportar
-// PDF do cabeçalho está desabilitado ("em breve"), apenas informativo.
+// RelatorioTemplate na aba ativa. As abas "Recebido & horas", "Acordo
+// trabalhista" e "Entradas x despesas" já buscam dados reais (hooks
+// useRelatorioRecebidoHoras, useRelatorioAcordo e useRelatorioEntradasDespesas);
+// as restantes ainda recebem as props vazias e o visual fica em "Em
+// construção" em cada bloco. O exportar PDF do cabeçalho está desabilitado
+// ("em breve"), apenas informativo.
 // ============================================================================
 
 const ABA_PADRAO = 'recebido-horas'
@@ -75,10 +79,12 @@ export default function Relatorios() {
 
   const faixaInvertida = Boolean(dataInicio && dataFim && dataInicio > dataFim)
 
-  // Aba "Recebido & horas": dados reais do período. As demais abas continuam
-  // sem dados (template em "Em construção"). O hook já devolve as props no
-  // formato do RelatorioTemplate.
+  // Aba "Recebido & horas", "Acordo trabalhista" e "Entradas x despesas": dados
+  // reais do período. As demais abas continuam sem dados (template em "Em
+  // construção"). Os hooks já devolvem as props no formato do RelatorioTemplate.
   const recebidoHoras = useRelatorioRecebidoHoras(periodo ?? undefined)
+  const acordo = useRelatorioAcordo(periodo ?? undefined)
+  const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
 
   return (
     <div style={estilosComuns.conteudo}>
@@ -136,6 +142,26 @@ export default function Relatorios() {
             cards={recebidoHoras.cards}
             grafico={recebidoHoras.grafico}
             linhas={recebidoHoras.linhas}
+          />
+        )
+      ) : aba === 'acordo-trabalhista' ? (
+        acordo.erro ? (
+          <p style={estilos.erro}>{acordo.erro}</p>
+        ) : (
+          <RelatorioTemplate
+            cards={acordo.cards}
+            grafico={acordo.grafico}
+            linhas={acordo.linhas}
+          />
+        )
+      ) : aba === 'entradas-x-despesas' ? (
+        entradasDespesas.erro ? (
+          <p style={estilos.erro}>{entradasDespesas.erro}</p>
+        ) : (
+          <RelatorioTemplate
+            cards={entradasDespesas.cards}
+            grafico={entradasDespesas.grafico}
+            linhas={entradasDespesas.linhas}
           />
         )
       ) : (

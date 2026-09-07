@@ -928,5 +928,72 @@ caso('parcela de junho: base = Σ VALOR SEMANAL (825+825=1650) prevalece sobre a
   )
 })
 
+// ============================================================================
+// 17) Exclusão explícita: acordo trabalhista e Outros fora do "Recebido & horas"
+// ============================================================================
+caso('acordo e outros ficam FORA do Recebido (origens historico_acordo/outros)', () => {
+  const periodo = definirPeriodo('mes', '2026-01-15')
+  const plan = [
+    entrada('2026-01-07', 2000, { origem: 'historico_planilha' }),
+    entrada('2026-01-14', 1650, { origem: 'historico_planilha' }),
+    entrada('2026-01-21', 2000, { origem: 'historico_acordo' }),
+    entrada('2026-01-28', 4805.8, { origem: 'historico_outros', descricao: 'FGTS (saque aniversário)' }),
+  ]
+  const r = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+
+  assert.equal(r.totalRecebido, 3650) // 2000 + 1650 — acordo/outros NÃO entram
+  assert.equal(r.recebimentos.length, 2)
+  assert.deepEqual(
+    r.recebimentos.map((i) => i.valor),
+    [2000, 1650],
+  )
+})
+
+// ============================================================================
+// 18) Extra direto do histórico: valor_extra_historico é usado SEM fórmula
+// ============================================================================
+caso('historico_planilha com valor_extra_historico: o extra é ESSE valor direto', () => {
+  const periodo = definirPeriodo('mes', '2026-01-15')
+  const plan = [
+    // Linha da planilha: valor 2760, fixo histórico 1600, extra GRAVADO 1160.
+    entrada('2026-01-14', 2760, {
+      origem: 'historico_planilha',
+      valor_semanal: 1600,
+      valor_extra_historico: 1160,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 2,
+    }),
+  ]
+  const r = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+
+  assert.equal(r.totalRecebido, 2760)
+  assert.equal(r.totalValorHorasExtras, 1160) // direto, sem rateio/fórmula
+  assert.deepEqual(
+    r.recebimentos.map((i) => [i.valor, i.valorHorasExtras]),
+    [[2760, 1160]],
+  )
+})
+
+// ============================================================================
+// 19) Linhas sem o dado histórico seguem usando a fórmula (Ponto reconci- liado)
+// ============================================================================
+caso('sem valor_extra_historico a fórmula continua valendo (linha do Ponto)', () => {
+  const periodo = definirPeriodo('mes', '2026-01-15')
+  const plan = [
+    // Sem valor_extra_historico → a FÓRMULA da base histórica define o extra:
+    // 2760 − 1600 (valor_semanal) = 1160, como no caso 15.
+    entrada('2026-01-14', 2760, {
+      origem: 'manual',
+      valor_semanal: 1600,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 2,
+    }),
+  ]
+  const r = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+
+  assert.equal(r.totalRecebido, 2760)
+  assert.equal(r.totalValorHorasExtras, 1160)
+})
+
 console.log(`\n${passou} testes passaram, ${falhou} falharam.`)
 if (falhou > 0) process.exit(1)
