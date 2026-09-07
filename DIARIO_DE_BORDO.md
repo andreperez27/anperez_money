@@ -70,12 +70,28 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   de segunda a sábado desconta 1/6 do fixo dinamicamente de ponto_config;
   domingo não desconta; fonte única `previstoAReceberDaSemana` no card
   "Previsto a receber" e na reconciliação do Planejamento) — 57 testes.
-- **Relatórios**: primeira aba "Recebido & horas" com dados reais — recebidos
-  históricos da planilha (origem `historico_planilha`, excluída do resto do
-  app, regra do corte em 2026), extras em R$ (HE + dom/fer), granularidade
-  semanal com data de recebimento, fixo histórico por época (VALOR SEMANAL da
-  planilha) e média dividida só pelos períodos com lançamento; seletor de
-  período Mês/Trimestre/Semestre/Ano/Personalizado — 27 testes.
+- **Relatórios**: abas "Recebido & horas", "Acordo trabalhista" e "Entradas x
+  despesas" com dados reais. "Recebido & horas": recebidos históricos da
+  planilha (origem `historico_planilha`, excluída do resto do app, regra do
+  corte em 2026), extras em R$ (o excedente real gravado na migration 31 —
+  `valor_extra_historico` — sem fórmula; a fórmula continua só para o Ponto),
+  granularidade semanal com data de recebimento, fixo histórico por época
+  (VALOR SEMANAL da planilha) e média dividida só pelos períodos com
+  lançamento. "Acordo trabalhista": só `origem='historico_acordo'`, cards
+  total + depósitos, uma linha por depósito. "Entradas x despesas": fluxo real
+  das movimentações das contas (pagamento da fatura já é a Saída — sem
+  duplicidade), transferências internas fora, entradas quebradas por categoria
+  (salário/acordo/outros) e gráfico em buckets com colunas lado a lado (Mês →
+  semana, demais → mês). Seletor de período
+  Mês/Trimestre/Semestre/Ano/Personalizado.
+- **Categorização dos lançamentos**: categorias da planilha aplicadas ao banco
+  (migration 32 `compras.categoria`, migration 33 `p_categoria` nas RPCs de
+  compra e script `aplicar_categorias_planilha.py`) — 837 lançamentos casados
+  (501 movimentações + 336 compras), 0 divergências na verificação; e campo
+  **categoria** em todos os formulários de lançamento (conta e cartão) via
+  `src/lib/categorias.js` + `SeletorCategoria` — obrigatório em lançamento
+  novo, opcional/​editável na edição (vazio preserva o que foi migrado),
+  grupos ordenados com as mais usadas primeiro e o resto em ordem alfabética.
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -177,6 +193,7 @@ completo daquele dia.
    Planejamento com valor real via `useResumoPonto`/`useResumoPlanejamento`).
 - [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system; **desconto do fixo semanal por feriado** (regra 04/09/2026: feriado de seg–sáb desconta 1/6 do fixo, domingo não; fonte única `previstoAReceberDaSemana` no card e na reconciliação). Migration 28 **aplicada** no Supabase.
 - [diario/2026-09-05.md](diario/2026-09-05.md) — Relatório **"Recebido & horas"** com dados reais: migração dos recebidos da planilha (Entradas Consolidadas → `planejamentos` com origem `historico_planilha`, migration 29) e das horas 2025 do Ponto (migration 24), regra do corte (planilha só até 2025, app é a fonte a partir de 2026), extras em R$ + granularidade semanal, fixo histórico por período (coluna VALOR SEMANAL, migration 30 + backfill de 250 linhas), média dividida só pelos períodos com lançamento e legendas "Ano 2026". Suíte 27/27, build ok.
+- [diario/2026-09-07.md](diario/2026-09-07.md) — Categorização aplicada ao banco (migration 32 `compras.categoria` + migration 33 `p_categoria` nas RPCs de compra; script `aplicar_categorias_planilha.py`: 837 lançamentos casados, 835 gravados, 55 renomeações de descrição, verificação com 0 divergências, backup) e **campo categoria em todos os formulários** de lançamento (conta e cartão) via `categorias.js` + `SeletorCategoria` (obrigatório em novo, opcional na edição). Entrega do pacote de Relatórios pendente: migration 31 (`valor_extra_historico` + origens `historico_acordo`/`historico_outros`) e abas **"Acordo trabalhista"** (uma linha por depósito) e **"Entradas x despesas"** (fluxo real das contas, transferência interna fora, gráfico em buckets, Mês → semana; demais → mês); template com barras lado a lado/empilhadas. Suítes: Acordo 9/9, Entradas x despesas 13/13, Recebido & horas 30/30. Build ok.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
