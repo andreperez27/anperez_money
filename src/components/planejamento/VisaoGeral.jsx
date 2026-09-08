@@ -90,6 +90,8 @@ export default function VisaoGeral({
                 <span style={{ ...estilos.valorCard, color: '#9ca3af' }}>…</span>
               ) : saldoProjetadoErro ? (
                 <span style={{ ...estilos.valorCard, color: '#f87171', fontSize: '0.85rem' }}>indisponível</span>
+              ) : saldoProjetado === null || saldoProjetado === undefined ? (
+                <span style={{ ...estilos.valorCard, color: '#9ca3af' }}>—</span>
               ) : (
                 <span
                   style={{

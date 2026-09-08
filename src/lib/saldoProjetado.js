@@ -83,3 +83,31 @@ export function saldoAteData(serie = [], dataISO, saldoInicial = 0) {
   }
   return resultado
 }
+
+// ---------------------------------------------------------------------------
+// SALDO REAL DE UM DIA PASSADO (reconstrução para o card "Saldo projetado")
+// ---------------------------------------------------------------------------
+// Para um período JÁ encerrado (fim < hoje) não existe o que projetar
+// partindo de hoje: o card deve mostrar o saldo de caixa REAL que existia ao
+// fim do último dia do período. Reconstrução:
+//
+//   saldoReal(fim do dia D) = saldo atual das contas
+//                           − efeito das movimentações com data > D
+//
+// `movimentacoes` deve vir com a MESMA regra de efeito de extratoCalc.somarEfeito
+// (Entrada soma, Saída subtrai; transferência interna anula porque são duas
+// linhas próprias) e já filtradas pelas contas que participam do cálculo.
+// Se `dataAlvo` for anterior à cobertura da busca (`coberturaMinima`), não dá
+// para reconstruir com segurança → devolve null (a UI mostra "—" em vez de
+// inventar número).
+// ============================================================================
+export function calcularSaldoReal({ saldoAtual, movimentacoes = [], dataAlvo, coberturaMinima }) {
+  if (coberturaMinima && compararISO(dataAlvo, coberturaMinima) < 0) return null
+  let saldo = Number(saldoAtual) || 0
+  for (const m of movimentacoes || []) {
+    if (String(m.data) > dataAlvo) {
+      saldo -= (m.tipo_op === 'Entrada' ? 1 : -1) * Number(m.valor)
+    }
+  }
+  return Math.round(saldo * 100) / 100
+}

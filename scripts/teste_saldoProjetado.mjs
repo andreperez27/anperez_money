@@ -3,6 +3,7 @@ import {
   calcularSaldoProjetado,
   adicionarDiasISO,
   saldoAteData,
+  calcularSaldoReal,
 } from '../src/lib/saldoProjetado.js'
 import { montarProjecao, montarItensFerias } from '../src/lib/faturaProjecao.js'
 import { calcularResumoPlanejamentos } from '../src/lib/planejamentoCalc.js'
@@ -28,6 +29,10 @@ function verificar(nome, fn) {
 
 function item(id, data, valor, tipoOp, extra = {}) {
   return { id, estado: 'previsto', data_prevista: data, valor, tipo_op: tipoOp, ...extra }
+}
+
+function movDict(data, valor, tipoOp) {
+  return { data, valor, tipo_op: tipoOp }
 }
 
 // --- adicionarDiasISO ---------------------------------------------------------
@@ -122,6 +127,130 @@ verificar('S9 — férias entram só no VISÍVEL (R$ 0) e não alteram o somató
   const r = calcularResumoPlanejamentos(itensParaSomatorio)
   assert.equal(r.totais.saidas, 100)
   assert.equal(r.contagens.previsto, 1) // férias não inflam a contagem de previstos
+})
+
+// --- calcularSaldoReal (saldo REAL de um dia passado) -------------------------
+verificar('T1 — reverte saída ocorrida depois do alvo (pagamento de hoje não retroage)', () => {
+  // Saldo hoje é 900 porque saíram 100 hoje. Ao fim de 06/09 ainda existiam 1000.
+  const movs = [movDict('2026-09-08', 100, 'Saida')]
+  const r = calcularSaldoReal({
+    saldoAtual: 900,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 1000)
+})
+
+verificar('T2 — reverte entrada ocorrida depois do alvo', () => {
+  const movs = [movDict('2026-09-07', 50, 'Entrada')]
+  const r = calcularSaldoReal({
+    saldoAtual: 1050,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 1000)
+})
+
+verificar('T3 — movimentação no PRÓPRIO dia alvo não é revertida (fim do dia)', () => {
+  const movs = [
+    movDict('2026-09-06', 30, 'Entrada'), // ocorreu no fim do dia alvo → permanece
+    movDict('2026-09-08', 100, 'Saida'),
+  ]
+  const r = calcularSaldoReal({
+    saldoAtual: 1000,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 1100) // ao fim de 06/09 ainda sem a saída de 08 (revertida)
+})
+
+verificar('T4 — sem movimentações depois do alvo o saldo é o atual', () => {
+  const movs = [
+    movDict('2026-09-04', 20, 'Entrada'),
+    movDict('2026-09-05', 10, 'Saida'),
+  ]
+  const r = calcularSaldoReal({
+    saldoAtual: 500,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 500)
+})
+
+verificar('T5 — transferência interna após o alvo anula (efeito líquido zero)', () => {
+  const movs = [
+    movDict('2026-09-07', 100, 'Saida'),
+    movDict('2026-09-07', 100, 'Entrada'),
+  ]
+  const r = calcularSaldoReal({
+    saldoAtual: 1000,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 1000)
+})
+
+verificar('T6 — alvo anterior à cobertura devolve null (mostra "—")', () => {
+  const r = calcularSaldoReal({
+    saldoAtual: 1000,
+    movimentacoes: [],
+    dataAlvo: '2026-07-15',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, null)
+})
+
+verificar('T7 — centavos preservados sem deriva de ponto flutuante', () => {
+  const movs = [movDict('2026-09-07', 0.05, 'Entrada')]
+  const r = calcularSaldoReal({
+    saldoAtual: 10.05,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(r, 10.0)
+})
+
+verificar('T8 — base do período usa a VÉSPERA (não o dia 1º): reais do dia 1º ficam para o resumo', () => {
+  // Semana atual começa 07/09. A base do saldo deve ser ao fim de 06/09:
+  // um lançamento REAL de 07/09 (que vira item realizado no resumo da janela)
+  // não pode estar na base — senão contaria 2x.
+  const movs = [movDict('2026-09-07', 121.04, 'Saida')]
+  const baseVespera = calcularSaldoReal({
+    saldoAtual: 1000,
+    movimentacoes: movs,
+    dataAlvo: '2026-09-06',
+    coberturaMinima: '2026-08-01',
+  })
+  assert.equal(baseVespera, 1121.04) // a saída de 07/09 foi revertida (fora da base)
+  // resultado da janela (S37) Entradas 2050 − Saídas 1463,59 → 586,41
+  const saldoFimPeriodo = Math.round((baseVespera + 586.41) * 100) / 100
+  assert.equal(saldoFimPeriodo, 1707.45) // 1121,04 + 586,41 (sem duplicar a saída de 07/09)
+})
+
+verificar('T9 — projeção em CADEIA: saldo fim da semana N = fim da anterior + resultado da atual', () => {
+  // Base real na véspera da semana corrente (06/09) + lançamentos da série.
+  const base = 1649.6
+  const itens = [
+    item('e37', '2026-09-07', 2050, 'Entrada'), // previsto S37
+    item('s37', '2026-09-10', 1463.59, 'Saida'), // previsto S37
+    item('s38', '2026-09-15', 700, 'Saida'), // previsto S38
+    item('e38', '2026-09-18', 1000, 'Entrada'), // previsto S38
+  ]
+  const r = calcularSaldoProjetado(base, itens, { inicioISO: '2026-09-07', fimISO: '2026-09-20' })
+  // Fim da S37 (13/09) = base + R37 (2050 − 1463,59 = 586,41) → 2236,01
+  const fimSemanaAtual = Math.round(saldoAteData(r.serie, '2026-09-13', base) * 100) / 100
+  assert.equal(fimSemanaAtual, 2236.01)
+  // Fim da S38 (20/09) = fim da S37 + R38 (1000 − 700 = 300) → 2536,01
+  const fimProximaSemana = Math.round(saldoAteData(r.serie, '2026-09-20', base) * 100) / 100
+  assert.equal(fimProximaSemana, 2536.01)
+  // Saldo ao fim da faixa (mesma régua).
+  assert.equal(r.saldoAoFim, 2536.01)
 })
 
 console.log(`\n${ok} passaram, ${falhou} falharam.`)

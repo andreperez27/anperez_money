@@ -98,6 +98,17 @@ export default function Planejamento() {
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
   const [aba, setAba] = useState('visao') // 'visao' | 'lancamentos'
 
+  // Contador de mutações para o card "Saldo projetado": qualquer criação/
+  // edição/cancelamento/realização incrementa a versão e o hook re-busca os
+  // itens do horizonte e as movimentações — o recálculo é automático.
+  const [versaoHorizonte, setVersaoHorizonte] = useState(0)
+  const avancarVersao = () => setVersaoHorizonte((v) => v + 1)
+  const comRecarga = (fn) => (...args) =>
+    Promise.resolve(fn(...args)).then((r) => {
+      avancarVersao()
+      return r
+    })
+
   // Todos os planejamentos 'previsto' de destino Cartão (sem janela). Fonte da
   // PROJEÇÃO da fatura: permite projetar o VENCIMENTO em qualquer período em que
   // ele caia, respeitando o dia_fechamento, mesmo que a compra prevista tenha
@@ -220,6 +231,7 @@ export default function Planejamento() {
   const fimHorizonte = useMemo(() => adicionarDiasISO(hoje(), 90), [])
   const saldoProjetado = useSaldoProjetado({
     ateISO: fimHorizonte,
+    versaoRecarga: versaoHorizonte,
     listarPorPeriodo,
     cartoes,
     faturasReais,
@@ -312,6 +324,7 @@ export default function Planejamento() {
     })
     await recarregarFaturas()
     await atualizar()
+    avancarVersao()
   }
 
   return (
@@ -374,17 +387,17 @@ export default function Planejamento() {
           erro={erroVisivel}
           dataPadrao={dataPadrao}
           acoes={{
-            criar: criarPlanejamento,
-            criarSerie: criarSerieParcelada,
-            criarSerieRecorrente,
-            cancelar: cancelarPlanejamento,
-            cancelarSerie: cancelarSerieAPartirDe,
-            excluir: excluirPlanejamento,
-            excluirSerie,
-            regenerarSerie,
-            editar: editarPlanejamento,
-            realizar: realizarPlanejamento,
-            realizarCartao: realizarPlanejamentoCartao,
+            criar: comRecarga(criarPlanejamento),
+            criarSerie: comRecarga(criarSerieParcelada),
+            criarSerieRecorrente: comRecarga(criarSerieRecorrente),
+            cancelar: comRecarga(cancelarPlanejamento),
+            cancelarSerie: comRecarga(cancelarSerieAPartirDe),
+            excluir: comRecarga(excluirPlanejamento),
+            excluirSerie: comRecarga(excluirSerie),
+            regenerarSerie: comRecarga(regenerarSerie),
+            editar: comRecarga(editarPlanejamento),
+            realizar: comRecarga(realizarPlanejamento),
+            realizarCartao: comRecarga(realizarPlanejamentoCartao),
             realizarFatura: aoPagarFatura,
           }}
           aoPosMutacao={aoPosMutacao}
