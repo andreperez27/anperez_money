@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict'
-import {
-  calcularMesFatura,
-  vencimentoISO,
-  montarItemFatura,
-  montarItensFatura,
-} from '../src/lib/faturaPlanejamento.js'
+import { calcularMesFatura, montarItemFatura, montarItensFatura } from '../src/lib/faturaPlanejamento.js'
+import { vencimentoRealISO } from '../src/lib/diaUtil.js'
 
 // ============================================================================
 // Testes da FATURA AUTOMÁTICA NO PLANEJAMENTO (lib pura faturaPlanejamento.js).
@@ -52,15 +48,26 @@ verificar('FC6 — mês curto: compra após o último dia efetivo vai para o mê
   assert.equal(calcularMesFatura('2026-02-28', 27), '2026-03')
 })
 
-// --- vencimentoISO ----------------------------------------------------------
-verificar('F1 — vencimento básico (dia 10 de 2026-03)', () => {
-  assert.equal(vencimentoISO('2026-03', 10), '2026-03-10')
+// --- vencimentoRealISO (data real = dia fixo clampado + próximo dia útil) ---
+verificar('F1 — vencimento básico (dia 10 de 2026-03 é terça, sem mudança)', () => {
+  assert.equal(vencimentoRealISO('2026-03', 10), '2026-03-10')
 })
-verificar('F2 — clamp para mês curto (dia 31 em 2026-04 → 30)', () => {
-  assert.equal(vencimentoISO('2026-04', 31), '2026-04-30')
+verificar('F2 — clamp para mês curto (dia 31 em 2026-04 → 30, quinta, sem mudança)', () => {
+  assert.equal(vencimentoRealISO('2026-04', 31), '2026-04-30')
 })
-verificar('F3 — não oferece dia inválido em fevereiro (dia 30 em 2026-02 → 28)', () => {
-  assert.equal(vencimentoISO('2026-02', 30), '2026-02-28')
+verificar('F3 — clamp fevereiro + vencimento cai em sábado vira o próximo dia útil', () => {
+  // 28/02/2026 é sábado → o dia útil empurra para 02/03/2026 (segunda).
+  assert.equal(vencimentoRealISO('2026-02', 30), '2026-03-02')
+})
+verificar('F3b — clamp puro em mês curto bissexto (29/02/2028 é terça, sem mudança)', () => {
+  assert.equal(vencimentoRealISO('2028-02', 30), '2028-02-29')
+})
+verificar('F3c — vencimento em DOMINGO vira a segunda seguinte (31/05/2026 → 01/06)', () => {
+  assert.equal(vencimentoRealISO('2026-05', 31), '2026-06-01')
+})
+verificar('F3d — sábado + feriado na segunda seguinte (12/09/2026 → 15/09)', () => {
+  const feriados = ['2026-09-14'] // segunda com feriado
+  assert.equal(vencimentoRealISO('2026-09', 12, feriados), '2026-09-15')
 })
 
 // --- montarItemFatura -------------------------------------------------------
@@ -160,6 +167,47 @@ verificar('F10 — retorna vazio sem dado real nem previsto', () => {
     montarItensFatura({ faturasReais: [], previstosPorCartaoMes: {}, inicioISO: null, fimISO: null }),
     [],
   )
+})
+
+// --- Vencimento REAL no item de fatura (fim de semana E feriado) ---
+const cartaoNu = { id: 'cartao-Nu', nome: 'Nu PJ', dia_fechamento: 2, dia_vencimento: 12 }
+const cartaoFeriado = { id: 'cartao-Feriado', nome: 'Seg feriado', dia_fechamento: 2, dia_vencimento: 7 }
+
+verificar('F11 — item de fatura com vencimento em SÁBADO usa o dia útil como data_prevista', () => {
+  // 12/09/2026 é sábado → vencimento real 14/09/2026 (segunda), exemplo real do André.
+  const item = montarItemFatura({
+    cartao: cartaoNu,
+    mes: '2026-09',
+    faturaReal: { cartao_id: 'cartao-Nu', mes_fatura: '2026-09', valor_restante: 100 },
+    valorPrevisto: 0,
+  })
+  assert.equal(item.data_prevista, '2026-09-14')
+})
+
+verificar('F12 — item de fatura pula FERIADO em dia útil da semana (07/09/2026 → 08/09)', () => {
+  // 07/09/2026 é segunda e feriado (Independência) → vence 08/09/2026.
+  const item = montarItemFatura({
+    cartao: cartaoFeriado,
+    mes: '2026-09',
+    faturaReal: { cartao_id: 'cartao-Feriado', mes_fatura: '2026-09', valor_restante: 100 },
+    valorPrevisto: 0,
+    feriados: ['2026-09-07'],
+  })
+  assert.equal(item.data_prevista, '2026-09-08')
+})
+
+verificar('F13 — montarItensFatura repassa os feriados ao item', () => {
+  const itens = montarItensFatura({
+    faturasReais: [],
+    previstosPorCartaoMes: { 'cartao-Nu': { '2026-09': 500 } },
+    cartoes: [cartaoNu],
+    feriados: ['2026-09-14'],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+  })
+  assert.equal(itens.length, 1)
+  // 12/09 sábado → 13 domingo → 14 segunda FERIADO → 15/09 terça.
+  assert.equal(itens[0].data_prevista, '2026-09-15')
 })
 
 console.log(`\n${ok} ok, ${falhou} falharam`)

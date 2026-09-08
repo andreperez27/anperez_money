@@ -6,6 +6,8 @@ import { useCompras, useExtratoCartao } from '../hooks/useCompras'
 import ModalCompra from '../components/ModalCompra'
 import EditarCompraForm from '../components/EditarCompraForm'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
+import { vencimentoRealISO } from '../lib/diaUtil'
+import { useFeriados } from '../hooks/useFeriados'
 
 const ROTULO_STATUS = {
   aberta: 'ABERTA',
@@ -53,14 +55,10 @@ function mesExibicao(mesStr) {
   return `${m}/${ano}`
 }
 
-// Data de vencimento (ISO YYYY-MM-DD) da fatura do mês `mesStr`, usando o
-// dia de vencimento do cartão (clamp p/ meses curtos ex.: 31 em 04 → 30).
-function vencimentoISO(mesStr, diaVenc) {
-  const [ano, m] = mesStr.split('-').map(Number)
-  const ultimo = new Date(ano, m, 0).getDate()
-  const dia = Math.max(1, Math.min(diaVenc, ultimo))
-  return `${ano}-${String(m).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
-}
+// Data de vencimento REAL (ISO YYYY-MM-DD) da fatura do mês `mesStr`:
+// dia fixo do cartão (clamp p/ meses curtos) avançado p/ o próximo dia útil —
+// centralizado em vencimentoRealISO (lib/diaUtil.js), que pula fim de semana
+// e feriado usando a mesma lista de feriados do Ponto (useFeriados).
 
 // Tela de detalhe da fatura do cartão (rota /cartoes/:id), reorganizada no
 // estilo "Extrato do Cartão" do app antigo (ControleHoras):
@@ -92,6 +90,8 @@ export default function FaturaDetalhe() {
     desfazerPagamento,
     atualizar: atualizarFaturas,
   } = useFaturas(id)
+  // Feriados globais do Ponto — para o vencimento REAL (dia útil) da fatura.
+  const { feriados } = useFeriados()
 
   // Estado das abas
   const [aba, setAba] = useState('fatura')
@@ -390,7 +390,7 @@ export default function FaturaDetalhe() {
         <p style={estilos.mesSubtitulo}>Fecha dia {cartao.dia_fechamento} · Vence dia {cartao.dia_vencimento}</p>
         {fatura && (
           <p style={estilos.vencimento}>
-            Vencimento da fatura: <strong>{formatarData(vencimentoISO(mes, cartao.dia_vencimento))}</strong>
+            Vencimento da fatura: <strong>{formatarData(vencimentoRealISO(mes, cartao.dia_vencimento, feriados))}</strong>
           </p>
         )}
       </section>

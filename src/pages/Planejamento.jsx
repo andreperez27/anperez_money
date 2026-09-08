@@ -4,6 +4,7 @@ import { useFaturasPlanejamento } from '../hooks/useFaturasPlanejamento'
 import { montarProjecao } from '../lib/faturaProjecao'
 import { estilosComuns, hoje } from '../lib/compartilhados'
 import { adicionarDiasISO } from '../lib/saldoProjetado'
+import { useFeriados } from '../hooks/useFeriados'
 import { definirPeriodo, deslocarPeriodo, ehPeriodoAtual } from '../lib/periodos'
 import { calcularResumoPlanejamentos } from '../lib/planejamentoCalc'
 import { useFeriasPlanejamento } from '../hooks/useFeriasPlanejamento'
@@ -89,6 +90,10 @@ export default function Planejamento() {
   // na timeline do Planejamento — avisos de data futura, nunca editáveis.
   const feriasPlanejamento = useFeriasPlanejamento()
   const { ferias: feriasMarcadas } = feriasPlanejamento
+
+  // Feriados globais do Ponto — o vencimento REAL da fatura de cartão pula
+  // fim de semana E feriado (próximo dia útil), centralizado em diaUtil.
+  const { feriados } = useFeriados()
 
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
   const [aba, setAba] = useState('visao') // 'visao' | 'lancamentos'
@@ -194,9 +199,10 @@ export default function Planejamento() {
       fimISO: periodoVisivel.fim,
       previstosCartaoExternos: previstosCartaoTotal,
       ferias: feriasMarcadas,
+      feriados,
     })
     return res
-  }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal, feriasMarcadas])
+  }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal, feriasMarcadas, feriados])
 
   // Resumo: SEMPRE via a função pura do domínio sobre o array PARA SOMATÓRIO
   // (que exclui os previstos de cartão absorvidos pela fatura, evitando contar
@@ -219,6 +225,7 @@ export default function Planejamento() {
     faturasReais,
     previstosCartaoExternos: previstosCartaoTotal,
     ferias: feriasMarcadas,
+    feriados,
   })
   // Saldo acumulado até o fim do PERÍODO visível (limitado ao horizonte de 90
   // dias): é o ponto do card "Saldo projetado" ao lado do "Resultado previsto".

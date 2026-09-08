@@ -36,6 +36,7 @@ export function useSaldoProjetado({
   faturasReais = [],
   previstosCartaoExternos = [],
   ferias = [],
+  feriados = [],
 }) {
   const { contas } = useContaAtiva()
 
@@ -98,8 +99,9 @@ export function useSaldoProjetado({
       fimISO,
       previstosCartaoExternos,
       ferias,
+      feriados,
     })
-  }, [itensHorizonte, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias])
+  }, [itensHorizonte, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias, feriados])
 
   // Acumulado real → saldo dia a dia + saldo ao fim da faixa.
   const projecaoSaldo = useMemo(() => {

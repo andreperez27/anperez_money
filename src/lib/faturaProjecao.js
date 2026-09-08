@@ -69,7 +69,7 @@ export function montarItensFerias(ferias = [], { inicioISO, fimISO } = {}) {
   return marcadores
 }
 
-export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias }) {
+export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias, feriados = [] }) {
   const base = itensBase || []
   const cartoesLista = cartoes || []
   const cartaoPorId = new Map(cartoesLista.map((c) => [c.id, c]))
@@ -144,12 +144,15 @@ export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fi
   }
 
   // Gera as faturas (uma por (cartao, mes)) do dado real + previstos, na faixa.
+  // O vencimento REAL pula fim de semana/feriado (feriados vem do Ponto), então
+  // o dia em que o dinheiro sai de fato já é o dia útil correspondente.
   const faturas = montarItensFatura({
     faturasReais,
     previstosPorCartaoMes,
     inicioISO,
     fimISO,
     cartoes: cartoesLista,
+    feriados,
   })
 
   // Item de cartão NUNCA volta pro somatório como linha própria (seja previsto

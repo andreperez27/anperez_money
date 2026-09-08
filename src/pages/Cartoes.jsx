@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useCartoes } from '../hooks/useCartoes'
 import { useFaturas, proximaFaturaEmAberto } from '../hooks/useFaturas'
 import { useGastoMes } from '../hooks/useGastoMes'
+import { useFeriados } from '../hooks/useFeriados'
+import { vencimentoRealISO } from '../lib/diaUtil'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import ModalCompra from '../components/ModalCompra'
 import ModalFormulario from '../components/ModalFormulario'
-import { estilosComuns, formatoReal } from '../lib/compartilhados'
+import { estilosComuns, formatarData, formatoReal } from '../lib/compartilhados'
 
 const ROTULO_STATUS = {
   aberta: 'ABERTA',
@@ -51,6 +53,7 @@ function CartaoCard({ cartao, aoLancar }) {
   const navigate = useNavigate()
   const { faturas, limiteDisponivel } = useFaturas(cartao.id)
   const { gasto: gastoMes } = useGastoMes({ cartaoId: cartao.id })
+  const { feriados } = useFeriados()
   const fatura = escolherFaturaAtual(faturas)
   const conta = cartao.contas
 
@@ -75,7 +78,7 @@ function CartaoCard({ cartao, aoLancar }) {
         {fatura && (
           <div style={estilos.cartaoFatura}>
             <span style={estilos.faturaMes}>
-              Fatura {fatura.mes_fatura} · vence dia {cartao.dia_vencimento}
+              Fatura {fatura.mes_fatura} · vence {formatarData(vencimentoRealISO(fatura.mes_fatura, cartao.dia_vencimento, feriados))}
             </span>
             <strong style={estilos.faturaValor}>
               {formatoReal.format(Number(fatura.valor_restante))}

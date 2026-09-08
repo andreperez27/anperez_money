@@ -25,6 +25,8 @@
 // vencimento e montamos o objeto de exibição.
 // ============================================================================
 
+import { vencimentoRealISO } from './diaUtil.js'
+
 // ESPELHO fiel do SQL calcular_mes_fatura (migration 10_cartoes_schema).
 // p_data_compra → dataIso (YYYY-MM-DD), p_dia_fechamento → diaFechamento.
 // Regras idênticas ao backend:
@@ -46,23 +48,14 @@ export function calcularMesFatura(dataIso, diaFechamento) {
   return `${anoFatura}-${String(mesFatura).padStart(2, '0')}`
 }
 
-// Data de vencimento da fatura a partir do 'YYYY-MM' + dia de vencimento.
-// Mesma regra do módulo Cartões (FaturaDetalhe): dia > último dia do mês é
-// ajustado para o último dia válido (clamp, meses curtos).
-export function vencimentoISO(mesStr, diaVenc) {
-  const dia = Math.max(1, Number(diaVenc) || 1)
-  const [ano, m] = String(mesStr).split('-').map(Number)
-  const ultimo = new Date(ano, m, 0).getDate()
-  const diaFinal = Math.min(dia, ultimo)
-  return `${ano}-${String(m).padStart(2, '0')}-${String(diaFinal).padStart(2, '0')}`
-}
-
 // Monta UM item sintético de fatura para um (cartão, mes).
 // - faturaReal: linha de v_faturas daquele mês (ou null/undefined se não houver).
 // - valorPrevisto: soma dos previstos de destino cartão daquele mês (0 se nenhum).
+// - feriados: lista do Ponto (ponto_feriados) para o vencimento REAL pular
+//   fim de semana E feriado (diaUtil.vencimentoRealISO, função central).
 // - tipo: 'real' quando há valor real em v_faturas (existe fatura de fato);
 //   'projetada' quando o mês só tem previstos (não há parcela real ainda).
-export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto }) {
+export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feriados = [] }) {
   if (!cartao || !mes) return null
   const valorReal = faturaReal ? Number(faturaReal.valor_restante) : 0
   const previsto = Number(valorPrevisto) || 0
@@ -85,7 +78,7 @@ export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto }) {
       ? `Fatura cartão ${nomeCartao}`
       : `Projeção fatura cartão ${nomeCartao}`,
     valor,
-    data_prevista: vencimentoISO(mes, cartao.dia_vencimento),
+    data_prevista: vencimentoRealISO(mes, cartao.dia_vencimento, feriados),
     estado: 'previsto',
     origem: 'fatura',
     destino_padrao: 'cartao',
@@ -109,7 +102,7 @@ export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto }) {
 //   para projetar meses futuros).
 //
 // Retorna os itens ordenados por data_prevista, filtrando pelo vencimento.
-export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioISO, fimISO, cartoes }) {
+export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioISO, fimISO, cartoes, feriados = [] }) {
   if (!faturasReais && !previstosPorCartaoMes) return []
   const inicio = inicioISO || ''
   const fim = fimISO || ''
@@ -144,6 +137,7 @@ export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioI
       mes,
       faturaReal: faturaRealPorChave.get(`${cartao.id}|${mes}`),
       valorPrevisto: (previstosPorCartaoMes?.[cartao.id]?.[mes]) || 0,
+      feriados,
     })
     if (!item) continue
     if (inicio && item.data_prevista < inicio) continue
