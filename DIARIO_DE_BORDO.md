@@ -89,9 +89,20 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   compra e script `aplicar_categorias_planilha.py`) — 837 lançamentos casados
   (501 movimentações + 336 compras), 0 divergências na verificação; e campo
   **categoria** em todos os formulários de lançamento (conta e cartão) via
-  `src/lib/categorias.js` + `SeletorCategoria` — obrigatório em lançamento
-  novo, opcional/​editável na edição (vazio preserva o que foi migrado),
-  grupos ordenados com as mais usadas primeiro e o resto em ordem alfabética.
+`src/lib/categorias.js` + `SeletorCategoria` — obrigatório em lançamento
+   novo, opcional/​editável na edição (vazio preserva o que foi migrado),
+   grupos ordenados com as mais usadas primeiro e o resto em ordem alfabética.
+- **Vencimento da fatura em dia útil**: `diaUtil.vencimentoRealISO` (novo) pula
+  fim de semana **E feriado**, centralizada e reutilizada em Cartões (card e
+  FaturaDetalhe), na projeção no Planejamento e no saldo projetado — feriados
+  vêm da tabela do Ponto via `useFeriados`.
+- **Card "Saldo projetado"**: períodos encerrados mostram o **saldo real ao fim
+  do período** (`calcularSaldoReal` reverte movimentações posteriores; antes da
+  cobertura mostra "—") e o futuro é uma **projeção em cadeia de 90 dias** —
+  base = saldo real ao fim da véspera da semana corrente, cada semana parte do
+  fim da anterior. Recálculo **automático**: `versaoRecarga` re-busca horizonte
+  e movimentações a cada mutação (criar/editar/cancelar/excluir/realizar, pagar
+  fatura).
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -194,6 +205,7 @@ completo daquele dia.
 - [diario/2026-09-04.md](diario/2026-09-04.md) — Planejamento vinculado ao Ponto (migration 28, reconciliação automática do valor real quando a semana de trabalho fecha, badge coral "Ajustado pelo Ponto"); badge vermelho "Atrasado" com precedência sobre "Disponível"; seletor Entrada/Despesa na recorrência; tag "n/N" e mês também removidas para origem `jornada`; Configurações → Contas sem saldo nem marcar ativa; design flat (sem sombras e sem anel de foco no clique) + refino do design system; **desconto do fixo semanal por feriado** (regra 04/09/2026: feriado de seg–sáb desconta 1/6 do fixo, domingo não; fonte única `previstoAReceberDaSemana` no card e na reconciliação). Migration 28 **aplicada** no Supabase.
 - [diario/2026-09-05.md](diario/2026-09-05.md) — Relatório **"Recebido & horas"** com dados reais: migração dos recebidos da planilha (Entradas Consolidadas → `planejamentos` com origem `historico_planilha`, migration 29) e das horas 2025 do Ponto (migration 24), regra do corte (planilha só até 2025, app é a fonte a partir de 2026), extras em R$ + granularidade semanal, fixo histórico por período (coluna VALOR SEMANAL, migration 30 + backfill de 250 linhas), média dividida só pelos períodos com lançamento e legendas "Ano 2026". Suíte 27/27, build ok.
 - [diario/2026-09-07.md](diario/2026-09-07.md) — Categorização aplicada ao banco (migration 32 `compras.categoria` + migration 33 `p_categoria` nas RPCs de compra; script `aplicar_categorias_planilha.py`: 837 lançamentos casados, 835 gravados, 55 renomeações de descrição, verificação com 0 divergências, backup) e **campo categoria em todos os formulários** de lançamento (conta e cartão) via `categorias.js` + `SeletorCategoria` (obrigatório em novo, opcional na edição). Entrega do pacote de Relatórios pendente: migration 31 (`valor_extra_historico` + origens `historico_acordo`/`historico_outros`) e abas **"Acordo trabalhista"** (uma linha por depósito) e **"Entradas x despesas"** (fluxo real das contas, transferência interna fora, gráfico em buckets, Mês → semana; demais → mês); template com barras lado a lado/empilhadas. Suítes: Acordo 9/9, Entradas x despesas 13/13, Recebido & horas 30/30. Build ok.
+- [diario/2026-09-08.md](diario/2026-09-08.md) — **Vencimento real da fatura** pula fim de semana **E feriado** (`diaUtil.vencimentoRealISO` + `useFeriados`, feriados do Ponto reutilizados) no card do cartão (com conserto do import `formatarData`), FaturaDetalhe, na projeção do Planejamento e no saldo projetado — commit `288439d` publicado. **Card "Saldo projetado"**: passado mostra o saldo real ao fim do período (`calcularSaldoReal` reverte movimentações posteriores, "—" antes da cobertura) e o futuro é projeção **em cadeia de 90 dias** (base = saldo real ao fim da véspera da semana corrente, cada semana parte do fim da anterior — T9), com recálculo automático via `versaoRecarga` a cada mutação. Suíte `teste_saldoProjetado` 18/18 (T8 véspera, T9 cadeia), faturaProjecao 11/11, build ok.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
