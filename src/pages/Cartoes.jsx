@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCartoes } from '../hooks/useCartoes'
 import { useFaturas, proximaFaturaEmAberto } from '../hooks/useFaturas'
+import { useGastoMes } from '../hooks/useGastoMes'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import ModalCompra from '../components/ModalCompra'
@@ -41,11 +42,15 @@ function escolherFaturaAtual(faturas) {
   return proximaFaturaEmAberto(faturas)
 }
 
-// Um cartão da lista. Componente próprio para conseguir chamar useFaturas
-// por cartão (hooks não podem rodar em loop no componente pai).
+// Um cartão da lista. Componente próprio para conseguir chamar useFaturas e
+// useGastoMes por cartão (hooks não podem rodar em loop no componente pai).
+// Além da fatura em destaque, cada cartão mostra o "Gastos no mês" próprio
+// (soma do valor total das compras com data no mês corrente — breakdown por
+// cartão, como no app antigo; o painel agregado no topo soma isso no total).
 function CartaoCard({ cartao, aoLancar }) {
   const navigate = useNavigate()
   const { faturas, limiteDisponivel } = useFaturas(cartao.id)
+  const { gasto: gastoMes } = useGastoMes({ cartaoId: cartao.id })
   const fatura = escolherFaturaAtual(faturas)
   const conta = cartao.contas
 
@@ -101,6 +106,7 @@ function CartaoCard({ cartao, aoLancar }) {
         </div>
 
         <div style={estilos.cartaoRodape}>
+          <span>Gastos no mês: <strong style={{ color: '#f87171' }}>{formatoReal.format(Number(gastoMes))}</strong></span>
           <span>Limite disponível: <strong style={{ color: '#42A5F5' }}>{formatoReal.format(Number(limiteDisponivel ?? limite))}</strong></span>
           <span>Fecha dia {cartao.dia_fechamento} · Vence dia {cartao.dia_vencimento}</span>
         </div>
@@ -114,38 +120,38 @@ function CartaoCard({ cartao, aoLancar }) {
 }
 
 // Consome useFaturas por cartão (hooks não rodam em loop) e reporta ao painel
-// de resumo os três valores agregados: limite, limite disponível e gasto no mês
-// (valor restante da fatura atual). Renderiza vazio — só alimenta o agregado.
+// os dois valores agregados: limite e limite disponível. O GASTO NO MÊS do
+// painel vem de useGastoMes (soma do valor total das compras com data no mês
+// corrente, sem passar por parcela/fatura) e o breakdown por cartão aparece em
+// cada CartaoCard. Renderiza vazio — só alimenta o agregado.
 function ResumoCartao({ cartao, aoCalcular }) {
-  const { faturas, limiteDisponivel } = useFaturas(cartao.id)
-  const fatura = escolherFaturaAtual(faturas)
+  const { limiteDisponivel } = useFaturas(cartao.id)
 
   useEffect(() => {
     aoCalcular(cartao.id, {
       limite: Number(cartao.limite) || 0,
       disponivel: Number(limiteDisponivel ?? cartao.limite) || 0,
-      gasto: fatura ? Number(fatura.valor_restante) || 0 : 0,
     })
-  }, [cartao.id, cartao.limite, limiteDisponivel, fatura, aoCalcular])
+  }, [cartao.id, cartao.limite, limiteDisponivel, aoCalcular])
 
   return null
 }
 
 // Painel agregado no topo: soma todos os cartões ativos (Limite Total,
 // Disponível e Gasto no Mês) + barra única com o percentual global usado/livre
-// nas duas pontas. Só consome os hooks/dados existentes — sem recálculo.
+// nas duas pontas. Limite e Disponível vêm dos ResumoCartao (por cartão); o
+// Gasto no Mês vem de useGastoMes: soma do valor TOTAL das compras com data no
+// mês corrente — nem parcela, nem fatura (fatura pode conter parcelas de
+// meses diferentes). A key no uso força recarga via remount quando uma compra
+// é lançada.
 function ResumoCartoes({ cartoes }) {
   const [valores, setValores] = useState({})
+  const { gasto: gastoMes } = useGastoMes()
 
   const aoCalcular = useCallback((id, v) => {
     setValores((prev) => {
       const atual = prev[id]
-      if (
-        atual &&
-        atual.limite === v.limite &&
-        atual.disponivel === v.disponivel &&
-        atual.gasto === v.gasto
-      ) {
+      if (atual && atual.limite === v.limite && atual.disponivel === v.disponivel) {
         return prev
       }
       return { ...prev, [id]: v }
@@ -154,7 +160,7 @@ function ResumoCartoes({ cartoes }) {
 
   const limiteTotal = cartoes.reduce((s, c) => s + (Number(c.limite) || 0), 0)
   const disponivelTotal = Object.values(valores).reduce((s, v) => s + (v.disponivel || 0), 0)
-  const gastoTotal = Object.values(valores).reduce((s, v) => s + (v.gasto || 0), 0)
+  const gastoTotal = Number(gastoMes) || 0
   const usadoTotal = limiteTotal - disponivelTotal
   const pctUsado =
     limiteTotal > 0 ? Math.min(100, Math.max(0, (usadoTotal / limiteTotal) * 100)) : 0
@@ -292,7 +298,7 @@ export default function Cartoes() {
 
       {!carregando && !erro && (
         <>
-          {cartoes.length > 0 && <ResumoCartoes cartoes={cartoes} />}
+          {cartoes.length > 0 && <ResumoCartoes key={versaoCompra} cartoes={cartoes} />}
 
           <div style={estilos.grade}>
           {cartoes.map((c) => (

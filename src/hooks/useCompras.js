@@ -17,11 +17,13 @@ export function useCompras(cartaoId, mesFatura) {
   const [erro, setErro] = useState(null)
 
   const carregar = useCallback(async () => {
+    // Sem cartão ou sem mês não há o que buscar — retorna vazio (o then
+    // espera {itens, pagamentos}, nunca undefined).
     if (!cartaoId || !mesFatura) {
       setItens([])
       setPagamentos([])
       setCarregando(false)
-      return
+      return { itens: [], pagamentos: [] }
     }
 
     const { data: compras, error: errCompras } = await supabase
@@ -76,6 +78,7 @@ export function useCompras(cartaoId, mesFatura) {
         if (!ativo) return
         setItens(res.itens)
         setPagamentos(res.pagamentos)
+        setErro(null)
       })
       .catch((e) => {
         if (!ativo) return
@@ -117,11 +120,11 @@ export function useExtratoCartao(cartaoId, { inicio, fim, incluirInativas = fals
 
   const carregar = useCallback(async () => {
     // Sem cartão OU sem filtro habilitado (ex.: personalizado inválido):
-    // não há o que buscar.
+    // não há o que buscar — retorna extrato vazio (o then espera {itens}).
     if (!cartaoId || !habilitado) {
       setItens([])
       setCarregando(false)
-      return
+      return { itens: [] }
     }
 
     let queryCompras = supabase.from('compras').select('id').eq('cartao_id', cartaoId)
@@ -169,6 +172,7 @@ export function useExtratoCartao(cartaoId, { inicio, fim, incluirInativas = fals
       .then((res) => {
         if (!ativo) return
         setItens(res.itens)
+        setErro(null)
       })
       .catch((e) => {
         if (!ativo) return
