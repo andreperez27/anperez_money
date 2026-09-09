@@ -103,6 +103,17 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   fim da anterior. Recálculo **automático**: `versaoRecarga` re-busca horizonte
   e movimentações a cada mutação (criar/editar/cancelar/excluir/realizar, pagar
   fatura).
+- **Condomínio em SÉRIE com regra definitiva de valor variável**: diagnóstico —
+  o condomínio era lançado **avulso mês a mês** (sem `serie_id`) e a semana
+  41/10-10/2026 ficava sem previsão; DAS-MEI ok (série fixa 86,05/24 meses).
+  Regra (08/09/2026, só p/ os variáveis Gás/Água do condomínio):
+  **3+ reais → média dos 3 últimos; menos de 3 → repete o último real; vazio →
+  null** (`projetarValorVariavel`, com correção da ordem da sugestão que lia
+  do mais recente e usava os mais antigos). `projetarOcorrenciasCondominio`
+  gera a série recalculando **por mês** (fixos vigentes com `n/total`, variáveis
+  pela regra, clamp de vencimento). Script idempotente
+  `gerar_serie_condominio.mjs` criou a série real de 24 ocorrências a partir de
+  10/10/2026 (R$ 1.463,59 até 12/26; R$ 1.417,59 de 2027 — fim da Benfeitorias).
 
 Banco de dados: schema completo no Supabase (contas, movimentações,
 caixinhas, planejamentos, cartões de crédito e views/funções/RPCs de
@@ -206,6 +217,7 @@ completo daquele dia.
 - [diario/2026-09-05.md](diario/2026-09-05.md) — Relatório **"Recebido & horas"** com dados reais: migração dos recebidos da planilha (Entradas Consolidadas → `planejamentos` com origem `historico_planilha`, migration 29) e das horas 2025 do Ponto (migration 24), regra do corte (planilha só até 2025, app é a fonte a partir de 2026), extras em R$ + granularidade semanal, fixo histórico por período (coluna VALOR SEMANAL, migration 30 + backfill de 250 linhas), média dividida só pelos períodos com lançamento e legendas "Ano 2026". Suíte 27/27, build ok.
 - [diario/2026-09-07.md](diario/2026-09-07.md) — Categorização aplicada ao banco (migration 32 `compras.categoria` + migration 33 `p_categoria` nas RPCs de compra; script `aplicar_categorias_planilha.py`: 837 lançamentos casados, 835 gravados, 55 renomeações de descrição, verificação com 0 divergências, backup) e **campo categoria em todos os formulários** de lançamento (conta e cartão) via `categorias.js` + `SeletorCategoria` (obrigatório em novo, opcional na edição). Entrega do pacote de Relatórios pendente: migration 31 (`valor_extra_historico` + origens `historico_acordo`/`historico_outros`) e abas **"Acordo trabalhista"** (uma linha por depósito) e **"Entradas x despesas"** (fluxo real das contas, transferência interna fora, gráfico em buckets, Mês → semana; demais → mês); template com barras lado a lado/empilhadas. Suítes: Acordo 9/9, Entradas x despesas 13/13, Recebido & horas 30/30. Build ok.
 - [diario/2026-09-08.md](diario/2026-09-08.md) — **Vencimento real da fatura** pula fim de semana **E feriado** (`diaUtil.vencimentoRealISO` + `useFeriados`, feriados do Ponto reutilizados) no card do cartão (com conserto do import `formatarData`), FaturaDetalhe, na projeção do Planejamento e no saldo projetado — commit `288439d` publicado. **Card "Saldo projetado"**: passado mostra o saldo real ao fim do período (`calcularSaldoReal` reverte movimentações posteriores, "—" antes da cobertura) e o futuro é projeção **em cadeia de 90 dias** (base = saldo real ao fim da véspera da semana corrente, cada semana parte do fim da anterior — T9), com recálculo automático via `versaoRecarga` a cada mutação. Suíte `teste_saldoProjetado` 18/18 (T8 véspera, T9 cadeia), faturaProjecao 11/11, build ok.
+- [diario/2026-09-09.md](diario/2026-09-09.md) — **Condomínio em SÉRIE** com regra definitiva de valor variável. Diagnóstico: condomínio era lançado **avulso mês a mês** (sem `serie_id`), então a semana 41/10-10/2026 ficava **sem previsão** (DAS-MEI com série fixa de 24 meses não tinha o problema). Regra do André (só variáveis Gás/Água do condomínio): **3+ reais → média dos 3 últimos; menos de 3 → repete o último real; vazio → null** (`projetarValorVariavel`; corrigido bug da sugestão que lia do mais recente e a média pegava os mais antigos). `projetarOcorrenciasCondominio` gera a série **recalculando por mês** (fixos vigentes com `n/total`, variáveis pela regra, clamp de vencimento). Script idempotente `gerar_serie_condominio.mjs` criou a série real: 24 ocorrências previstas a partir de **10/10/2026** — R$ 1.463,59 até DEZ/26 e R$ 1.417,59 de 2027 (fim da Benfeitorias). Suíte nova `teste_serieCondominio` 12/12 (com o caso real da semana 41) e `teste_mediaMovelCalc` 21/21, build ok.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
