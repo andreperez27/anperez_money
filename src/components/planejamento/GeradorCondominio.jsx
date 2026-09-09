@@ -9,7 +9,7 @@ import ModalFormulario from '../ModalFormulario'
 import { useDespesaRecorrenteItens } from '../../hooks/useDespesaRecorrenteItens'
 import { estilosComuns, hoje } from '../../lib/compartilhados'
 import { calcularTotalCondominio } from '../../lib/despesaRecorrenteCalc'
-import { calcularMediaMovel } from '../../lib/mediaMovelCalc'
+import { projetarValorVariavel } from '../../lib/mediaMovelCalc'
 import { supabase } from '../../lib/supabaseClient'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 
@@ -101,9 +101,11 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
   const rotuloMes = `${MES_3[mesAtual - 1]}/${anoAtual}`
 
   // MÉDIA MÓVEL (P5): pré-preenche Gás/Água com os últimos 3 valores REALIZADOS
-  // de condomínio (origem 'recorrente'). É só um SUGESTÃO — os campos ficam
-  // editáveis e nunca travados; o usuário decide o valor final. Não há mudança
-  // de schema: a leitura usa a observação já gravada (códigos 1010/1052).
+  // de condomínio (origem 'recorrente') seguindo a regra definitiva de valor
+  // variável (08/09/2026): 3+ reais → média dos 3 últimos; menos de 3 → repete
+  // o último real. É só um SUGESTÃO — os campos ficam editáveis e nunca
+  // travados; o usuário decide o valor final. Não há mudança de schema: a
+  // leitura usa a observação já gravada (códigos 1010/1052).
   useEffect(() => {
     let ativo = true
     carregarMediaMovel()
@@ -144,9 +146,14 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
       if (Number.isFinite(a)) aguaHistorico.push(a)
       if (mesesVistos.size >= 36) break
     }
+    // A leitura vêm do mais RECENTE para o mais antigo; inverte para ordem
+    // CRONOLÓGICA — senão a projeção pegaria os 3 MAIS ANTIGOS (bug corrigido
+    // em 08/09/2026, junto da regra definitiva de valor variável).
+    gasHistorico.reverse()
+    aguaHistorico.reverse()
     return {
-      gas: calcularMediaMovel({ historico: gasHistorico }),
-      agua: calcularMediaMovel({ historico: aguaHistorico }),
+      gas: projetarValorVariavel({ historico: gasHistorico }),
+      agua: projetarValorVariavel({ historico: aguaHistorico }),
     }
   }
 

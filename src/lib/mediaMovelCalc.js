@@ -48,3 +48,47 @@ export function calcularMediaMovel({ historico = [], janela = 3 } = {}) {
   // Arredonda para centavos (mesma regra de "round(total, 2)" do front).
   return Math.round((soma / valores.length + Number.EPSILON) * 100) / 100
 }
+
+// ============================================================================
+// PROJEÇÃO DE VALOR VARIÁVEL (regra definitiva do usuário — 08/09/2026)
+// ============================================================================
+// Regra para projetar o PRÓXIMO valor variável (ex.: Gás/Água do Condomínio)
+// e atualizar a projeção conforme novas ocorrências reais são lançadas:
+//
+//   • 3+ ocorrências REAIS  → média aritmética dos 3 últimos (a média SEMPRE
+//                             desliza com a janela mais recente disponível);
+//   • menos de 3 (1 ou 2)    → repetir o valor da ÚLTIMA ocorrência real
+//                             (fallback — não faz média com dados insuficientes);
+//   • nenhum histórico       → null (nada a projetar; o chamador decide).
+//
+// Difere da calcularMediaMovel (média clássica, sempre) exatamente nesse
+// fallback. É a FUNÇÃO ofical de projeção de valor variável do projeto.
+//
+//   projetarValorVariavel({ historico: [10, 20, 30] })        // → 20
+//   projetarValorVariavel({ historico: [10, 20] })            // → 20 (último)
+//   projetarValorVariavel({ historico: [5] })                 // → 5
+//   projetarValorVariavel({ historico: [] })                  // → null
+//   projetarValorVariavel({ historico: [10, 20, 30, 40] })    // → 30 (20+30+40)/3
+export function projetarValorVariavel({ historico = [], janela = 3 } = {}) {
+  if (!Array.isArray(historico)) {
+    throw new Error('projetarValorVariavel espera historico como lista.')
+  }
+  const n = Number(janela)
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('projetarValorVariavel espera janela inteira > 0.')
+  }
+
+  const valores = historico
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v))
+
+  if (valores.length === 0) return null
+
+  if (valores.length < n) {
+    return Math.round((valores[valores.length - 1] + Number.EPSILON) * 100) / 100
+  }
+
+  const ultimos = valores.slice(-n)
+  const soma = ultimos.reduce((acc, v) => acc + v, 0)
+  return Math.round((soma / ultimos.length + Number.EPSILON) * 100) / 100
+}

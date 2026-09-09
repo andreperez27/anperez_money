@@ -17,6 +17,8 @@
 // ex.: Benfeitorias de JAN/2024 a DEZ/2026 dá "33/36" em SET/2026. Itens sem
 // vigencia_termino (sem fim previsto) não têm referência ('').
 
+import { projetarValorVariavel } from './mediaMovelCalc.js'
+
 // Normaliza o mês alvo para { ano, mes } (mes 1–12). Aceita objeto ou 'YYYY-MM'.
 function normalizarMes(mesAlvo) {
   if (mesAlvo && typeof mesAlvo === 'object' && mesAlvo.ano && mesAlvo.mes) {
@@ -125,4 +127,72 @@ export function montarObservacaoCondominio(detalhamento) {
       return `${linha.cod} ${linha.descricao}${ref} ${formatarMoedaBR(linha.valor)}`
     })
     .join('\n')
+}
+
+// ============================================================================
+// PROJEÇÃO DA SÉRIE MENSAL DE CONDOMÍNIO (regra definitiva — 08/09/2026)
+// ============================================================================
+// Gera TODAS as ocorrências mensais da série cobrindo o horizonte solicitado
+// (o projeto usa 24 meses sem término). Para CADA mês o valor é recalculado
+// por conta própria:
+//   • itens FIXOS → calcula os VIGENTES naquele mês (despesaRecorrenteItem,
+//     com a referência n/total das séries com fim);
+//   • variáveis (Gás/Água) → projetados pela regra definitiva de valor
+//     variável: média dos 3 últimos REAIS; com menos de 3, repete o último.
+// A data_prevista de cada mês é clampada no fim do mês (ex.: vencimento 31 em
+// fevereiro vira 28/29). Função PURA/testável: não toca Supabase nem relógio.
+// Retorna lista de { mes, dataPrevista, valor, detalhamento, observacao }.
+// ============================================================================
+export function projetarOcorrenciasCondominio({
+  itens = [],
+  historicoGas = [],
+  historicoAgua = [],
+  mesInicio,
+  diaVencimento = 10,
+  totalMeses = 24,
+  janela = 3,
+}) {
+  if (typeof mesInicio !== 'string' || !/^\d{4}-\d{2}$/.test(mesInicio)) {
+    throw new Error('mesInicio inválido: use "YYYY-MM".')
+  }
+  const { ano, mes } = normalizarMes(mesInicio)
+  const dia = Number(diaVencimento)
+  if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+    throw new Error('diaVencimento inválido: esperava-se um dia 1–31.')
+  }
+  if (!Number.isInteger(Number(totalMeses)) || Number(totalMeses) < 1) {
+    throw new Error('totalMeses inválido: esperava-se um inteiro >= 1.')
+  }
+
+  const ocorrencias = []
+  for (let k = 0; k < Number(totalMeses); k++) {
+    let a = ano
+    let m = mes + k
+    while (m > 12) {
+      a += 1
+      m -= 12
+    }
+    const { ultimo } = limitesDoMes(a, m)
+    const dataPrevista = `${a}-${String(m).padStart(2, '0')}-${String(Math.min(dia, Number(ultimo.slice(8))))}`
+    const mesIso = dataPrevista.slice(0, 7)
+
+    const gas = projetarValorVariavel({ historico: historicoGas, janela }) ?? 0
+    const agua = projetarValorVariavel({ historico: historicoAgua, janela }) ?? 0
+
+    const { total, detalhamento } = calcularTotalCondominio({
+      itens,
+      mes: mesIso,
+      gas,
+      agua,
+    })
+
+    ocorrencias.push({
+      mes: mesIso,
+      dataPrevista,
+      valor: total,
+      detalhamento,
+      observacao: montarObservacaoCondominio(detalhamento),
+    })
+  }
+  return ocorrencias
 }
