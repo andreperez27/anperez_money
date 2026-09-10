@@ -28,6 +28,7 @@ const GRUPOS_BRUTOS = [
     categorias: [
       'Transporte (combustível)',
       'Transporte (estacionamento)',
+      'Transporte por APP',
       'Manutenção de Veículo',
       'Seguro de Veículo',
     ],
