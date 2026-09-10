@@ -15,6 +15,11 @@ import {
   decidirAtualizacoes,
   valorFechadoDaSemana,
 } from '../lib/reconciliacaoPonto.js'
+import {
+  identificarRegraValorVariavel,
+  extrairHistoricosVariaveis,
+  calcularReprojecaoValorVariavel,
+} from '../lib/serieValorVariavel.js'
 
 // Domínio de Planejamentos (ETAPA 06/E3).
 //
@@ -198,7 +203,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // payload quando não informados — os DEFAULTs do banco prevalecem
   // (mesma convenção do criarCaixinha com objetivo opcional).
   async function criarPlanejamento(dados) {
-    const { tipo_op, data_prevista, estado, origem, conta_destino_id, destino_padrao, cartao_padrao_id, observacao } = dados
+    const { tipo_op, data_prevista, estado, origem, conta_destino_id, destino_padrao, cartao_padrao_id, observacao, categoria } = dados
     const validos = validarCriacao(dados)
 
     const payload = {
@@ -211,6 +216,9 @@ export function usePlanejamentos({ ano, semana } = {}) {
     }
     if (estado !== undefined) payload.estado = estado
     if (origem !== undefined) payload.origem = origem
+    if (categoria !== undefined && categoria !== null && categoria !== '') {
+      payload.categoria = categoria
+    }
     if (conta_destino_id !== undefined && conta_destino_id !== null && conta_destino_id !== '') {
       payload.conta_destino_id = conta_destino_id
     }
@@ -235,7 +243,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const payload = {}
     const {
       tipo_op, descricao, valor, data_prevista, estado, origem,
-      conta_destino_id, destino_padrao, cartao_padrao_id, observacao,
+      conta_destino_id, destino_padrao, cartao_padrao_id, observacao, categoria,
     } = alteracoes
 
     if (tipo_op !== undefined) {
@@ -288,6 +296,9 @@ export function usePlanejamentos({ ano, semana } = {}) {
     if (cartao_padrao_id !== undefined) {
       payload.cartao_padrao_id =
         cartao_padrao_id === '' || cartao_padrao_id === null ? null : cartao_padrao_id
+    }
+    if (categoria !== undefined) {
+      payload.categoria = categoria === '' || categoria === null ? null : categoria
     }
     if (observacao !== undefined) {
       payload.observacao = observacao === '' ? null : observacao
@@ -370,6 +381,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const { error } = await supabase.rpc('realizar_planejamento', params)
     if (error) throw new Error(error.message)
 
+    await reprojetarDepoisDeRealizar(id)
     await atualizar()
   }
 
@@ -390,7 +402,111 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const { error } = await supabase.rpc('realizar_planejamento_cartao', params)
     if (error) throw new Error(error.message)
 
+    await reprojetarDepoisDeRealizar(id)
     await atualizar()
+  }
+
+  // Chama a reprojeção após uma realização, engolindo falha QUASE silenciosamente:
+  // a realização já foi confirmada no banco (RPC) e NÃO pode parecer falha para
+  // o usuário; a projeção re-tenta na próxima realização da série (mesma
+  // filosofia de tolerância da reconciliação com o Ponto).
+  async function reprojetarDepoisDeRealizar(id) {
+    try {
+      await reprojetarSerieValorVariavel(id)
+    } catch (e) {
+      console.warn('[serie valor variável] falha na reprojeção (realização já confirmada):', e)
+    }
+  }
+
+  // REPROJEÇÃO AUTOMÁTICA DE SÉRIES DE VALOR VARIÁVEL (09/09/2026 — decisão
+  // com André). Ao REALIZAR um lançamento de uma série por média (Condomínio
+  // Gás/Água ou Energia), recalcula SOMENTE as ocorrências 'previsto' da série
+  // com a média atualizada — o recém-realizado entra no histórico e a projeção
+  // "desliza". O passado realizado/cancelado NUNCA é tocado (imutável). Regras
+  // de identificação/aritmética ficam na lib pura serieValorVariavel.js.
+  // Dispara DENTRO da própria mutação (realizar → atualizar → versaoRecarga da
+  // página): nenhum caminho paralelo de recarga é criado. Falha aqui NÃO
+  // desfaz a realização (já confirmada no banco) nem derruba a recarga — a
+  // projeção re-tenta na próxima realização da série.
+  async function reprojetarSerieValorVariavel(id) {
+    const { data: alvo, error: erroAlvo } = await supabase
+      .from('planejamentos')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (erroAlvo) throw new Error(erroAlvo.message)
+    if (!alvo || !alvo.serie_id) return
+
+    const tipo = identificarRegraValorVariavel(alvo)
+    if (!tipo) return
+
+    const { data: serie, error: erroSerie } = await supabase
+      .from('planejamentos')
+      .select('*')
+      .eq('serie_id', alvo.serie_id)
+    if (erroSerie) throw new Error(erroSerie.message)
+    if (!serie || serie.length === 0) return
+
+    let itensFixos = []
+    let historicoGas = []
+    let historicoAgua = []
+    let historicoValor = []
+
+    if (tipo === 'condominio') {
+      // Fixos (a vigência por mês é filtrada dentro do cálculo puro) + reais
+      // de Gás/Água dos condomínios REALIZADOS (mesma leitura do gerador).
+      const [resItens, resReais] = await Promise.all([
+        supabase
+          .from('despesa_recorrente_item')
+          .select('cod, descricao, valor, categoria, vigencia_inicio, vigencia_termino')
+          .limit(5000),
+        supabase
+          .from('planejamentos')
+          .select('data_prevista, observacao')
+          .eq('estado', 'realizado')
+          .eq('origem', 'recorrente')
+          .ilike('descricao', 'Condomínio%')
+          .order('data_prevista', { ascending: false })
+          .limit(60),
+      ])
+      if (resItens.error) throw new Error(resItens.error.message)
+      if (resReais.error) throw new Error(resReais.error.message)
+      itensFixos = resItens.data ?? []
+      const h = extrairHistoricosVariaveis(resReais.data ?? [])
+      historicoGas = h.gas
+      historicoAgua = h.agua
+    } else {
+      // Reais de energia já realizados (qualquer série do mesmo tipo).
+      const { data, error } = await supabase
+        .from('planejamentos')
+        .select('data_prevista, valor')
+        .eq('estado', 'realizado')
+        .or('descricao.ilike.%enel%,descricao.ilike.%energia%,descricao.ilike.%eletropaulo%')
+        .order('data_prevista', { ascending: false })
+        .limit(60)
+      if (error) throw new Error(error.message)
+      historicoValor = (data ?? []).map((r) => Number(r.valor)).reverse()
+    }
+
+    const { updates } = calcularReprojecaoValorVariavel({
+      linhas: serie,
+      tipo,
+      itensFixos,
+      historicoGas,
+      historicoAgua,
+      historicoValor,
+    })
+    if (updates.length === 0) return
+
+    // Atualiza uma a uma (valores/observações podem diferir por linha e o
+    // Supabase não aplica payloads distintos num update em lote único).
+    for (const u of updates) {
+      const { error } = await supabase
+        .from('planejamentos')
+        .update({ valor: u.valor, observacao: u.observacao })
+        .eq('id', u.id)
+      if (error) throw new Error(error.message)
+    }
   }
 
   // Criar SÉRIE parcelada. As ocorrências nascem na lib pura

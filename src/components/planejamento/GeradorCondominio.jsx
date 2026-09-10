@@ -10,6 +10,7 @@ import { useDespesaRecorrenteItens } from '../../hooks/useDespesaRecorrenteItens
 import { estilosComuns, hoje } from '../../lib/compartilhados'
 import { calcularTotalCondominio } from '../../lib/despesaRecorrenteCalc'
 import { projetarValorVariavel } from '../../lib/mediaMovelCalc'
+import { extrairHistoricosVariaveis } from '../../lib/serieValorVariavel'
 import { supabase } from '../../lib/supabaseClient'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 
@@ -41,23 +42,6 @@ import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 function lerValor(texto) {
   const n = Number(String(texto).replace(/\./g, '').replace(',', '.'))
   return Number.isFinite(n) ? n : NaN
-}
-
-// Extrai o valor em REAIS de uma linha da observação do condomínio que começa
-// com o código procurado (ex.: "1010 Consumo de Gás R$ 90,00" → 90). Devolve
-// null quando a linha não existe ou o valor não é legível.
-function parseValorObservacao(observacao, cod) {
-  if (!observacao) return null
-  const linha = String(observacao)
-    .split('\n')
-    .find((l) => {
-      const t = l.trim()
-      return t.startsWith(`${cod} `) || t.startsWith(`${cod}\t`)
-    })
-  if (!linha) return null
-  const m = linha.match(/R\$\s*([\d.,]+)/)
-  if (!m) return null
-  return lerValor(m[1])
 }
 
 const MES_3 = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
@@ -131,26 +115,10 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
       .limit(60)
     if (error) throw new Error(error.message)
 
-    const gasHistorico = []
-    const aguaHistorico = []
-    const mesesVistos = new Set()
-    const realizados = data ?? []
-    for (const r of realizados) {
-      if (!r.data_prevista) continue
-      const chaveMes = r.data_prevista.slice(0, 7)
-      if (mesesVistos.has(chaveMes)) continue
-      mesesVistos.add(chaveMes)
-      const g = parseValorObservacao(r.observacao, '1010')
-      const a = parseValorObservacao(r.observacao, '1052')
-      if (Number.isFinite(g)) gasHistorico.push(g)
-      if (Number.isFinite(a)) aguaHistorico.push(a)
-      if (mesesVistos.size >= 36) break
-    }
-    // A leitura vêm do mais RECENTE para o mais antigo; inverte para ordem
-    // CRONOLÓGICA — senão a projeção pegaria os 3 MAIS ANTIGOS (bug corrigido
-    // em 08/09/2026, junto da regra definitiva de valor variável).
-    gasHistorico.reverse()
-    aguaHistorico.reverse()
+    // Extração única do histórico (dedupe por mês + ordem cronológica) fica na
+    // lib serieValorVariavel — a MESMA usada pela reprojeção automática das
+    // séries por média após um "Lançar" (sem duplicar regra entre tela/hook).
+    const { gas: gasHistorico, agua: aguaHistorico } = extrairHistoricosVariaveis(data ?? [])
     return {
       gas: projetarValorVariavel({ historico: gasHistorico }),
       agua: projetarValorVariavel({ historico: aguaHistorico }),
@@ -211,6 +179,7 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
           nome="Condomínio"
           tipoOp="Saida"
           contaPadrao={contaId || undefined}
+          categoriaPadrao="Condominio"
           calcularValor={calcularValor}
           aoCriarSerie={aoCriarSerie}
           aoCriar={aoCriar}

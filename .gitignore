@@ -80,3 +80,7 @@ opencode.json
 # ==========================================================================
 files.zip
 layout_pagina_relatorios.html
+
+# Planilha com a categorização histórica real (valores financeiros) usada
+# para o dry-run/aplicação de categorias — nunca versionar.
+scripts/previsao_categorizacao.xlsx
