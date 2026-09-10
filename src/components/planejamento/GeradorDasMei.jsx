@@ -53,6 +53,7 @@ export default function GeradorDasMei({ aoCriar, aoPosMutacao }) {
         nome="DAS-MEI"
         tipoOp="Saida"
         contaPadrao={contaPadrao}
+        categoriaPadrao="Impostos e Taxas"
         calcularValor={calcularValor}
         aoCriar={aoCriar}
         aoPosMutacao={aoPosMutacao}

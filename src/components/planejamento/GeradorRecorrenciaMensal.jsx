@@ -79,6 +79,7 @@ export default function GeradorRecorrenciaMensal({
   contaPadrao,
   destinoPadrao,
   cartaoPadraoId,
+  categoriaPadrao,
   calcularValor,
   children,
   permiteSemanal = false,
@@ -206,6 +207,9 @@ export default function GeradorRecorrenciaMensal({
       if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
         serieDados.cartaoPadraoId = cartaoPadraoId
       }
+      if (categoriaPadrao !== undefined && categoriaPadrao !== null && categoriaPadrao !== '') {
+        serieDados.categoria = categoriaPadrao
+      }
 
       if (aoCriarSerie) {
         await aoCriarSerie(serieDados)
@@ -227,6 +231,9 @@ export default function GeradorRecorrenciaMensal({
         if (destinoPadrao !== undefined) payloadAvulso.destino_padrao = destinoPadrao
         if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
           payloadAvulso.cartao_padrao_id = cartaoPadraoId
+        }
+        if (categoriaPadrao !== undefined && categoriaPadrao !== null && categoriaPadrao !== '') {
+          payloadAvulso.categoria = categoriaPadrao
         }
         await aoCriar(payloadAvulso)
         setMsg({ tipo: 'ok', texto: `Previsão de ${nome} ${rotuloMes} gerada (${formatoReal.format(previa.total)}).` })

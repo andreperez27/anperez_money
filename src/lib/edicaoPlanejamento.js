@@ -30,6 +30,7 @@ export function montarAlteracoesEdicao({
   destino,
   contaId,
   cartaoId,
+  categoria,
 }) {
   const alteracoes = {}
 
@@ -75,6 +76,13 @@ export function montarAlteracoesEdicao({
     if (novaConta !== contaAtual) {
       alteracoes.conta_destino_id = novaConta
     }
+  }
+
+  // Categoria (migration 35): '' → null (sem categoria), senão o valor
+  // canônico do seletor. Só envia quando o item original diverge.
+  if (categoria !== undefined) {
+    const nova = categoria === '' || categoria === null ? null : categoria
+    if ((item.categoria ?? null) !== nova) alteracoes.categoria = nova
   }
 
   return alteracoes

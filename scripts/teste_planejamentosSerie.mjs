@@ -522,6 +522,90 @@ teste('D3 — regeneração preserva o destino padrão herdado do ref', () => {
 })
 
 // ---------------------------------------------------------------------------
+// CATEGORIA (MIGRATION 35) — propagação para as ocorrências da série
+// ---------------------------------------------------------------------------
+
+teste('CAT1 — montarLinhasSerie propaga categoria canônica a todas as ocorrências', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Saida',
+    descricao: 'Seguro do carro',
+    totalCentavos: 150000,
+    totalParcelas: 3,
+    dataPrimeiraParcela: '2026-06-25',
+    categoria: 'Seguro de Veículo',
+  })
+  assert.equal(linhas.length, 3)
+  for (const l of linhas) {
+    assert.equal(l.categoria, 'Seguro de Veículo')
+  }
+})
+
+teste('CAT2 — sem categoria, as ocorrências não carregam o campo', () => {
+  const linhas = montarLinhasSerie({
+    serieId: SERIE,
+    tipoOp: 'Entrada',
+    descricao: 'Sem categoria',
+    totalCentavos: 10000,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2026-08-01',
+  })
+  for (const l of linhas) {
+    assert.equal(l.categoria, undefined)
+  }
+})
+
+teste("CAT3 — categoria vazia também não é propagada ('' → sem categoria)", () => {
+  const linhas = montarLinhasRecorrentes({
+    serieId: SERIE,
+    tipoOp: 'Saida',
+    descricao: 'Netflix',
+    valorCentavos: 4490,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2026-09-01',
+    origem: 'recorrente',
+    categoria: '',
+  })
+  for (const l of linhas) {
+    assert.equal(l.categoria, undefined)
+  }
+})
+
+teste('CAT4 — regeneração (parcelada) preserva/hera a categoria do ref', () => {
+  const serie = construirSerie({
+    totalCentavos: 60000,
+    totalParcelas: 6,
+    primeira: '2026-06-10',
+  }).map((linha) => ({ ...linha, categoria: 'Assinaturas' }))
+  const r = calcularRegeneração(serie, { total_centavos: 90000 })
+  assert.ok(r.linhasParaInserir.length > 0)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.categoria, 'Assinaturas')
+  }
+  // alteracoes.categoria sobrescreve
+  const r2 = calcularRegeneração(serie, { total_centavos: 90000, categoria: 'Entretenimento' })
+  for (const l of r2.linhasParaInserir) {
+    assert.equal(l.categoria, 'Entretenimento')
+  }
+})
+
+teste('CAT5 — regeneração recorrente: categoria herdada do ref e trocável por alterações', () => {
+  const serie = construirSerieRecorrente({
+    totalParcelas: 4,
+    primeira: '2026-06-10',
+  }).map((l) => ({ ...l, categoria: 'Assinaturas' }))
+  const r = calcularRegeneraçãoRecorrente(serie, {})
+  assert.equal(r.linhasParaInserir.length, 4)
+  for (const l of r.linhasParaInserir) {
+    assert.equal(l.categoria, 'Assinaturas')
+  }
+  const r2 = calcularRegeneraçãoRecorrente(serie, { valorCentavos: 5590, categoria: 'Entretenimento' })
+  for (const l of r2.linhasParaInserir) {
+    assert.equal(l.categoria, 'Entretenimento')
+  }
+})
+
+// ---------------------------------------------------------------------------
 // REGENERAÇÃO DE SÉRIE RECORRENTE (calcularRegeneraçãoRecorrente) — 01/09/2026
 // ---------------------------------------------------------------------------
 

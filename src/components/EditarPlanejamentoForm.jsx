@@ -3,6 +3,7 @@ import { estilosComuns, hoje } from '../lib/compartilhados'
 import { RÓTULO_TIPO } from './planejamento/comum'
 import { montarAlteracoesEdicao } from '../lib/edicaoPlanejamento'
 import ModalFormulario from './ModalFormulario'
+import SeletorCategoria from './SeletorCategoria'
 
 // ============================================================================
 // FORMULÁRIO DE EDIÇÃO DE UM PLANEJAMENTO (aberto pelo lápis "Editar" da linha)
@@ -57,6 +58,7 @@ export default function EditarPlanejamentoForm({ item, aoSalvar, contas, cartoes
   const [cartaoId, setCartaoId] = useState(
     item.cartao_padrao_id ?? (cartoes?.[0]?.id ?? ''),
   )
+  const [categoria, setCategoria] = useState(item.categoria ?? '')
   const [enviando, setEnviando] = useState(false)
   const [mensagem, setMensagem] = useState(null)
 
@@ -94,6 +96,7 @@ export default function EditarPlanejamentoForm({ item, aoSalvar, contas, cartoes
       destino,
       contaId,
       cartaoId,
+      categoria,
     })
 
     if (Object.keys(alteracoes).length === 0) {
@@ -210,6 +213,16 @@ export default function EditarPlanejamentoForm({ item, aoSalvar, contas, cartoes
             as demais parcelas não são alteradas.
           </p>
         )}
+
+        <label style={estilos.rotuloCampo}>
+          Categoria
+          <SeletorCategoria
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value)}
+            id="categoria-edicao"
+            estilo={estilosComuns.input}
+          />
+        </label>
 
         <button type="submit" disabled={enviando} style={estilos.botaoSalvar}>
           {enviando ? 'Salvando...' : 'Salvar alterações'}

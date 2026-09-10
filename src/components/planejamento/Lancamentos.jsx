@@ -3,6 +3,7 @@ import { useMuyEstrecho } from '../../hooks/useMediaQuery'
 import { useContas } from '../../hooks/useContas'
 import { useCartoes } from '../../hooks/useCartoes'
 import ModalFormulario from '../ModalFormulario'
+import SeletorCategoria from '../SeletorCategoria'
 import EditarPlanejamentoForm from '../EditarPlanejamentoForm'
 import EditarSerieForm from '../EditarSerieForm'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
@@ -87,6 +88,7 @@ export default function Lancamentos({
     destino: '', // '' | 'conta' | 'cartao' — destino_padrao planejado
     conta: '', // conta_destino_id (quando destino = 'conta')
     cartao: '', // cartao_padrao_id (quando destino = 'cartao')
+    categoria: '', // categoria canônica (lista fechada) ou '' = sem categoria
   })
   const [formMsg, setFormMsg] = useState({ tipo: '', texto: '' })
   const [criando, setCriando] = useState(false)
@@ -101,7 +103,7 @@ export default function Lancamentos({
   // Modo 'recorrente': despesa fixa mensal genérica (ex.: DAS-MEI, assinaturas).
   // Reutiliza o GeradorRecorrenciaMensal com nome = descrição e calcularValor
   // = valor fixo digitado (origem 'recorrente' no payload).
-  const [recForm, setRecForm] = useState({ descricao: '', valor: '', destino: '', conta: '', cartao: '' })
+  const [recForm, setRecForm] = useState({ descricao: '', valor: '', destino: '', conta: '', cartao: '', categoria: '' })
   const recValor = lerValor(recForm.valor)
   const recNome = recForm.descricao.trim() || 'Recorrente'
 
@@ -365,8 +367,9 @@ export default function Lancamentos({
           destinoPadrao: form.destino || undefined,
           contaDestinoId: form.destino === 'conta' ? form.conta || undefined : undefined,
           cartaoPadraoId: form.destino === 'cartao' ? form.cartao || undefined : undefined,
+          categoria: form.categoria || undefined,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '', data_primeira_parcela: '', destino: '', conta: '', cartao: '' }))
+        setForm((f) => ({ ...f, descricao: '', valor: '', total_parcelas: '', data_primeira_parcela: '', destino: '', conta: '', cartao: '', categoria: '' }))
       } else {
         const valor = lerValor(form.valor)
         if (!Number.isFinite(valor) || valor <= 0) {
@@ -381,8 +384,9 @@ export default function Lancamentos({
           destino_padrao: form.destino || undefined,
           conta_destino_id: form.destino === 'conta' ? form.conta || undefined : undefined,
           cartao_padrao_id: form.destino === 'cartao' ? form.cartao || undefined : undefined,
+          categoria: form.categoria || undefined,
         })
-        setForm((f) => ({ ...f, descricao: '', valor: '', data_prevista: '', destino: '', conta: '', cartao: '' }))
+        setForm((f) => ({ ...f, descricao: '', valor: '', data_prevista: '', destino: '', conta: '', cartao: '', categoria: '' }))
       }
       await aoPosMutacao?.()
       setMostrandoForm(false)
@@ -504,6 +508,12 @@ export default function Lancamentos({
           value={form.descricao}
           onChange={(e) => campo({ descricao: e.target.value })}
           maxLength={200}
+        />
+
+        <SeletorCategoria
+          value={form.categoria}
+          onChange={(e) => campo({ categoria: e.target.value })}
+          id="categoria-planejamento"
         />
 
         <div style={estilos.campoDestino}>
@@ -636,11 +646,12 @@ export default function Lancamentos({
               contaPadrao={recForm.destino === 'conta' ? recForm.conta || undefined : undefined}
               destinoPadrao={recForm.destino || undefined}
               cartaoPadraoId={recForm.destino === 'cartao' ? recForm.cartao || undefined : undefined}
+              categoriaPadrao={recForm.categoria || undefined}
               calcularValor={() => ({ total: recValor, detalhamento: [] })}
               aoCriarSerie={acoes.criarSerieRecorrente}
               aoCriar={acoes.criar}
               aoPosMutacao={aoPosMutacao}
-              aoResetarCamposExtra={() => setRecForm({ descricao: '', valor: '', destino: '', conta: '', cartao: '' })}
+              aoResetarCamposExtra={() => setRecForm({ descricao: '', valor: '', destino: '', conta: '', cartao: '', categoria: '' })}
             >
               <label style={estilos.rotuloCampo}>
                 Descrição
@@ -661,6 +672,15 @@ export default function Lancamentos({
                   placeholder="0,00"
                   value={recForm.valor}
                   onChange={(e) => setRecForm((f) => ({ ...f, valor: e.target.value }))}
+                />
+              </label>
+              <label style={estilos.rotuloCampo}>
+                Categoria
+                <SeletorCategoria
+                  value={recForm.categoria}
+                  onChange={(e) => setRecForm((f) => ({ ...f, categoria: e.target.value }))}
+                  id="categoria-recorrente"
+                  estilo={estilosComuns.input}
                 />
               </label>
               <div style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>

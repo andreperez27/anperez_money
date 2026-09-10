@@ -53,6 +53,7 @@ export function montarLinhasSerie(dados) {
       total_parcelas: o.total_parcelas,
     }
     if (o.origem !== undefined) linha.origem = o.origem
+    if (o.categoria !== undefined) linha.categoria = o.categoria
     if (o.conta_destino_id !== undefined) linha.conta_destino_id = o.conta_destino_id
     if (o.destino_padrao !== undefined) linha.destino_padrao = o.destino_padrao
     if (o.cartao_padrao_id !== undefined) linha.cartao_padrao_id = o.cartao_padrao_id
@@ -185,6 +186,8 @@ export function calcularRegeneração(serie, alteracoes) {
       alteracoes?.observacao !== undefined
         ? alteracoes.observacao
         : ref.observacao,
+    categoria:
+      alteracoes?.categoria !== undefined ? alteracoes.categoria : ref.categoria,
   })
 
   // Números já resolvidos (realizado/cancelado) não são re-inseridos: o
@@ -318,6 +321,8 @@ export function calcularRegeneraçãoRecorrente(serie, alteracoes) {
       alteracoes?.serie_data_termino !== undefined
         ? alteracoes.serie_data_termino
         : ref.serie_data_termino,
+    categoria:
+      alteracoes?.categoria !== undefined ? alteracoes.categoria : ref.categoria,
   })
 
   // Números já resolvidos (realizado/cancelado) não são re-inseridos: o
@@ -363,6 +368,7 @@ export function montarLinhasRecorrentes(dados) {
       total_parcelas: o.total_parcelas,
     }
     if (o.origem !== undefined) linha.origem = o.origem
+    if (o.categoria !== undefined) linha.categoria = o.categoria
     if (o.origem === 'jornada') {
       // Ocorrência vinculada ao Ponto: guarda EXPLICITAMENTE a semana ISO de
       // TRABALHO que ela paga (a ANTERIOR à data_prevista). É o que permite a

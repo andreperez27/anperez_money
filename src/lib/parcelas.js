@@ -171,6 +171,7 @@ export function gerarOcorrenciasDaSerie(dados) {
     destinoPadrao,
     cartaoPadraoId,
     observacao,
+    categoria,
   } = dados ?? {}
 
   if (typeof serieId !== 'string' || !serieId.trim()) {
@@ -200,6 +201,9 @@ export function gerarOcorrenciasDaSerie(dados) {
       periodicidade: periodicidade || 'mensal',
     }
     if (origem !== undefined) ocorrencia.origem = origem
+    if (categoria !== undefined && categoria !== null && categoria !== '') {
+      ocorrencia.categoria = categoria
+    }
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
       ocorrencia.conta_destino_id = contaDestinoId
     }
@@ -241,6 +245,7 @@ export function repetirValorEmOcorrencias(dados) {
     cartaoPadraoId,
     observacao,
     serieDataTermino,
+    categoria,
   } = dados ?? {}
 
   if (typeof serieId !== 'string' || !serieId.trim()) {
@@ -274,6 +279,9 @@ export function repetirValorEmOcorrencias(dados) {
       periodicidade: periodicidade || 'mensal',
     }
     if (origem !== undefined) ocorrencia.origem = origem
+    if (categoria !== undefined && categoria !== null && categoria !== '') {
+      ocorrencia.categoria = categoria
+    }
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
       ocorrencia.conta_destino_id = contaDestinoId
     }

@@ -230,6 +230,55 @@ teste('D9 — Cartão sobre item com conta definida: limpa o cartão e GRAVA nul
 })
 
 // ---------------------------------------------------------------------------
+// CATEGORIA (MIGRATION 35) — edição parcial da categoria do planejamento
+// ---------------------------------------------------------------------------
+
+teste('CAT1 — define categoria em item sem categoria → { categoria }', () => {
+  const alteracoes = montarAlteracoesEdicao({
+    item: ITEM,
+    ...camposIntactos,
+    categoria: 'Seguro de Veículo',
+  })
+  assert.deepEqual(alteracoes, { categoria: 'Seguro de Veículo' })
+})
+
+teste('CAT2 — mantém a MESMA categoria (não tocada) → {}', () => {
+  const itemCategorizado = { ...ITEM, categoria: 'Assinaturas' }
+  const alteracoes = montarAlteracoesEdicao({
+    item: itemCategorizado,
+    ...camposIntactos,
+    categoria: 'Assinaturas',
+  })
+  assert.deepEqual(alteracoes, {})
+})
+
+teste("CAT3 — limpa categoria (escolhe \"Sem categoria\", '') → { categoria: null }", () => {
+  const itemCategorizado = { ...ITEM, categoria: 'Assinaturas' }
+  const alteracoes = montarAlteracoesEdicao({
+    item: itemCategorizado,
+    ...camposIntactos,
+    categoria: '',
+  })
+  assert.deepEqual(alteracoes, { categoria: null })
+})
+
+teste('CAT4 — troca a categoria → só { categoria } (campos intactos não voltam)', () => {
+  const itemCategorizado = { ...ITEM, categoria: 'Assinaturas' }
+  const alteracoes = montarAlteracoesEdicao({
+    item: itemCategorizado,
+    ...camposIntactos,
+    descricao: 'Netflix',
+    categoria: 'Entretenimento',
+  })
+  assert.deepEqual(alteracoes, { descricao: 'Netflix', categoria: 'Entretenimento' })
+})
+
+teste('CAT5 — categoria ausente do argumento não gera alteração', () => {
+  const alteracoes = montarAlteracoesEdicao({ item: ITEM, ...camposIntactos })
+  assert.deepEqual(alteracoes, {})
+})
+
+// ---------------------------------------------------------------------------
 
 console.log(`\n${ok} ok, ${falhou} falharam`)
 if (falhou > 0) process.exitCode = 1
