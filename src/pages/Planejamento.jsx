@@ -373,6 +373,7 @@ export default function Planejamento() {
           totais={totaisVisiveis}
           contagens={contagensVisiveis}
           itens={itensVisiveis}
+          itensParaSomatorio={itensParaSomatorio}
           dividirPorMes={!modoSemana}
           aoVerLancamentos={() => setAba('lancamentos')}
           saldoProjetado={saldoAteFimVisivel}

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { montarProjecao } from '../src/lib/faturaProjecao.js'
 import { calcularResumoPlanejamentos } from '../src/lib/planejamentoCalc.js'
+import { agruparPorMes } from '../src/lib/planejamentoAgregado.js'
 
 // ============================================================================
 // Testes da PROJEÇÃO DA FATURA no Planejamento (lib pura faturaProjecao.js).
@@ -337,6 +338,59 @@ verificar('P10 — em cartão REALIZADO fora da faixa da fatura não soma; dentr
   // Somatório: só a fatura (186,05), não 372,10.
   const resumo = calcularResumoPlanejamentos(itensParaSomatorio)
   assert.equal(resumo.totais.saidas, 186.05)
+})
+
+verificar('P11 — divisão "Por mês" da Visão Geral usa itensParaSomatorio (mês vazio soma 0 e não duplica a fatura)', () => {
+  // Regressão da correção: a seção "Por mês" somava calcularResumoPlanejamentos
+  // sobre itensVisiveis (previsto de cartão + fatura projetada JUNTOS), o que
+  // duplicava no trimestre. Agora cada grupo mensal usa o equivalente filtrado
+  // de itensParaSomatorio (o mesmo que o card principal).
+  const cartaoA = { id: 'cartao-A', nome: 'Azul', dia_fechamento: 15, dia_vencimento: 10 }
+  const pv = (id, data, valor) => ({
+    id, estado: 'previsto', destino_padrao: 'cartao', cartao_padrao_id: 'cartao-A',
+    data_prevista: data, valor, tipo_op: 'Saida',
+  })
+
+  const { itensVisiveis, itensParaSomatorio } = montarProjecao({
+    itensBase: [pv('netflix', '2026-04-20', 44.9), pv('seguro', '2026-04-20', 141.15)],
+    cartoes: [cartaoA],
+    faturasReais: [],
+    inicioISO: '2026-04-01',
+    fimISO: '2026-06-30',
+  })
+
+  // Card principal do trimestre (fonte da correção): 186,05 uma única vez.
+  const totalTrimestre = calcularResumoPlanejamentos(itensParaSomatorio).totais.saidas
+  assert.equal(totalTrimestre, 186.05)
+
+  // Divisão por mês: os grupos vêm dos VISÍVEIS (linhas da timeline mantidas,
+  // inclusive o previsto de cartão), mas o RESUMO de cada grupo usa o
+  // itensParaSomatorio daquele mês — espelho do fix em VisaoGeral.jsx.
+  const gruposMes = agruparPorMes(itensVisiveis)
+  const somatorioPorMes = new Map()
+  for (const g of agruparPorMes(itensParaSomatorio)) {
+    somatorioPorMes.set(g.chave, calcularResumoPlanejamentos(g.itens))
+  }
+
+  const saidaDoMes = (chave) => {
+    const r = somatorioPorMes.get(chave)
+    return r ? r.totais.saidas : 0
+  }
+
+  // Mês de ABRIL: só previsto de cartão (fatura vence em maio) → nada soma.
+  assert.equal(saidaDoMes('2026-04'), 0)
+  // Mês de MAIO: a fatura projetada (valor único 186,05).
+  assert.equal(saidaDoMes('2026-05'), 186.05)
+
+  // O previsto continua visível na timeline (linhas não somem do mês).
+  const abril = gruposMes.find((g) => g.chave === '2026-04')
+  assert.ok(abril)
+  assert.ok(abril.itens.some((i) => i.id === 'netflix'))
+  assert.ok(abril.itens.some((i) => i.id === 'seguro'))
+
+  // A soma dos meses BATE com o total do trimestre (sem dupla contagem).
+  const somaMeses = gruposMes.reduce((s, g) => s + saidaDoMes(g.chave), 0)
+  assert.equal(somaMeses, totalTrimestre)
 })
 
 console.log(`\n${ok} ok, ${falhou} falharam`)

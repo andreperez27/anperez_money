@@ -28,12 +28,22 @@ import {
 
 const QUANTOS_PROXIMOS = 5
 
+// Resumo "vazio" para mês que existe na timeline mas não tem nada a somar
+// (ex.: mês com só previsto de destino cartão absorvido pela fatura — o
+// dinheiro sai no vencimento, que pode estar noutro mês). Sem isso a avaliação
+// de `r.totais` quebraria quando o mês não gerar grupo no somatório.
+const RESUMO_ZERO = {
+  totais: { entradas: 0, saidas: 0, resultado: 0 },
+  contagens: { previsto: 0, realizado: 0, cancelado: 0 },
+}
+
 export default function VisaoGeral({
   carregando,
   erro,
   totais,
   contagens,
   itens,
+  itensParaSomatorio,
   dividirPorMes,
   aoVerLancamentos,
   saldoProjetado,
@@ -44,11 +54,29 @@ export default function VisaoGeral({
   const dataHoje = hoje()
 
   // Divisão por mês civil (só para Mês/Trimestre/Semestre). Lib pura, ordem
-  // cronológica garantida; o resumo de cada grupo usa a função única do domínio.
+  // cronológica garantida. A lista de meses (e as linhas dentro de cada mês)
+  // vem dos itens VISÍVEIS — a compra prevista de cartão e a fatura projetada
+  // continuam aparecendo normalmente na timeline.
   const gruposMes = useMemo(
     () => (dividirPorMes ? agruparPorMes(itens) : []),
     [dividirPorMes, itens],
   )
+
+  // Resumo por mês usa SEMPRE o array PARA SOMATÓRIO (mesma regra do card
+  // principal): o previsto de destino cartão absorvido pela fatura já está
+  // dentro da fatura e NÃO soma como linha própria no mês. Com isso, um mês
+  // que contém apenas previsto de cartão (cujo vencimento cai noutro mês)
+  // termina sem grupo próprio → entra via RESUMO_ZERO (tudo 0,00). Sem esse
+  // desacoplamento, o mês somava o previsto do cartão E, quando a fatura caía
+  // no mesmo período, o mesmo real entrava duas vezes (bug de 31/08, parcial).
+  const resumoPorMes = useMemo(() => {
+    if (!dividirPorMes) return new Map()
+    const mapa = new Map()
+    for (const g of agruparPorMes(itensParaSomatorio || [])) {
+      mapa.set(g.chave, calcularResumoPlanejamentos(g.itens))
+    }
+    return mapa
+  }, [dividirPorMes, itensParaSomatorio])
 
   // Próximos lançamentos: primeiros N não cancelados (a lista já chega
   // ordenada por data_prevista das duas consultas do domínio).
@@ -123,7 +151,7 @@ export default function VisaoGeral({
               <h3 style={estilos.tituloSecao}>Por mês</h3>
               <ul style={estilos.listaMeses}>
                 {gruposMes.map((g) => {
-                  const r = calcularResumoPlanejamentos(g.itens)
+                  const r = resumoPorMes.get(g.chave) || RESUMO_ZERO
                   return (
                     <li key={g.chave} style={estilos.linhaMes}>
                       <span style={estilos.mesChave}>
