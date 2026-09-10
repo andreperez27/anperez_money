@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabaseClient'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useEhMobile } from '../hooks/useMediaQuery'
 import CaberNaTela from './CaberNaTela'
+import { IconeRelatorios } from './HomeCard'
 import logo from '../assets/logo.png'
 
 // Ítems de la barra inferior móvil. keeps los mismos destinos que el menu
@@ -88,6 +89,12 @@ export default function Layout() {
   const [menuAberto, setMenuAberto] = useState(false)
   const [perfilAberto, setPerfilAberto] = useState(false)
   const localizacao = useLocation()
+  const navigate = useNavigate()
+
+  // Atalho de topo para Relatórios: some na própria página de Relatórios
+  // (que não precisa de atalho para si mesma). Tenta fechar o resto do
+  // flex: o botão vira o caminho direto em todas as demais telas internas.
+  const ehRelatorios = localizacao.pathname.startsWith('/relatorios')
 
   // Trocou de ruta → cierra ambos menús.
   useEffect(() => {
@@ -97,6 +104,22 @@ export default function Layout() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
+  }
+
+  // Atalho circular de topo para Relatórios (mesmo padrão visual do botão
+  // de perfil): caminho direto das telas internas sem passar pela Home.
+  function AtalhoRelatorios() {
+    return (
+      <button
+        type="button"
+        onClick={() => navigate('/relatorios')}
+        style={estilos.atalhoRelatorios}
+        aria-label="Ir para Relatórios"
+        title="Relatórios"
+      >
+        <IconeRelatorios />
+      </button>
+    )
   }
 
   // Píldoras de la cuenta activa, con scroll horizontal propio en móvil
@@ -171,6 +194,7 @@ export default function Layout() {
               </nav>
               <div style={estilos.usuario}>
                 <span style={estilos.email}>{usuario?.email}</span>
+                {!ehRelatorios && <AtalhoRelatorios />}
                 <button onClick={handleLogout} style={estilos.botaoSair}>
                   Sair
                 </button>
@@ -183,6 +207,7 @@ export default function Layout() {
           {ehMobile && (
             <>
               <SeletorContas horizontal />
+              {!ehRelatorios && <AtalhoRelatorios />}
               <button
                 onClick={() => setPerfilAberto((abierto) => !abierto)}
                 style={estilos.botonPerfil}
@@ -343,6 +368,20 @@ const estilos = {
     fontWeight: 700,
     fontFamily: 'inherit',
     lineHeight: 1,
+  },
+  atalhoRelatorios: {
+    flexShrink: 0,
+    width: '38px',
+    height: '38px',
+    borderRadius: '999px',
+    border: '1px solid #374151',
+    background: '#1f2937',
+    color: '#e5e7eb',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
   },
   dropdownPerfil: {
     background: '#111827',

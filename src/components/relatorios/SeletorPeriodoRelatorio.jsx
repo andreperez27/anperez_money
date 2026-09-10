@@ -11,10 +11,11 @@
 import { formatarData } from '../../lib/compartilhados'
 import { NOME_MES, MES_ABREV } from '../planejamento/comum'
 
-// A ordem da tela: Mês, Trimestre, Semestre, Ano, Personalizado (sem Semana).
-const TIPOS = ['mes', 'trimestre', 'semestre', 'ano', 'personalizado']
+// A ordem da tela: Semana, Mês, Trimestre, Semestre, Ano, Personalizado.
+const TIPOS = ['semana', 'mes', 'trimestre', 'semestre', 'ano', 'personalizado']
 
 const RÓTULO_UNIDADE = {
+  semana: 'Semana',
   mes: 'Mês',
   trimestre: 'Trimestre',
   semestre: 'Semestre',
@@ -23,6 +24,7 @@ const RÓTULO_UNIDADE = {
 }
 
 // Rótulo central do período ativo, no padrão do mockup da página:
+//   semana   → "Semana 35 / 2026 · 24/08 – 30/08"
 //   trimestre → "2º trimestre / 2026 · abr – jun"
 //   semestre  → "2º semestre / 2026 · jul – dez"
 //   ano       → "Ano 2026 · jan – dez"
@@ -36,6 +38,13 @@ function rotuloPeriodo(periodo, tipo) {
   if (periodo.tipo === 'personalizado') {
     return {
       titulo: 'Personalizado',
+      faixa: `${formatarData(periodo.inicio)} – ${formatarData(periodo.fim)}`,
+    }
+  }
+
+  if (periodo.tipo === 'semana') {
+    return {
+      titulo: `Semana ${periodo.semana} / ${periodo.ano}`,
       faixa: `${formatarData(periodo.inicio)} – ${formatarData(periodo.fim)}`,
     }
   }

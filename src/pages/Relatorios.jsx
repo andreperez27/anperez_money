@@ -8,9 +8,12 @@ import {
 import SeletorPeriodoRelatorio from '../components/relatorios/SeletorPeriodoRelatorio'
 import AbasRelatorio from '../components/relatorios/AbasRelatorio'
 import RelatorioTemplate from '../components/relatorios/RelatorioTemplate'
+import AnalisePorCategoria from '../components/relatorios/AnalisePorCategoria'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
 import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
 import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
+import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
+import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
 
 // ============================================================================
 // RELATÓRIOS
@@ -18,12 +21,13 @@ import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespe
 // Orquestrador: seletor de período no topo, abas de tópico abaixo (trocar de
 // aba NÃO reseta o período — as duas coisas são estados independentes) e o
 // RelatorioTemplate na aba ativa. As abas "Recebido & horas", "Acordo
-// trabalhista" e "Entradas x despesas" já buscam dados reais (hooks
-// useRelatorioRecebidoHoras, useRelatorioAcordo e useRelatorioEntradasDespesas);
-// as restantes ainda recebem as props vazias e o visual fica em "Em
-// construção" em cada bloco. O exportar PDF do cabeçalho está desabilitado
-// ("em breve"), apenas informativo.
-// ============================================================================
+// trabalhista", "Entradas x despesas" e "Por categoria" já buscam dados reais
+// (hooks useRelatorioRecebidoHoras, useRelatorioAcordo,
+// useRelatorioEntradasDespesas e a busca AnalisePorCategoria); as restantes
+// ainda recebem as props vazias e o visual fica em "Em construção" em cada
+// bloco. O exportar PDF do cabeçalho gera o relatório consolidado (template
+// único semana/mês) via useRelatorioPdf + gerarPdfRelatorio.
+// ===========================================================================
 
 const ABA_PADRAO = 'recebido-horas'
 
@@ -33,6 +37,24 @@ export default function Relatorios() {
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [aba, setAba] = useState(ABA_PADRAO)
+  const [erroPdf, setErroPdf] = useState('')
+
+  // Relatório consolidado em PDF (template único semana/mês).
+  const { gerar, carregando: gerandoPdf } = useRelatorioPdf()
+
+  async function aoExportarPdf() {
+    if (!periodo) {
+      setErroPdf('Defina um período válido antes de exportar o PDF.')
+      return
+    }
+    setErroPdf('')
+    try {
+      const blocos = await gerar(periodo)
+      gerarPdfRelatorio({ periodo, blocos })
+    } catch (e) {
+      setErroPdf(e.message)
+    }
+  }
 
   // Período efetivo: personalizado só existe quando a faixa De/Até é VÁLIDA
   // (ambas preenchidas e inicio <= fim). Faixa incompleta/invertida mantém o
@@ -88,7 +110,7 @@ export default function Relatorios() {
 
   return (
     <div style={estilosComuns.conteudo}>
-      {/* Cabeçalho: Relatórios + exportar PDF (em breve, desabilitado). */}
+      {/* Cabeçalho: Relatórios + exportar PDF (template único). */}
       <header style={estilos.cabecalho}>
         <div>
           <h2 style={estilos.titulo}>Relatórios</h2>
@@ -96,7 +118,13 @@ export default function Relatorios() {
             Em breve você analisa seus números por período, categoria e conta.
           </p>
         </div>
-        <button type="button" disabled style={estilos.botaoPdf} title="Exportar PDF (em breve)">
+        <button
+          type="button"
+          onClick={aoExportarPdf}
+          disabled={gerandoPdf}
+          title="Exportar relatório em PDF"
+          style={{ ...estilos.botaoPdf, ...(gerandoPdf ? estilos.botaoPdfCarregando : {}) }}
+        >
           <svg
             viewBox="0 0 24 24"
             width="18"
@@ -108,9 +136,11 @@ export default function Relatorios() {
             <path d="M7 10l5 5 5-5" />
             <path d="M4 21h16" />
           </svg>
-          <span style={estilos.seloEmBreve}>em breve</span>
+          <span>{gerandoPdf ? 'Gerando…' : 'Exportar PDF'}</span>
         </button>
       </header>
+
+      {erroPdf && <p style={estilos.erro}>{erroPdf}</p>}
 
       {/* Seletor de período (Mês/Trimestre/Semestre/Ano/Personalizado) */}
       <SeletorPeriodoRelatorio
@@ -164,6 +194,10 @@ export default function Relatorios() {
             linhas={entradasDespesas.linhas}
           />
         )
+      ) : aba === 'por-categoria' ? (
+        /* Busca/análise por categoria — reusa a fonte única de categorização
+           do relatório (relatorioPdf.js) e o período da página. */
+        <AnalisePorCategoria periodo={periodo} />
       ) : (
         /* Demais abas: mesmo template sem dados reais por enquanto. */
         <RelatorioTemplate />
@@ -188,23 +222,16 @@ const estilos = {
     gap: '0.4rem',
     padding: '0.5rem 0.9rem',
     borderRadius: '10px',
-    border: '1px solid #374151',
+    border: '1px solid rgba(66, 165, 245, 0.45)',
     background: '#111827',
-    color: '#9ca3af',
-    cursor: 'not-allowed',
-    opacity: 0.6,
+    color: '#42A5F5',
+    cursor: 'pointer',
     fontWeight: 500,
     fontSize: '0.85rem',
     fontFamily: 'inherit',
-  },
-  seloEmBreve: {
-    fontSize: '0.7rem',
-    fontWeight: 'bold',
-    border: '1px dashed #4b5563',
-    borderRadius: '999px',
-    padding: '0.15rem 0.6rem',
     whiteSpace: 'nowrap',
   },
+  botaoPdfCarregando: { opacity: 0.6, cursor: 'default' },
   aviso: { margin: '0 0 0.75rem', color: '#f87171', fontSize: '0.8rem' },
   erro: { margin: '0.75rem 0 0', color: '#ef4444', fontSize: '0.85rem' },
 }
