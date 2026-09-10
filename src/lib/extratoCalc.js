@@ -38,7 +38,12 @@ export function somarEfeito(linhas) {
 //   transferencias   → movimento patrimonial líquido (recebidas − enviadas)
 //   saldo            = entradas − saidas + transferencias  (efeito no saldo)
 export function resumirMovimentacoes(movimentacoes) {
-  const ehTransferencia = (m) => m.categoria === 'transferencia'
+  // Transferência interna = transferencia_id preenchido (RPC atual) OU o texto
+  // 'transfer' na categoria (fallback para as linhas antigas 'Transferência',
+  // capitalizadas, migradas sem transferencia_id).
+  const ehTransferencia = (m) =>
+    Boolean(m.transferencia_id) ||
+    String(m.categoria ?? '').toLowerCase().includes('transfer')
   let entradas = 0
   let saidas = 0
   let recebidas = 0

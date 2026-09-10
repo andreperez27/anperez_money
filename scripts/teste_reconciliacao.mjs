@@ -64,6 +64,35 @@ caso('transferência interna fora de Entradas/Saídas, dentro do saldo', () => {
   assert.equal(r.saldo, 50 - 120)
 })
 
+// TESTE 5b: transferência do APP tem transferencia_id preenchido — critério
+// principal agora; mesmo sem a categoria marcando, é patrimonial (não vira
+// Entrada/Saída).
+caso('transferência atual (transferencia_id preenchido) fora de Entradas/Saídas', () => {
+  const r = resumirMovimentacoes([
+    mov('Entrada', 50),
+    { tipo_op: 'Saida', valor: 120, transferencia_id: 'uuid-t1' },
+  ])
+  assert.equal(r.entradas, 50)
+  assert.equal(r.saidas, 0)
+  assert.equal(r.transferencias, -120)
+})
+
+// TESTE 5c: fallback — linha antiga 'Transferência' (capitalizada) migrada SEM
+// transferencia_id continua reconhecida como patrimonial.
+caso('transferência antiga "Transferência" (sem transferencia_id) é patrimonial', () => {
+  const r = resumirMovimentacoes([mov('Entrada', 300, 'Transferência'), mov('Entrada', 100)])
+  assert.equal(r.transferencias, 300)
+  assert.equal(r.entradas, 100)
+})
+
+// TESTE 5d: linha comum sem transferencia_id e sem categoria de transferência
+// segue como fluxo real (nenhuma exclusão indevida).
+caso('movimentação comum sem transferencia_id e sem categoria segue como fluxo', () => {
+  const r = resumirMovimentacoes([mov('Saida', 30, 'Alimentação')])
+  assert.equal(r.saidas, 30)
+  assert.equal(r.transferencias, 0)
+})
+
 // TESTE 7: caixinha GUARDAR é saída comum de fluxo (linha em movimentacoes)
 caso('caixinha guardar conta como Saída', () => {
   const r = resumirMovimentacoes([mov('Entrada', 900), mov('Saida', 250)])
@@ -178,8 +207,8 @@ caso('filtro da janela monta o or() com data/criado_em/id', () => {
     }),
     [
       'data.lt.2026-08-10',
-      'and(data.eq.2026-08-10,criado_em.lt.2026-08-10T12:00:00+00:00)',
-      'and(data.eq.2026-08-10,criado_em.eq.2026-08-10T12:00:00+00:00,id.gt.abc-123)',
+      'and(data.eq.2026-08-10,ordem_dia.is.null,criado_em.lt.2026-08-10T12:00:00+00:00)',
+      'and(data.eq.2026-08-10,ordem_dia.is.null,criado_em.eq.2026-08-10T12:00:00+00:00,id.gt.abc-123)',
     ].join(','),
   )
 })

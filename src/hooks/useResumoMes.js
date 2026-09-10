@@ -21,16 +21,22 @@ export function useResumoMes() {
 
     const { data, error } = await supabase
       .from('movimentacoes')
-      .select('tipo_op, valor, categoria')
+      .select('tipo_op, valor, categoria, transferencia_id')
       .gte('data', primeiroDia)
       .lte('data', ultimoDia)
     if (error) throw new Error(error.message)
-    // Transferência interna (categoria 'transferencia') NÃO é receita nem
-    // despesa: movimenta saldo entre contas próprias e por isso sai daqui,
-    // antes das somas. Filtro no cliente de propósito: um `.neq` no banco
+    // Transferência interna NÃO é receita nem despesa (movimenta saldo entre
+    // contas próprias): sai daqui antes das somas. Critério: transferencia_id
+    // preenchido (RPC atual) OU texto 'transfer' na categoria (fallback para
+    // as linhas antigas 'Transferência' capitalizadas, migradas sem
+    // transferencia_id). Filtro no cliente de propósito: um `.neq` no banco
     // excluiria também as linhas com categoria NULL (comparação com NULL
     // nunca é verdadeira em SQL).
-    return data.filter((m) => m.categoria !== 'transferencia')
+    return data.filter(
+      (m) =>
+        !m.transferencia_id &&
+        !String(m.categoria ?? '').toLowerCase().includes('transfer'),
+    )
   }
 
   useEffect(() => {
