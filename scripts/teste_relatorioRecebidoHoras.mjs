@@ -975,7 +975,7 @@ caso('historico_planilha com valor_extra_historico: o extra é ESSE valor direto
 })
 
 // ============================================================================
-// 19) Linhas sem o dado histórico seguem usando a fórmula (Ponto reconci- liado)
+// 19) Sem valor_extra_historico a fórmula continua valendo (Ponto reconci- liado)
 // ============================================================================
 caso('sem valor_extra_historico a fórmula continua valendo (linha do Ponto)', () => {
   const periodo = definirPeriodo('mes', '2026-01-15')
@@ -993,6 +993,97 @@ caso('sem valor_extra_historico a fórmula continua valendo (linha do Ponto)', (
 
   assert.equal(r.totalRecebido, 2760)
   assert.equal(r.totalValorHorasExtras, 1160)
+})
+
+// ============================================================================
+// 20) DATA REAL DA MOVIMENTAÇÃO (Bug 2 de 11/09/2026): quando o item tem
+// lancamento_id presente em dataRealPorLancamento, a linha usa a data em que o
+// dinheiro ENTROU de fato (movimentacoes.data), não a data_prevista (a data em
+// que o pagamento DEVERIA cair — ex.: Pagamento Semanal previsto 09/09 caiu em
+// 10/09). O mapa não muda o total; muda a data exibida e os buckets porData/
+// semana civil (e o filtro do período).
+// ============================================================================
+caso('data real (lancamento_id) substitui a data_prevista na linha e no bucket porData', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Previsto quarta 09/09 (semana civil 07/09), mas o dinheiro caiu em
+  // quinta 10/09 (mesma semana civil 07/09, outro dia).
+  const plan = [
+    entrada('2026-09-09', 2050, { lancamento_id: 1001, ano_semana_trabalho: 2026, semana_trabalho: 36 }),
+  ]
+
+  // Sem o mapa (item antigo / histórico): vale a data_prevista 09/09.
+  const semMapa = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+  assert.deepEqual(semMapa.recebimentos[0].data, '2026-09-09')
+  assert.deepEqual(semMapa.porData.map((s) => s.data), ['2026-09-09'])
+
+  // Com o mapa: o pagamento passou a ser exibido (e somado) em 10/09.
+  const comMapa = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 1001: '2026-09-10' },
+  })
+  assert.equal(comMapa.totalRecebido, 2050) // o valor não muda
+  assert.deepEqual(comMapa.recebimentos[0].data, '2026-09-10')
+  assert.deepEqual(comMapa.porData.map((s) => s.data), ['2026-09-10'])
+  // Semana civil de 10/09 (quinta) = segunda 07/09 (o mesmo bucket da 09/09).
+  assert.deepEqual(comMapa.recebimentos[0].semana, '2026-09-07')
+  assert.deepEqual(comMapa.porData.map((s) => s.recebido), [2050])
+})
+
+caso('data real pode mover o lançamento para outra semana civil (domingo → segunda)', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Previsto domingo 06/09 (semana civil 31/08), mas o dinheiro caiu segunda
+  // 07/09 (semana civil 07/09): o bucket porSemana e o reporte mudam de semana.
+  const plan = [
+    entrada('2026-09-06', 1650, { lancamento_id: 1002, ano_semana_trabalho: 2026, semana_trabalho: 35 }),
+  ]
+
+  const semMapa = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+  assert.deepEqual(semMapa.recebimentos[0], {
+    data: '2026-09-06',
+    semana: '2026-08-31',
+    valor: 1650,
+    valorHorasExtras: 0,
+    referente: '2026-08-24',
+    descricao: 'entrada 2026-09-06',
+  })
+
+  const comMapa = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 1002: '2026-09-07' },
+  })
+  assert.deepEqual(comMapa.recebimentos[0].data, '2026-09-07')
+  assert.deepEqual(comMapa.recebimentos[0].semana, '2026-09-07')
+  assert.deepEqual(
+    comMapa.porSemana.map((s) => [s.semana, s.recebido]),
+    [['2026-09-07', 1650]],
+  )
+})
+
+caso('data real fora do período exclui o lançamento do relatório; sem mapa ele entraria', () => {
+  // Previsto 30/09 dentro de setembro, mas o dinheiro SÓ caiu em 01/10 (mês
+  // seguinte): com o mapa, setembro não deve mostrar o lançamento (o dinheiro
+  // não entrou lá); sem o mapa ele apareceria indevidamente.
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  const plan = [
+    entrada('2026-09-30', 1650, { lancamento_id: 1003, ano_semana_trabalho: 2026, semana_trabalho: 39 }),
+  ]
+
+  const semMapa = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+  assert.equal(semMapa.totalRecebido, 1650)
+
+  const comMapa = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 1003: '2026-10-01' },
+  })
+  assert.equal(comMapa.totalRecebido, 0)
+  assert.deepEqual(comMapa.recebimentos, [])
+  assert.deepEqual(comMapa.porData, [])
 })
 
 console.log(`\n${passou} testes passaram, ${falhou} falharam.`)

@@ -70,6 +70,28 @@ export function calcularSaldoProjetado(saldoInicial, itens = [], { inicioISO, fi
   }
 }
 
+// ---------------------------------------------------------------------------
+// PROJEÇÃO A PARTIR DO SALDO REAL DE HOJE (série para o card "Saldo projetado")
+// ---------------------------------------------------------------------------
+// Corrige o bug 11/09/2026 (saldo projetado maior que o saldo real): antes a
+// série reanimava a semana CORRENTE a partir da véspera (real da véspera +
+// resultado previsto da semana). No MEIO da semana isso inflava o número:
+// a base da véspera revertia as movimentações reais do início da semana (ex.:
+// Padaria, Enel, pagamento de fatura), mas a série só devolvia à projeção o
+// que existia no planejamento — as avulsas reais (sem item) ficavam "apagadas".
+//
+// Nova regra: a projeção para HOJE/FUTURO parte do saldo REAL de hoje e soma
+// apenas os itens com data_prevista ESTRITAMENTE depois de hoje (o que já
+// aconteceu já está embutido no saldo real atual; reanimar a véspera duplicava).
+// Períodos passados continuam reconstruídos por calcularSaldoReal (um
+// lançamento de hoje não retroage no número de ontem).
+export function projetarSerie({ saldoAtual, itens = [], inicioISO, fimISO } = {}) {
+  // Só o que ainda VAI acontecer (data_prevista > inicioISO). O restante do
+  // filtro (cancelado, intervalo fim) e o acumulado ficam na lib base.
+  const futuros = (itens || []).filter((i) => compararISO(i.data_prevista, inicioISO || '') > 0)
+  return calcularSaldoProjetado(saldoAtual, futuros, { inicioISO: '', fimISO })
+}
+
 // Saldo acumulado até `dataISO` (inclusive). Se não houver marca na lista,
 // devolve o saldoInicial (se data antes de tudo) ou o último saldo (se depois).
 export function saldoAteData(serie = [], dataISO, saldoInicial = 0) {

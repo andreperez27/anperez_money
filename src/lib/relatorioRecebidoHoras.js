@@ -7,7 +7,7 @@
 // no hook useRelatorioRecebidoHoras; aqui somam-se os números.
 //
 // Contrato:
-//   calcularRecebidoHoras({ planejamentosRealizados, fixoSemana, periodo })
+//   calcularRecebidoHoras({ planejamentosRealizados, fixoSemana, periodo, dataRealPorLancamento })
 //     → {
 //         totalRecebido, totalValorHorasExtras,
 //         porMes:    [{ mes, recebido, valorHorasExtras }],
@@ -15,6 +15,16 @@
 //         porSemana: [{ semana, recebido, valorHorasExtras }],
 //         recebimentos: [{ data, semana, valor, valorHorasExtras, referente, descricao }],
 //       }
+//
+//   • dataRealPorLancamento (opcional, correção 11/09/2026): mapa
+//     { [lancamento_id]: 'YYYY-MM-DD' } com a data REAL da movimentação que o
+//     pagamento gerou. Quando o item tem lancamento_id presente no mapa, a data
+//     do recebimento (filtro do período, linha, bucket porData e semana civil)
+//     é a data da movimentação real — NÃO a data_prevista (a data em que o
+//     pagamento DEVERIA cair pode divergir do dia em que o dinheiro entrou; ex.:
+//     Pagamento Semanal previsto 09/09 caiu de fato em 10/09). Sem o mapa
+//     (histórico da planilha e lançamentos antigos, sem lancamento_id), vale a
+//     data_prevista.
 //
 //   • porMes    agrupa por MÊS CIVIL do recebimento — a série do gráfico para
 //     Trimestre/Semestre/Ano/Personalizado (barras por mês).
@@ -32,7 +42,9 @@
 //     dois pagamentos compartilhem a mesma semana_trabalho, cada um tem a
 //     própria data de recebimento e o próprio valor (regra 06/09/2026: não se
 //     funde linha). Ordenada pela data do recebimento.
-//     - `data`    dia em que o dinheiro ENTROU (data_prevista) — rótulo da linha;
+//     - `data`    dia em que o dinheiro ENTROU de fato — a data REAL da
+//       movimentação (via lancamento_id/dataRealPorLancamento) quando existir,
+//       senão a data_prevista (correção 11/09/2026) — rótulo da linha;
 //     - `semana`  segunda-feira ISO da semana civil do recebimento (serve para
 //       o gráfico; a linha não é repartida na borda do mês — regra de sempre);
 //     - `valor`   o valor do recebimento;
@@ -218,12 +230,25 @@ function ratearProporcional(valores, total) {
   return partes
 }
 
-export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana = 0, periodo } = {}) {
+export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana = 0, periodo, dataRealPorLancamento = {} } = {}) {
   if (!periodo) {
     throw new Error('calcularRecebidoHoras espera um periodo ({ inicio, fim }).')
   }
 
   const { inicio, fim } = validarFaixaDePeriodo(periodo.inicio, periodo.fim)
+
+  // Data DO RECEBIMENTO: quando o lançamento do Planejamento tem lancamento_id
+  // (o pagamento foi realizado pelo app e gerou uma movimentação), a data real
+  // em que o dinheiro ENTROU é a da movimentação real — e não a data_prevista
+  // (a data em que o pagamento DEVERIA cair). Correção 11/09/2026: usar
+  // data_prevista quando a movimentação caiu noutro dia (ex.: Pagamento Semanal
+  // previsto 09/09, mov real em 10/09) desalinhava a linha, o bucket porData e a
+  // semana civil em relação ao extrato real. Histórico da planilha e lançamentos
+  // antigos não têm lancamento_id → data_prevista é a única fonte (e é a correta).
+  const dataDoRecebimento = (p) =>
+    p?.lancamento_id && dataRealPorLancamento[p.lancamento_id]
+      ? String(dataRealPorLancamento[p.lancamento_id])
+      : String(p.data_prevista)
 
   // Mapas das grades para acumulação (chave 'YYYY-MM' e segunda-feira ISO).
   const totalPorMes = new Map()
@@ -243,28 +268,33 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
   // continua a fonte única da semana (semana.js).
   const realizadosEntrada = (Array.isArray(planejamentosRealizados) ? planejamentosRealizados : [])
     .filter(
-      (p) =>
+      (p) => {
+        const dataRecebimento = dataDoRecebimento(p)
+        return (
         p &&
         p.tipo_op === 'Entrada' &&
         p.estado === 'realizado' &&
-        String(p.data_prevista) >= inicio &&
-        String(p.data_prevista) <= fim &&
+        dataRecebimento >= inicio &&
+        dataRecebimento <= fim &&
         Number(p.valor) > 0 &&
         // Planilha vale só até a semana 34/2026 (o app é a fonte a partir
         // daí — primeiro lançamento digitado em 24/08/2026).
-        !(p.origem === 'historico_planilha' && String(p.data_prevista) >= CORTE_APOS_PLANILHA) &&
+        !(p.origem === 'historico_planilha' && dataRecebimento >= CORTE_APOS_PLANILHA) &&
         // Acordo trabalhista e recebimentos avulsos saem do "Recebido & horas"
         // (decisão 06/09/2026): o Acordo tem aba própria (origine
         // historico_acordo) e Outros (historico_outros) não é salário — ambos
         // NÃO fazem parte da conta "o que entrou como pagamento de trabalho".
-        !['historico_acordo', 'historico_outros'].includes(p.origem),
+        !['historico_acordo', 'historico_outros'].includes(p.origem)
+        )
+      },
     )
 
   // UMA LINHA POR PAGAMENTO REALIZADO (regra 06/09/2026): mesmo que dois ou
   // mais pagamentos apontem para a MESMA semana de trabalho, cada um vira um
   // recebimento próprio com a sua data (nada de fundir/concatenar datas).
   const itens = realizadosEntrada.map((p) => {
-    const semana = semanaIso(String(p.data_prevista)).inicio
+    const data = dataDoRecebimento(p)
+    const semana = semanaIso(data).inicio
     let referente = null
     // Período de referência: a semana de TRABALHO que o pagamento cobre vem
     // do DADO GRAVADO na ocorrência (colunas ano_semana_trabalho/semana_trabalho,
@@ -278,7 +308,7 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       }
     }
     return {
-      data: String(p.data_prevista),
+      data,
       semana,
       valor: Number(p.valor),
       valorSemanal: p.valor_semanal === null || p.valor_semanal === undefined ? null : Number(p.valor_semanal),

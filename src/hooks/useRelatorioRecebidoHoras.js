@@ -35,6 +35,7 @@ import {
 } from '../lib/relatorioRecebidoHoras'
 import { formatoReal } from '../lib/compartilhados'
 import { NOME_MES, MES_ABREV } from '../components/planejamento/comum'
+import { supabase } from '../lib/supabaseClient'
 
 // Data ISO para rótulo curto pt-BR de semana/mês: '2026-08-03' → '03/08'.
 function rotuloCurto(dataISO) {
@@ -65,6 +66,39 @@ export function useRelatorioRecebidoHoras(periodo) {
   const [itens, setItens] = useState([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState(null)
+
+  // Datas REAIS das movimentações que os lançamentos geraram (Bug 2 de
+  // 11/09/2026): o relatório deve usar o dia em que o dinheiro ENTROU de fato
+  // (movimentacoes.data) e não a data_prevista (a data em que o pagamento
+  // DEVERIA cair — que pode divergir, ex.: Pagamento Semanal previsto 09/09
+  // caiu em 10/09). Mapa { [lancamento_id]: 'YYYY-MM-DD' }; recria-se quando os
+  // itens mudam.
+  const [datasPorLancamento, setDatasPorLancamento] = useState({})
+
+  useEffect(() => {
+    let ativo = true
+    const ids = (itens ?? [])
+      .map((i) => i.lancamento_id)
+      .filter((id) => id !== null && id !== undefined)
+    if (!ids.length) {
+      setDatasPorLancamento({})
+      return undefined
+    }
+    supabase
+      .from('movimentacoes')
+      .select('id, data')
+      .in('id', ids)
+      .then(({ data, error }) => {
+        if (!ativo) return
+        if (error) return
+        const mapa = {}
+        for (const mov of data ?? []) mapa[mov.id] = mov.data
+        setDatasPorLancamento(mapa)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [itens])
 
   useEffect(() => {
     let ativo = true
@@ -102,8 +136,9 @@ export function useRelatorioRecebidoHoras(periodo) {
       planejamentosRealizados: itens,
       fixoSemana: ponto.config.fixoSemana,
       periodo,
+      dataRealPorLancamento: datasPorLancamento,
     })
-  }, [periodo, itens, ponto.config])
+  }, [periodo, itens, ponto.config, datasPorLancamento])
 
   const apresentacao = useMemo(() => {
     const series = selecionarSerieDoRelatorio(dados, periodo)
@@ -115,15 +150,18 @@ export function useRelatorioRecebidoHoras(periodo) {
     const porData = agrupamentoPorTipoDePeriodo(periodo?.tipo) === 'data'
 
     // Média do período (pedido do André): divide SÓ pelos períodos que TÊM
-    // lançamento — Mês → semanas com recebimento (dados.porSemana), demais
-    // períodos (Trimestre/Semestre/Ano/Personalizado) → meses com lançamento
+    // lançamento — Mês → nº de PAGAMENTOS realizados (dados.recebimentos: UMA
+    // linha por pagamento — correção 11/09/2026, o divisor era porSemana.length
+    // e dois pagamentos na mesma semana civil contavam como um só, inflando a
+    // média ex.: 4180/1=4180 em vez de 4180/2=2090); demais períodos
+    // (Trimestre/Semestre/Ano/Personalizado) → meses com lançamento
     // (dados.porMes). Assim o ano vigente não dilui por 12: em setembro (9º mês
-    // com dado) a média anual divide por 9; a semanal divide só pelas semanas
-    // que tiveram recebimento.
+    // com dado) a média anual divide por 9; a semanal divide pelo nº de
+    // pagamentos realizados.
     let cardMedia = null
     if (temData) {
       if (porData) {
-        const n = dados.porSemana.length
+        const n = dados.recebimentos.length
         if (n > 0) cardMedia = { label: 'Média semanal', valor: formatoReal.format(dados.totalRecebido / n) }
       } else {
         const n = dados.porMes.length

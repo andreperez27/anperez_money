@@ -4,6 +4,7 @@ import {
   adicionarDiasISO,
   saldoAteData,
   calcularSaldoReal,
+  projetarSerie,
 } from '../src/lib/saldoProjetado.js'
 import { montarProjecao, montarItensFerias } from '../src/lib/faturaProjecao.js'
 import { calcularResumoPlanejamentos } from '../src/lib/planejamentoCalc.js'
@@ -216,41 +217,96 @@ verificar('T7 — centavos preservados sem deriva de ponto flutuante', () => {
   assert.equal(r, 10.0)
 })
 
-verificar('T8 — base do período usa a VÉSPERA (não o dia 1º): reais do dia 1º ficam para o resumo', () => {
-  // Semana atual começa 07/09. A base do saldo deve ser ao fim de 06/09:
-  // um lançamento REAL de 07/09 (que vira item realizado no resumo da janela)
-  // não pode estar na base — senão contaria 2x.
-  const movs = [movDict('2026-09-07', 121.04, 'Saida')]
-  const baseVespera = calcularSaldoReal({
-    saldoAtual: 1000,
-    movimentacoes: movs,
-    dataAlvo: '2026-09-06',
-    coberturaMinima: '2026-08-01',
+// --- projetarSerie (projeção a partir do saldo REAL de hoje — Bug 1, 11/09/2026)
+verificar('T8 — meio da semana: projeção parte do saldo REAL de hoje (sem inflar) e só soma o futuro', () => {
+  // Bug 1 real: hoje = 11/09 (sexta, semana 37). Saldo real = 1.039,17. A antiga
+  // série partia da véspera (1.649,60) e reverteria as avulsas do início da
+  // semana (Padaria, Enel, pagamento de fatura...) que NÃO têm item de
+  // planejamento — resultado: projetado 2.236,01 (inflado em 1.196,84).
+  const saldoAtual = 1039.17
+  const itensSomatorio = [
+    item('r9', '2026-09-09', 2050, 'Entrada'), // Pagamento Semanal — ja realizado, no saldo real
+    item('r10', '2026-09-10', 1463.59, 'Saida'), // Condomínio — ja realizado, no saldo real
+    item('p16', '2026-09-16', 2175, 'Entrada'), // Pagamento Semanal previsto
+    item('p20a', '2026-09-20', 900, 'Saida'), // previsto
+    item('p20b', '2026-09-20', 86.05, 'Saida'), // previsto
+    item('p9', '2026-09-09', 999, 'Entrada'), // da véspera — reapareceria se reanimássemos; fora do futuro
+  ]
+  const r = projetarSerie({
+    saldoAtual,
+    itens: itensSomatorio,
+    inicioISO: '2026-09-11', // hoje
+    fimISO: '2026-09-20',
   })
-  assert.equal(baseVespera, 1121.04) // a saída de 07/09 foi revertida (fora da base)
-  // resultado da janela (S37) Entradas 2050 − Saídas 1463,59 → 586,41
-  const saldoFimPeriodo = Math.round((baseVespera + 586.41) * 100) / 100
-  assert.equal(saldoFimPeriodo, 1707.45) // 1121,04 + 586,41 (sem duplicar a saída de 07/09)
+
+  // A série NÃO começa em 2.236,01 inflado: para o fim da semana corrente
+  // (13/09) o saldo projetado é o saldo real de hoje (sem avulsas fantasma).
+  const fimSemanaCorrente = saldoAteData(r.serie, '2026-09-13', saldoAtual)
+  assert.ok(Math.abs(fimSemanaCorrente - 1039.17) < 0.001, `fim S37 deveria ser 1039,17, veio ${fimSemanaCorrente}`)
+  // Só entram na série os previstos com data_prevista ESTRITAMENTE > hoje.
+  assert.deepEqual(
+    r.serie.map((m) => m.data),
+    ['2026-09-16', '2026-09-20'],
+  )
+  // Encadeamento conservado: fim S38 = fim S37 + resultado previsto da S38.
+  const resultadoS38 = 2175 - 900 - 86.05
+  const fimProximaSemana = saldoAteData(r.serie, '2026-09-20', saldoAtual)
+  assert.ok(Math.abs(fimProximaSemana - (fimSemanaCorrente + resultadoS38)) < 0.001)
+  assert.ok(Math.abs(fimProximaSemana - 2228.12) < 0.001)
 })
 
-verificar('T9 — projeção em CADEIA: saldo fim da semana N = fim da anterior + resultado da atual', () => {
-  // Base real na véspera da semana corrente (06/09) + lançamentos da série.
-  const base = 1649.6
+verificar('T9 — meio da semana: realizado da própria semana NÃO conta de novo (já está no saldo real)', () => {
+  // O mesmo item realizado em 09/09 (Pagamento Semanal) já está embutido no
+  // saldo real de hoje (1.039,17). Se a série o somasse de novo, o saldo
+  // projetado dobraria o recebimento. Com a base em "hoje", isso está resolvido.
+  const saldoAtual = 1039.17
+  const r = projetarSerie({
+    saldoAtual,
+    itens: [item('r9', '2026-09-09', 2050, 'Entrada')], // realizado antes de hoje
+    inicioISO: '2026-09-11',
+    fimISO: '2026-09-20',
+  })
+  assert.deepEqual(r.serie, []) // nada futuro → série vazia
+  assert.ok(Math.abs(saldoAteData(r.serie, '2026-09-20', saldoAtual) - 1039.17) < 0.001)
+})
+
+verificar('T10 — início da semana (hoje = 07/09): previstos da própria semana ainda contam', () => {
+  // Rodando no INÍCIO da semana (segunda 07/09), nada da semana aconteceu: o
+  // saldo real ainda é o da véspera (1.649,60) e os previstos de 09/09 e 10/09
+  // entram na projeção normalmente.
+  const saldoAtual = 1649.6
   const itens = [
-    item('e37', '2026-09-07', 2050, 'Entrada'), // previsto S37
-    item('s37', '2026-09-10', 1463.59, 'Saida'), // previsto S37
-    item('s38', '2026-09-15', 700, 'Saida'), // previsto S38
-    item('e38', '2026-09-18', 1000, 'Entrada'), // previsto S38
+    item('p9', '2026-09-09', 2050, 'Entrada'),
+    item('p10', '2026-09-10', 1463.59, 'Saida'),
   ]
-  const r = calcularSaldoProjetado(base, itens, { inicioISO: '2026-09-07', fimISO: '2026-09-20' })
-  // Fim da S37 (13/09) = base + R37 (2050 − 1463,59 = 586,41) → 2236,01
-  const fimSemanaAtual = Math.round(saldoAteData(r.serie, '2026-09-13', base) * 100) / 100
-  assert.equal(fimSemanaAtual, 2236.01)
-  // Fim da S38 (20/09) = fim da S37 + R38 (1000 − 700 = 300) → 2536,01
-  const fimProximaSemana = Math.round(saldoAteData(r.serie, '2026-09-20', base) * 100) / 100
-  assert.equal(fimProximaSemana, 2536.01)
-  // Saldo ao fim da faixa (mesma régua).
-  assert.equal(r.saldoAoFim, 2536.01)
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-07', fimISO: '2026-09-13' })
+  const fimSemana = saldoAteData(r.serie, '2026-09-13', saldoAtual)
+  // 1.649,60 + 2050 − 1463,59 = 2.236,01 (o mesmo valor "antigo" — que era
+  // correto quando rodado no início da semana, e só virava inflação no meio).
+  assert.ok(Math.abs(fimSemana - 2236.01) < 0.001)
+})
+
+verificar('T11 — encadeamento em cadeia: saldo fim S_{n+1} = saldo fim S_n + resultado previsto da próxima', () => {
+  // Meio da semana (hoje = 11/09), saldo real 1.039,17. Três semanas previstas:
+  // S37 (nada após hoje), S38 (16/09 +2.175, 20/09 −900 −86,05) e S39 (23/09 +2.050).
+  const saldoAtual = 1039.17
+  const itens = [
+    item('p16', '2026-09-16', 2175, 'Entrada'),
+    item('p20a', '2026-09-20', 900, 'Saida'),
+    item('p20b', '2026-09-20', 86.05, 'Saida'),
+    item('p23', '2026-09-23', 2050, 'Entrada'),
+  ]
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-11', fimISO: '2026-09-27' })
+
+  const fimS37 = saldoAteData(r.serie, '2026-09-13', saldoAtual) // 1039,17
+  const fimS38 = saldoAteData(r.serie, '2026-09-20', saldoAtual) // fimS37 + 1188,95
+  const fimS39 = saldoAteData(r.serie, '2026-09-27', saldoAtual) // fimS38 + 2050
+
+  assert.ok(Math.abs(fimS37 - 1039.17) < 0.001)
+  assert.ok(Math.abs(fimS38 - (fimS37 + (2175 - 900 - 86.05))) < 0.001)
+  assert.ok(Math.abs(fimS38 - 2228.12) < 0.001)
+  assert.ok(Math.abs(fimS39 - (fimS38 + 2050)) < 0.001)
+  assert.ok(Math.abs(fimS39 - 4278.12) < 0.001)
 })
 
 console.log(`\n${ok} passaram, ${falhou} falharam.`)
