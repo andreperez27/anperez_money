@@ -98,11 +98,13 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
   vêm da tabela do Ponto via `useFeriados`.
 - **Card "Saldo projetado"**: períodos encerrados mostram o **saldo real ao fim
   do período** (`calcularSaldoReal` reverte movimentações posteriores; antes da
-  cobertura mostra "—") e o futuro é uma **projeção em cadeia de 90 dias** —
-  base = saldo real ao fim da véspera da semana corrente, cada semana parte do
-  fim da anterior. Recálculo **automático**: `versaoRecarga` re-busca horizonte
-  e movimentações a cada mutação (criar/editar/cancelar/excluir/realizar, pagar
-  fatura).
+  cobertura mostra "—") e o futuro é uma **projeção em cadeia de 90 dias** que
+  parte do **saldo real de HOJE** (`projetarSerie`: base = soma das contas
+  ativas + só itens com `data_prevista > hoje` — correção 11/09 que eliminou a
+  inflação do meio da semana causada pela antiga base da véspera) e cada semana
+  parte do fim da anterior. Recálculo **automático**: `versaoRecarga` re-busca
+  horizonte e movimentações a cada mutação (criar/editar/cancelar/excluir/
+  realizar, pagar fatura).
 - **Condomínio em SÉRIE com regra definitiva de valor variável**: diagnóstico —
   o condomínio era lançado **avulso mês a mês** (sem `serie_id`) e a semana
   41/10-10/2026 ficava sem previsão; DAS-MEI ok (série fixa 86,05/24 meses).
@@ -218,6 +220,8 @@ completo daquele dia.
 - [diario/2026-09-07.md](diario/2026-09-07.md) — Categorização aplicada ao banco (migration 32 `compras.categoria` + migration 33 `p_categoria` nas RPCs de compra; script `aplicar_categorias_planilha.py`: 837 lançamentos casados, 835 gravados, 55 renomeações de descrição, verificação com 0 divergências, backup) e **campo categoria em todos os formulários** de lançamento (conta e cartão) via `categorias.js` + `SeletorCategoria` (obrigatório em novo, opcional na edição). Entrega do pacote de Relatórios pendente: migration 31 (`valor_extra_historico` + origens `historico_acordo`/`historico_outros`) e abas **"Acordo trabalhista"** (uma linha por depósito) e **"Entradas x despesas"** (fluxo real das contas, transferência interna fora, gráfico em buckets, Mês → semana; demais → mês); template com barras lado a lado/empilhadas. Suítes: Acordo 9/9, Entradas x despesas 13/13, Recebido & horas 30/30. Build ok.
 - [diario/2026-09-08.md](diario/2026-09-08.md) — **Vencimento real da fatura** pula fim de semana **E feriado** (`diaUtil.vencimentoRealISO` + `useFeriados`, feriados do Ponto reutilizados) no card do cartão (com conserto do import `formatarData`), FaturaDetalhe, na projeção do Planejamento e no saldo projetado — commit `288439d` publicado. **Card "Saldo projetado"**: passado mostra o saldo real ao fim do período (`calcularSaldoReal` reverte movimentações posteriores, "—" antes da cobertura) e o futuro é projeção **em cadeia de 90 dias** (base = saldo real ao fim da véspera da semana corrente, cada semana parte do fim da anterior — T9), com recálculo automático via `versaoRecarga` a cada mutação. Suíte `teste_saldoProjetado` 18/18 (T8 véspera, T9 cadeia), faturaProjecao 11/11, build ok.
 - [diario/2026-09-09.md](diario/2026-09-09.md) — **Condomínio em SÉRIE** com regra definitiva de valor variável. Diagnóstico: condomínio era lançado **avulso mês a mês** (sem `serie_id`), então a semana 41/10-10/2026 ficava **sem previsão** (DAS-MEI com série fixa de 24 meses não tinha o problema). Regra do André (só variáveis Gás/Água do condomínio): **3+ reais → média dos 3 últimos; menos de 3 → repete o último real; vazio → null** (`projetarValorVariavel`; corrigido bug da sugestão que lia do mais recente e a média pegava os mais antigos). `projetarOcorrenciasCondominio` gera a série **recalculando por mês** (fixos vigentes com `n/total`, variáveis pela regra, clamp de vencimento). Script idempotente `gerar_serie_condominio.mjs` criou a série real: 24 ocorrências previstas a partir de **10/10/2026** — R$ 1.463,59 até DEZ/26 e R$ 1.417,59 de 2027 (fim da Benfeitorias). Suíte nova `teste_serieCondominio` 12/12 (com o caso real da semana 41) e `teste_mediaMovelCalc` 21/21, build ok.
+- [diario/2026-09-10.md](diario/2026-09-10.md) — Correção final da dupla contagem de cartão na seção "Por mês" da Visão Geral (o bug de 31/08 tinha sido corrigido só parcialmente; a "Por mês" usava `itensVisiveis` e reintroduzia a dupla contagem — agora recebe `itensParaSomatorio`, a mesma régua do card principal, com mês zerado via `RESUMO_ZERO`; teste P11, suíte `teste_faturaProjecao` 12/12).
+- [diario/2026-09-11.md](diario/2026-09-11.md) — Correção do **saldo projetado** (Bug 1: base REAL de hoje via `projetarSerie`, soma só itens com `data_prevista > hoje`; elimina a inflação de 1.196,84 no meio da semana — a antiga base da véspera revertia avulsas reais que a série não devolvia; 20/20 testes), **data real no "Recebido & horas"** (Bug 2: `dataRealPorLancamento` por `lancamento_id` no filtro/semana/linha; 33/33) e **média semanal** (Bug 3: divisor `recebimentos.length`, não nº de semanas). Build ok.
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +
