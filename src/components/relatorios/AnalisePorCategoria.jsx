@@ -33,9 +33,8 @@ const ROTULO_DETALHE = {
   [TODAS_CATEGORIAS]: '',
 }
 
-export default function AnalisePorCategoria({ periodo }) {
+export default function AnalisePorCategoria({ periodo, selecao, aoTrocarSelecao }) {
   const { movimentacoes, compras, carregando, erro } = useAnaliseCategoria(periodo)
-  const [selecao, setSelecao] = useState(TODAS_CATEGORIAS)
   const [mostrarRanking, setMostrarRanking] = useState(false)
 
   const dados = useMemo(() => {
@@ -44,12 +43,12 @@ export default function AnalisePorCategoria({ periodo }) {
   }, [selecao, periodo, movimentacoes, compras])
 
   function aoClicarLinha(linha) {
-    setSelecao(linha.categoria)
+    aoTrocarSelecao(linha.categoria)
     setMostrarRanking(false)
   }
 
   function trocarSelecao(valor) {
-    setSelecao(valor)
+    aoTrocarSelecao(valor)
     setMostrarRanking(false)
   }
 

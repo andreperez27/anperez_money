@@ -14,6 +14,7 @@
 //         depositos: [{ data, valor, descricao }],
 //         porMes:    [{ mes, recebido }],
 //         porData:   [{ data, recebido }],
+//         porAno:    [{ ano, recebido, depositos }],
 //       }
 //
 //   • planejamentos  lista de itens do Planejamento (origem manual, jornada,
@@ -28,8 +29,12 @@
 //     Personalizado (barras por mês).
 //   • porData → chave = DATA CIVIL do recebimento — a série da visão Mês
 //     (uma barra por dia) e a mesma granularidade da lista detalhada.
+//   • porAno  → chave = ANO CIVIL do recebimento, no mesmo formato dos
+//     depósitos (um registro por ano: total do ano + a lista de depósitos
+//     daquele ano em ordem cronológica). Agregação aditiva usada pela aba
+//     "Acordo trabalhista" (gráfico por ano + lista resumida por ano).
 //   • depositos → UMA LINHA POR DEPÓSITO (data + valor + descricao), ordenado
-//     pela data do recebimento. É a lista detalhada da aba.
+//     pela data do recebimento. É a lista detalhada da aba (e do PDF).
 //
 // Não há regra de corte 24/08/2026 aqui: o Acordo trabalhista foi pago
 // até julho/2025; se por acaso existirem registros futuros com esta origem,
@@ -102,10 +107,25 @@ export function calcularRecebidoAcordo({ planejamentos = [], periodo } = {}) {
     .map(([data, recebido]) => ({ data, recebido: arre2(recebido) }))
     .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0))
 
+  // porAno: agrupa os depósitos por ANO CIVIL (aditivo aos totais acima) —
+  // cada ano com o total recebido e a lista cronológica dos depósitos.
+  const porAno = []
+  for (const d of depositos) {
+    const ano = d.data.slice(0, 4)
+    let bloco = porAno[porAno.length - 1]
+    if (!bloco || bloco.ano !== ano) {
+      bloco = { ano, recebido: 0, depositos: [] }
+      porAno.push(bloco)
+    }
+    bloco.recebido = arre2(bloco.recebido + d.valor)
+    bloco.depositos.push(d)
+  }
+
   return {
     totalRecebido: arre2(totalRecebido),
     depositos,
     porMes,
     porData,
+    porAno,
   }
 }

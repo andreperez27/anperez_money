@@ -11,6 +11,7 @@
 //   • período vazio → totais zerados e séries vazias (estado vazio do template);
 //   • porMes agrega o MÊS CIVIL do recebimento, ordem cronológica;
 //   • porData agrega o DIA do recebimento, ordem cronológica;
+//   • porAno agrega o ANO CIVIL do recebimento com a lista de depósitos do ano;
 //   • depositos = UMA linha por depósito, ordenada por data;
 //   • período personalizado com faixa não alinhada a mês completo;
 //   • sem periodo lança erro claro; faixa invertida lança erro claro.
@@ -165,7 +166,47 @@ caso('depositos: uma linha por depósito ordenada pela data', () => {
 })
 
 // ============================================================================
-// 7) Período personalizado com faixa não alinhada a mês completo
+// 7) Agregação por ANO CIVIL — gráfico e lista por ano da aba
+// ============================================================================
+caso('porAno agrupa por ano civil com o total e a lista de depósitos', () => {
+  const periodo = definirPeriodoPersonalizado('2025-12-01', '2026-12-31')
+  const plan = [
+    deposito('2025-12-10', 2000),
+    deposito('2026-01-05', 1000),
+    deposito('2026-06-15', 500),
+    deposito('2026-12-20', 2500),
+  ]
+  const r = calcularRecebidoAcordo({ planejamentos: plan, periodo })
+
+  assert.deepEqual(
+    r.porAno.map((a) => a.ano),
+    ['2025', '2026'],
+  )
+  assert.deepEqual(
+    r.porAno.map((a) => a.recebido),
+    [2000, 4000],
+  )
+  // cada ano carrega APENAS os depósitos daquele ano, em ordem cronológica
+  const ano2026 = r.porAno.find((a) => a.ano === '2026')
+  assert.deepEqual(
+    ano2026.depositos.map((d) => [d.data, d.valor]),
+    [
+      ['2026-01-05', 1000],
+      ['2026-06-15', 500],
+      ['2026-12-20', 2500],
+    ],
+  )
+  assert.equal(ano2026.depositos.reduce((s, d) => s + d.valor, 0), ano2026.recebido)
+})
+
+caso('porAno vazio devolve lista vazia', () => {
+  const periodo = definirPeriodo('mes', '2026-01-15')
+  const r = calcularRecebidoAcordo({ planejamentos: [], periodo })
+  assert.deepEqual(r.porAno, [])
+})
+
+// ============================================================================
+// 8) Período personalizado com faixa não alinhada a mês completo
 // ============================================================================
 caso('personalizado: soma apenas o que cai na faixa, por mês', () => {
   const periodo = definirPeriodoPersonalizado('2026-01-20', '2026-02-10')
@@ -189,7 +230,7 @@ caso('personalizado: soma apenas o que cai na faixa, por mês', () => {
 })
 
 // ============================================================================
-// 8) Erros de contrato
+// 9) Erros de contrato
 // ============================================================================
 caso('sem periodo lança erro claro', () => {
   assert.throws(

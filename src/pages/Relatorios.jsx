@@ -9,25 +9,13 @@ import SeletorPeriodoRelatorio from '../components/relatorios/SeletorPeriodoRela
 import AbasRelatorio from '../components/relatorios/AbasRelatorio'
 import RelatorioTemplate from '../components/relatorios/RelatorioTemplate'
 import AnalisePorCategoria from '../components/relatorios/AnalisePorCategoria'
+import ListaAnosAcordo from '../components/relatorios/ListaAnosAcordo'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
 import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
 import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
 import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
 import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
-
-// ============================================================================
-// RELATÓRIOS
-// ============================================================================
-// Orquestrador: seletor de período no topo, abas de tópico abaixo (trocar de
-// aba NÃO reseta o período — as duas coisas são estados independentes) e o
-// RelatorioTemplate na aba ativa. As abas "Recebido & horas", "Acordo
-// trabalhista", "Entradas x despesas" e "Por categoria" já buscam dados reais
-// (hooks useRelatorioRecebidoHoras, useRelatorioAcordo,
-// useRelatorioEntradasDespesas e a busca AnalisePorCategoria); as restantes
-// ainda recebem as props vazias e o visual fica em "Em construção" em cada
-// bloco. O exportar PDF do cabeçalho gera o relatório consolidado (template
-// único semana/mês) via useRelatorioPdf + gerarPdfRelatorio.
-// ===========================================================================
+import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 
 const ABA_PADRAO = 'recebido-horas'
 
@@ -38,19 +26,43 @@ export default function Relatorios() {
   const [dataFim, setDataFim] = useState('')
   const [aba, setAba] = useState(ABA_PADRAO)
   const [erroPdf, setErroPdf] = useState('')
+  // Categoria selecionada na aba "Por categoria" (elevada para cá para o
+  // exportar PDF conhecer o filtro ativo; persiste ao trocar de aba).
+  const [selecaoCategoria, setSelecaoCategoria] = useState(TODAS_CATEGORIAS)
 
   // Relatório consolidado em PDF (template único semana/mês).
   const { gerar, carregando: gerandoPdf } = useRelatorioPdf()
 
   async function aoExportarPdf() {
+    // Aba "Acordo trabalhista": o acordo é um FATO fechado — fica FORA da
+    // lógica "aba ativa + período + categoria". O export gera SEMPRE o
+    // relatório consolidado do TOTAL do acordo (início ao fim), usando os
+    // dados crus do hook — nada de período do seletor nem categoria.
+    if (aba === 'acordo-trabalhista') {
+      if (!acordo.temData || !acordo.dados) {
+        setErroPdf('Ainda não há dados do acordo trabalhista para exportar.')
+        return
+      }
+      try {
+        gerarPdfRelatorio({ acordo: acordo.dados })
+      } catch (e) {
+        setErroPdf(e.message)
+      }
+      return
+    }
+
     if (!periodo) {
       setErroPdf('Defina um período válido antes de exportar o PDF.')
       return
     }
     setErroPdf('')
     try {
-      const blocos = await gerar(periodo)
-      gerarPdfRelatorio({ periodo, blocos })
+      // Contexto de visualização no momento do clique: o filtro de categoria
+      // só vale quando a aba ativa é "por-categoria" (regra 12/09/2026). Nas
+      // demais abas o export segue sendo o relatório consolidado completo.
+      const categoria = aba === 'por-categoria' ? selecaoCategoria : TODAS_CATEGORIAS
+      const blocos = await gerar(periodo, categoria)
+      gerarPdfRelatorio({ periodo, blocos, categoria })
     } catch (e) {
       setErroPdf(e.message)
     }
@@ -105,7 +117,7 @@ export default function Relatorios() {
   // reais do período. As demais abas continuam sem dados (template em "Em
   // construção"). Os hooks já devolvem as props no formato do RelatorioTemplate.
   const recebidoHoras = useRelatorioRecebidoHoras(periodo ?? undefined)
-  const acordo = useRelatorioAcordo(periodo ?? undefined)
+  const acordo = useRelatorioAcordo()
   const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
 
   return (
@@ -142,23 +154,30 @@ export default function Relatorios() {
 
       {erroPdf && <p style={estilos.erro}>{erroPdf}</p>}
 
-      {/* Seletor de período (Mês/Trimestre/Semestre/Ano/Personalizado) */}
-      <SeletorPeriodoRelatorio
-        tipo={tipo}
-        periodo={periodo}
-        dataInicio={dataInicio}
-        dataFim={dataFim}
-        aoTrocarTipo={aoTrocarTipo}
-        aoDeslocar={aoDeslocar}
-        aoTrocarDataInicio={aoTrocarDataInicio}
-        aoTrocarDataFim={aoTrocarDataFim}
-      />
+      {/* Seletor de período (Mês/Trimestre/Semestre/Ano/Personalizado). SOME
+          na aba "Acordo trabalhista": o acordo é um fato fechado e não
+          consome período — a aba carrega o total do início ao fim. O estado do
+          período fica preservado para as demais abas. */}
+      {aba !== 'acordo-trabalhista' && (
+        <>
+          <SeletorPeriodoRelatorio
+            tipo={tipo}
+            periodo={periodo}
+            dataInicio={dataInicio}
+            dataFim={dataFim}
+            aoTrocarTipo={aoTrocarTipo}
+            aoDeslocar={aoDeslocar}
+            aoTrocarDataInicio={aoTrocarDataInicio}
+            aoTrocarDataFim={aoTrocarDataFim}
+          />
 
-      {faixaInvertida && (
-        <p style={estilos.aviso}>
-          A data inicial deve ser anterior ou igual à final. Ajuste o período
-          para ver o relatório.
-        </p>
+          {faixaInvertida && (
+            <p style={estilos.aviso}>
+              A data inicial deve ser anterior ou igual à final. Ajuste o período
+              para ver o relatório.
+            </p>
+          )}
+        </>
       )}
 
       {/* Abas de tópico — não resetam o período selecionado. */}
@@ -178,10 +197,12 @@ export default function Relatorios() {
         acordo.erro ? (
           <p style={estilos.erro}>{acordo.erro}</p>
         ) : (
+          /* Cards e gráfico vêm do template; a lista por ano (acordeão) é o
+             nó customizado da aba (um ano aberto por vez). */
           <RelatorioTemplate
             cards={acordo.cards}
             grafico={acordo.grafico}
-            linhas={acordo.linhas}
+            detalhes={<ListaAnosAcordo anos={acordo.anos} />}
           />
         )
       ) : aba === 'entradas-x-despesas' ? (
@@ -196,8 +217,13 @@ export default function Relatorios() {
         )
       ) : aba === 'por-categoria' ? (
         /* Busca/análise por categoria — reusa a fonte única de categorização
-           do relatório (relatorioPdf.js) e o período da página. */
-        <AnalisePorCategoria periodo={periodo} />
+           do relatório (relatorioPdf.js) e o período da página. A seleção fica
+           elevada aqui para o exportar PDF enxergar o filtro ativo. */
+        <AnalisePorCategoria
+          periodo={periodo}
+          selecao={selecaoCategoria}
+          aoTrocarSelecao={setSelecaoCategoria}
+        />
       ) : (
         /* Demais abas: mesmo template sem dados reais por enquanto. */
         <RelatorioTemplate />

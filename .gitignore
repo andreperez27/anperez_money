@@ -63,6 +63,11 @@ scripts/relatorio_migracao_cartoes.md
 scripts/relatorio_migracao_recebido.md
 scripts/relatorio_importacao_ponto_2025.md
 scripts/backups/
+scripts/recebidos_para_planilha.json
+
+# Backup do Supabase gerado pelo script scripts/backup_supabase.mjs — contém
+# valores financeiros reais; não versionar.
+backups/
 
 # ==========================================================================
 # Configuração local de ferramentas de desenvolvimento (opencode/agentes) —

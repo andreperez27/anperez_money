@@ -21,6 +21,9 @@
 //             tamanho (um bucket por rótulo; sem bucket → só o rótulo no eixo).
 //   linhas  [{ label, valor, cor? }]           → lista detalhada (2 colunas)
 //           OU [{ celulas: [{ texto, cor?, forte? }] }] → lista em 4 colunas
+//   detalhes  (opcional) nó React renderizado no bloco "Detalhes" no lugar da
+//             lista genérica (usado pela aba "Acordo trabalhista" → acordeão
+//             por ano). Quando presente, ignora `linhas`.
 // Qualquer uma das três vazia/undefined renderiza o estado "Em construção"
 // NESSE bloco (mesmo texto e estilo do placeholder atual da página).
 // ============================================================================
@@ -39,7 +42,7 @@ function BlocoEmConstrucao() {
   )
 }
 
-export default function RelatorioTemplate({ cards, grafico, linhas }) {
+export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) {
   const temCards = Array.isArray(cards) && cards.length > 0
   const temGraficoSimples =
     grafico &&
@@ -181,9 +184,11 @@ export default function RelatorioTemplate({ cards, grafico, linhas }) {
         )}
       </section>
 
-      {/* Lista — linhas detalhadas */}
+      {/* Lista — linhas detalhadas (ou nó customizado via `detalhes`) */}
       <section aria-label="Detalhes">
-        {temLinhas ? (
+        {detalhes ? (
+          detalhes
+        ) : temLinhas ? (
           <div style={estilos.cardLista}>
             {linhas.map((linha, i) =>
               Array.isArray(linha.celulas) && linha.celulas.length > 0 ? (

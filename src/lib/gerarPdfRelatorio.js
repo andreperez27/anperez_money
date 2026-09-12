@@ -17,7 +17,7 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatoReal, formatarData } from './compartilhados.js'
-import { rotuloRelatorioPdf } from './relatorioPdf.js'
+import { rotuloRelatorioPdf, TODAS_CATEGORIAS } from './relatorioPdf.js'
 
 const MARGEM = 14
 const LARGURA = 210
@@ -79,13 +79,160 @@ function estilosTabela() {
   }
 }
 
-export function gerarPdfRelatorio({ periodo, blocos }) {
-  if (!periodo || !blocos) {
-    throw new Error('Informe período e blocos (montarBlocosRelatorio) para gerar o PDF.')
+// Rótulo legível da categoria (a '' — sem categoria — tem nome próprio).
+function rotuloCategoria(categoria) {
+  return categoria === '' ? 'Sem categoria' : categoria
+}
+
+// PDF de CATEGORIA ISOLADA: lista os lançamentos da categoria no período (mesmo
+// recorte da aba "Por categoria": analisarCategoria) + o total. O cabeçalho já
+// foi impresso pelo chamador; aqui só o bloco, o rodapé e o salvamento.
+function gerarPdfCategoria(doc, { periodo, blocos, categoria }) {
+  const info = blocos?.blocoCategoria
+  if (!info) {
+    throw new Error('Export por categoria exige o bloco blocoCategoria (gerado pelo hook).')
   }
 
+  let y = 54
+  y = secao(doc, `Gasto na categoria: ${rotuloCategoria(categoria)}`, y)
+
+  if (!info || info.lancamentos.length === 0) {
+    autoTable(doc, {
+      ...estilosTabela(),
+      startY: y,
+      head: [['Data', 'Descrição', 'Origem', 'Valor']],
+      body: [[{ content: 'Nenhum lançamento desta categoria no período.', colSpan: 4, styles: { halign: 'center', textColor: COR_CLARO, fontStyle: 'italic' } }]],
+    })
+    y = doc.lastAutoTable.finalY + 14
+  } else {
+    autoTable(doc, {
+      ...estilosTabela(),
+      startY: y,
+      head: [['Data', 'Descrição', 'Origem', 'Valor']],
+      body: info.lancamentos.map((l) => [
+        { content: formatarData(l.data), styles: { halign: 'center' } },
+        { content: l.descricao || 'Sem descrição' },
+        { content: l.fonte === 'compra' ? 'Compra no cartão' : 'Movimentação', styles: { halign: 'center' } },
+        { content: fmt(l.valor), styles: { halign: 'right' } },
+      ]),
+      showFoot: 'lastPage',
+      foot: [[
+        { content: 'Total', styles: { fontStyle: 'bold' } },
+        { content: '', styles: {} },
+        { content: '', styles: {} },
+        { content: fmt(info.total), styles: { halign: 'right', fontStyle: 'bold' } },
+      ]],
+      footStyles: { fillColor: COR_FUNDO_TABELA, textColor: COR_TEXTO },
+    })
+    y = doc.lastAutoTable.finalY + 14
+  }
+
+  // Subtítulo explicando o recorte do export.
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...COR_CLARO)
+  doc.text(
+    `Export filtrado pela categoria "${rotuloCategoria(categoria)}" — apenas os lançamentos desta categoria no período.`,
+    MARGEM, Math.min(y, ALTURA - RODAPE - 4),
+  )
+
+  rodape(doc)
+  doc.save(`relatorio-${periodo.tipo}-${rotuloCategoria(categoria).toLowerCase().replace(/\s+/g, '-')}-${periodo.inicio}-${periodo.fim}.pdf`)
+}
+
+// PDF do ACORDO TRABALHISTA (fato fechado — 2021 a 2025): consolidado do
+// total do acordo, do início ao fim, SEM depender do período do seletor.
+// Recebe os dados crus do hook useRelatorioAcordo (totalRecebido + depositos
+// + inicio/fim). O cabeçalho já foi impresso pelo chamador.
+function gerarPdfAcordo(doc, { acordo }) {
+  let y = 54
+  y = secao(doc, 'Total do acordo trabalhista', y)
+
+  autoTable(doc, {
+    ...estilosTabela(),
+    startY: y,
+    head: [[
+      { content: 'Total recebido', styles: { halign: 'center' } },
+      { content: 'Depósitos', styles: { halign: 'center' } },
+    ]],
+    body: [[
+      { content: fmt(acordo.totalRecebido), styles: { halign: 'center', fontStyle: 'bold', textColor: COR_VERDE } },
+      { content: String(acordo.depositos.length), styles: { halign: 'center' } },
+    ]],
+  })
+  y = doc.lastAutoTable.finalY + 14
+
+  y = novaPaginaSeNecessario(doc, y)
+  y = secao(doc, 'Depósitos do acordo', y)
+
+  if (acordo.depositos.length === 0) {
+    autoTable(doc, {
+      ...estilosTabela(),
+      startY: y,
+      head: [['Data', 'Descrição', 'Valor']],
+      body: [[{ content: 'Nenhum depósito do acordo.', colSpan: 3, styles: { halign: 'center', textColor: COR_CLARO, fontStyle: 'italic' } }]],
+    })
+  } else {
+    autoTable(doc, {
+      ...estilosTabela(),
+      startY: y,
+      head: [['Data', 'Descrição', 'Valor']],
+      body: acordo.depositos.map((d) => [
+        { content: formatarData(d.data), styles: { halign: 'center' } },
+        { content: d.descricao || 'Sem descrição' },
+        { content: fmt(d.valor), styles: { halign: 'right' } },
+      ]),
+      showFoot: 'lastPage',
+      foot: [[
+        { content: 'Total', styles: { fontStyle: 'bold' } },
+        { content: '', styles: { fontStyle: 'bold' } },
+        { content: fmt(acordo.totalRecebido), styles: { halign: 'right', fontStyle: 'bold' } },
+      ]],
+      footStyles: { fillColor: COR_FUNDO_TABELA, textColor: COR_TEXTO },
+    })
+  }
+
+  rodape(doc)
+  const faixa = acordo.inicio && acordo.fim ? `-${acordo.inicio}-${acordo.fim}` : ''
+  doc.save(`acordo-trabalhista${faixa}.pdf`)
+}
+
+// Rodapé com números de página.
+function rodape(doc) {
+  const totalPaginas = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPaginas; i++) {
+    doc.setPage(i)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...COR_CLARO)
+    doc.text(`Página ${i} de ${totalPaginas}`, LARGURA - MARGEM, ALTURA - 10, { align: 'right' })
+    doc.text('ANPEREZ MONEY', MARGEM, ALTURA - 10)
+  }
+}
+
+export function gerarPdfRelatorio({ periodo, blocos, categoria = TODAS_CATEGORIAS, acordo }) {
+  const casoAcordo = Boolean(acordo)
+
+  if (!casoAcordo && (!periodo || !blocos)) {
+    throw new Error('Informe período e blocos (montarBlocosRelatorio) para gerar o PDF.')
+  }
+  if (casoAcordo && !acordo.depositos) {
+    throw new Error('Erro ao exportar o acordo: dados incompletos.')
+  }
+
+  const casoCategoria = !casoAcordo && categoria !== TODAS_CATEGORIAS
+
   const doc = new jsPDF()
-  const rotulo = rotuloRelatorioPdf(periodo)
+  // No caso do Acordo o rótulo vem dos próprios dados (início → fim reais);
+  // nos demais casos, do período selecionado.
+  const rotulo = casoAcordo
+    ? {
+        titulo: 'Acordo trabalhista',
+        faixa: acordo.inicio && acordo.fim
+          ? `${formatarData(acordo.inicio)} – ${formatarData(acordo.fim)}`
+          : '',
+      }
+    : rotuloRelatorioPdf(periodo)
 
   // --- Cabeçalho -----------------------------------------------------------
   doc.setFillColor(...COR_BRAND_ESCURA)
@@ -97,7 +244,14 @@ export function gerarPdfRelatorio({ periodo, blocos }) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(191, 219, 254)
-  doc.text(`Relatório consolidado · gerado em ${dataDoDia()}`, MARGEM, 18)
+  doc.text(
+    casoAcordo
+      ? `Relatório do acordo trabalhista · gerado em ${dataDoDia()}`
+      : casoCategoria
+        ? `Relatório por categoria · gerado em ${dataDoDia()}`
+        : `Relatório consolidado · gerado em ${dataDoDia()}`,
+    MARGEM, 18,
+  )
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
@@ -110,6 +264,16 @@ export function gerarPdfRelatorio({ periodo, blocos }) {
   doc.setDrawColor(...COR_BRAND)
   doc.setLineWidth(0.8)
   doc.line(MARGEM, 45.5, LARGURA - MARGEM, 45.5)
+
+  // --- Caso: acordo trabalhista → bloco único (independente de período) ------
+  if (casoAcordo) {
+    return gerarPdfAcordo(doc, { acordo })
+  }
+
+  // --- Caso: categoria isolada → bloco único ----------------------------------
+  if (casoCategoria) {
+    return gerarPdfCategoria(doc, { periodo, blocos, categoria })
+  }
 
   let y = 54
 
@@ -252,15 +416,7 @@ export function gerarPdfRelatorio({ periodo, blocos }) {
   }
 
   // --- Rodapé com números de página ------------------------------------------
-  const totalPaginas = doc.getNumberOfPages()
-  for (let i = 1; i <= totalPaginas; i++) {
-    doc.setPage(i)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...COR_CLARO)
-    doc.text(`Página ${i} de ${totalPaginas}`, LARGURA - MARGEM, ALTURA - 10, { align: 'right' })
-    doc.text('ANPEREZ MONEY', MARGEM, ALTURA - 10)
-  }
+  rodape(doc)
 
   doc.save(`relatorio-${periodo.tipo}-${periodo.inicio}-${periodo.fim}.pdf`)
 }

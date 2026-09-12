@@ -22,7 +22,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { hoje } from '../lib/compartilhados'
 import { adicionarDiasISO } from '../lib/saldoProjetado'
-import { montarBlocosRelatorio } from '../lib/relatorioPdf'
+import { montarBlocosRelatorio, analisarCategoria, TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import { useFaturasPlanejamento } from './useFaturasPlanejamento'
 import { useFeriados } from './useFeriados'
@@ -42,7 +42,11 @@ export function useRelatorioPdf() {
   const [erro, setErro] = useState(null)
 
   // Monta os blocos do período informado e os devolve (a página gera o PDF).
-  async function gerar(periodo) {
+  // `categoria`: quando específica (≠ TODAS_CATEGORIAS), o resultado ganha o
+  // bloco isolado daquela categoria (analisarCategoria — mesma fonte da aba
+  // "Por categoria"); quando TODAS_CATEGORIAS/indefinida, segue o relatório
+  // consolidado completo.
+  async function gerar(periodo, categoria = TODAS_CATEGORIAS) {
     if (!periodo?.inicio || !periodo?.fim) {
       throw new Error('Defina um período válido antes de exportar o PDF.')
     }
@@ -78,7 +82,7 @@ export function useRelatorioPdf() {
       if (comprasRes.error) throw new Error(comprasRes.error.message)
       if (movsSaldoRes.error) throw new Error(movsSaldoRes.error.message)
 
-      return montarBlocosRelatorio({
+      const blocos = montarBlocosRelatorio({
         periodo,
         movimentacoes: movsRes.data ?? [],
         itens: planejamentos,
@@ -92,6 +96,20 @@ export function useRelatorioPdf() {
         feriados,
         coberturaMinima,
       })
+
+      // Export de CATEGORIA isolada: filtra a MESMA fonte única da aba
+      // "Por categoria" (analisarCategoria) e acrescenta o bloco dedicado à
+      // resposta; a geração fica com os dados do período já buscados.
+      if (categoria !== TODAS_CATEGORIAS) {
+        blocos.blocoCategoria = analisarCategoria({
+          categoria,
+          movimentacoes: movsRes.data ?? [],
+          compras: comprasRes.data ?? [],
+          periodo,
+        })
+      }
+
+      return blocos
     } catch (e) {
       setErro(e.message)
       throw e
