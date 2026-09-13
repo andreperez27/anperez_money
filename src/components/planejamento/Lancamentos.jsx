@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMuyEstrecho } from '../../hooks/useMediaQuery'
 import { useContas } from '../../hooks/useContas'
 import { useCartoes } from '../../hooks/useCartoes'
@@ -7,7 +7,9 @@ import SeletorCategoria from '../SeletorCategoria'
 import EditarPlanejamentoForm from '../EditarPlanejamentoForm'
 import EditarSerieForm from '../EditarSerieForm'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
-import { identificarRegraValorVariavel } from '../../lib/serieValorVariavel'
+import { identificarRegraValorVariavel, ehCondominioDoBoleto } from '../../lib/serieValorVariavel'
+import { supabase } from '../../lib/supabaseClient'
+import { gerarPdfCondominio } from '../../lib/gerarPdfCondominio'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 import GeradorCondominio from './GeradorCondominio'
 import ConsumoRealOcorrencia from './ConsumoRealOcorrencia'
@@ -119,6 +121,63 @@ export default function Lancamentos({
   // contexto da OCORRÊNCIA prevista de Condomínio — o formulário (composição do
   // boleto + Gás/Água) não vive mais dentro do Novo lançamento → Condomínio.
   const [consumoRealDe, setConsumoRealDe] = useState(null)
+
+  // Comprovante (espelho do boleto) do Condomínio REALIZADO (13/09/2026): o
+  // botão "Exportar PDF" só aparece se houver snapshot em condominio_boleto_itens
+  // — realizadas antes da parte 3 (sem backfill bem-sucedido) ficam sem o botão.
+  const [idsComSnapshot, setIdsComSnapshot] = useState([])
+  const [exportandoPdfIds, setExportandoPdfIds] = useState([])
+
+  useEffect(() => {
+    const idsRealizados = (itens || [])
+      .filter((i) => i.estado === 'realizado' && ehCondominioDoBoleto(i))
+      .map((i) => i.id)
+    if (idsRealizados.length === 0) {
+      setIdsComSnapshot([])
+      return undefined
+    }
+    let ativo = true
+    supabase
+      .from('condominio_boleto_itens')
+      .select('planejamento_id')
+      .in('planejamento_id', idsRealizados)
+      .then(({ data, error }) => {
+        if (ativo && !error) {
+          setIdsComSnapshot([...new Set((data || []).map((l) => l.planejamento_id))])
+        }
+      })
+    return () => {
+      ativo = false
+    }
+  }, [itens])
+
+  async function aoExportarPdf(item) {
+    if (exportandoPdfIds.includes(item.id)) return
+    setExportandoPdfIds((atual) => [...atual, item.id])
+    setErroAcao('')
+    try {
+      const mes = `${String(item.data_prevista || '').slice(0, 7)}-01`
+      const [{ data: snap, error: errSnap }, { data: consumo, error: errConsumo }] = await Promise.all([
+        supabase
+          .from('condominio_boleto_itens')
+          .select('*')
+          .eq('planejamento_id', item.id)
+          .order('ordem'),
+        supabase.from('condominio_consumo_mensal').select('*').eq('mes', mes),
+      ])
+      if (errSnap) throw errSnap
+      if (errConsumo) throw errConsumo
+      if (!snap || snap.length === 0) {
+        setErroAcao('Este lançamento não tem comprovante: sem snapshot gravado na realização.')
+        return
+      }
+      gerarPdfCondominio({ ocorrencia: item, itens: snap, consumo: consumo || [] })
+    } catch (e) {
+      setErroAcao(`Não foi possível gerar o comprovante: ${e.message}`)
+    } finally {
+      setExportandoPdfIds((atual) => atual.filter((id) => id !== item.id))
+    }
+  }
 
   // Modo 'recorrente': despesa fixa mensal genérica (ex.: DAS-MEI, assinaturas).
   // Reutiliza o GeradorRecorrenciaMensal com nome = descrição e calcularValor
@@ -978,6 +1037,12 @@ export default function Lancamentos({
             // sufixo). Requer serie_id — só a série recorrente passa.
             const ehCondominioPrevisto =
               item.estado === 'previsto' && identificarRegraValorVariavel(item) === 'condominio'
+            // Comprovante (PDF): MESMA regra do snapshot no banco (hiCondominioDoBoleto)
+            // — origem recorrente + descrição começando em "Condomínio", SEM exigir
+            // serie_id (ocorrência do gerador como "Condomínio 2026/09" é recorrente
+            // sem série). O botão só aparece se o snapshot de fato existir.
+            const temSnapshotPdf =
+              item.estado === 'realizado' && ehCondominioDoBoleto(item) && idsComSnapshot.includes(item.id)
             const ehSerie = !!item.serie_id
             // Recorrência é despesa fixa mensal (não compra parcelada): além de
             // não exibir "1/24", não carrega a tag de mês na descrição.
@@ -1073,6 +1138,9 @@ export default function Lancamentos({
                             {ehCondominioPrevisto && (
                               <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
                             )}
+                            {temSnapshotPdf && (
+                              <button type="button" onClick={() => aoExportarPdf(item)} title="Exportar o comprovante do boleto (espelho do modelo congelado na realização)" style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
+                            )}
                             {item.estado !== 'cancelado' && (
                               <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
                             )}
@@ -1160,6 +1228,9 @@ export default function Lancamentos({
                           )}
                           {ehCondominioPrevisto && (
                             <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
+                          )}
+                          {temSnapshotPdf && (
+                            <button type="button" onClick={() => aoExportarPdf(item)} title="Exportar o comprovante do boleto (espelho do modelo congelado na realização)" style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
                           )}
                           {item.estado !== 'cancelado' && (
                             <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>

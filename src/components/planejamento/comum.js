@@ -153,6 +153,9 @@ export const estilosItem = {
   // "Inserir consumo real" (só em ocorrência de Condomínio prevista) — tom TEAL
   // igual ao badge "Consumo real informado" para manter a mesma associação.
   botaoAcaoConsumo: { background: 'transparent', border: 'none', color: '#2dd4bf', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
+  // "Exportar PDF" do comprovante do Condomínio (só em ocorrência REALIZADA com
+  // snapshot em condominio_boleto_itens) — tom AZUL, distinto dos demais.
+  botaoAcaoPdf: { background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
   badgeParcela: { padding: '0.15rem 0.5rem', borderRadius: '6px', background: '#1f2937', color: '#9ca3af', fontSize: '0.72rem', whiteSpace: 'nowrap' },
   // Item de FATURA automática (projeção dinâmica do cartão, não persistida) —
   // tom VIOLETA para distinguir de 'previsto' (azul) e de 'Disponível' (amarelo).

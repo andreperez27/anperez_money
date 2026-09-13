@@ -57,6 +57,18 @@ export function ehConsumoRealInformado(linha) {
     })
 }
 
+// ----------------------------------------------------------------------------
+// É uma ocorrência de CONDOMÍNIO do boleto (espelho/PDF)? Regra IDÊNTICA à do
+// snapshot no banco (migration 36): origem 'recorrente' + descrição começando
+// em "Condomínio". Diferente de identificarRegraValorVariavel, NÃO exige
+// serie_id — ocorrências do gerador (ex.: "Condomínio 2026/09") são
+// recorrentes sem série, mas o boleto delas também é fotografado na realização.
+// ----------------------------------------------------------------------------
+export function ehCondominioDoBoleto(linha) {
+  if (!linha || linha.origem !== 'recorrente') return false
+  return /^condom[ií]nio/i.test(String(linha.descricao || ''))
+}
+
 // Observação do condomínio já corrigido pelo consumo real: o detalhamento do
 // boleto (fixos vigentes + 1010/1052 REAIS informados) + a linha marcadora.
 export function montarObservacaoCondominioReal(detalhamento) {

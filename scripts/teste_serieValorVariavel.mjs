@@ -6,6 +6,7 @@ import {
   montarObservacaoEnergia,
   ehConsumoRealInformado,
   montarObservacaoCondominioReal,
+  ehCondominioDoBoleto,
   MARCADOR_CONSUMO_REAL,
 } from '../src/lib/serieValorVariavel.js'
 import { montarObservacaoCondominio } from '../src/lib/despesaRecorrenteCalc.js'
@@ -73,6 +74,18 @@ caso('energia reconhecida pela descrição (Enel) mesmo sem marcador', () => {
 
 caso('avulsa (sem serie_id) NÃO entra na regra de valor variável', () => {
   assert.strictEqual(identificarRegraValorVariavel({ id: 'e', descricao: 'Condomínio' }), null)
+})
+
+caso('ehCondominioDoBoleto reconhece recorrente COM sufixo e SEM serie_id', () => {
+  // Ocorrência do gerador: origem recorrente, série ausente, descrição com o
+  // mês ("Condomínio 2026/09") — o snapshot do banco também fotografa esta.
+  assert.strictEqual(ehCondominioDoBoleto(linha('g', { serie_id: null, descricao: 'Condomínio 2026/09' })), true)
+  assert.strictEqual(ehCondominioDoBoleto(linha('h', { serie_id: null, descricao: 'Condominio 2026/10' })), true)
+})
+
+caso('ehCondominioDoBoleto NÃO pega avulsa nem outra despesa', () => {
+  assert.strictEqual(ehCondominioDoBoleto({ id: 'i', origem: 'avulsa', descricao: 'Condomínio' }), false)
+  assert.strictEqual(ehCondominioDoBoleto(linha('j', { descricao: 'DAS-MEI' })), false)
 })
 
 caso('série fixa comum (ex.: DAS-MEI, Vivo) NÃO entra', () => {
