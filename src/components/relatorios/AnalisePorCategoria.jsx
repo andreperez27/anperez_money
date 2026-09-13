@@ -23,6 +23,7 @@ import { useAnaliseCategoria } from '../../hooks/useAnaliseCategoria'
 import SeletorCategoria from '../SeletorCategoria'
 
 const COR_PRINCIPAL = '#42A5F5'
+const COR_AZUL_ESMAECIDO = 'rgba(66, 165, 245, 0.35)'
 const COR_TEXTO_FORTE = '#e5e7eb'
 const COR_TEXTO_SUAVE = '#9ca3af'
 const COR_MOVIMENTACAO = '#22C55E'
@@ -31,6 +32,87 @@ const COR_COMPRA = '#F59E0B'
 const ROTULO_DETALHE = {
   '': 'Lançamentos sem categoria',
   [TODAS_CATEGORIAS]: '',
+}
+
+// --------------------------------------------------------------------------
+// GRÁFICO COMPARATIVO DE CATEGORIAS — barras horizontais proporcionais (CSS
+// puro, padrão do app — RelatorioTemplate; sem biblioteca).
+// Sempre visível quando há dados (mesmo com categoria selecionada, como
+// contexto). Fonte: resumo.linhas (o MESMO array do ranking — nenhum cálculo
+// duplicado). Destaque (decisão 12/09/2026): categoria selecionada em
+// #42A5F5 SÓLIDO (o tom "ativo" do app — conta ativa, aba ativa, pílula do
+// seletor) e as demais esmaecidas; sem seleção todas iguais.
+// Cada linha é CLICÁVEL = mesma ação do dropdown (aoClicarBarra); clicar na
+// categoria já selecionada volta para "todas" (toggle só aqui — decisão
+// 12/09/2026; dropdown e ranking intactos). Hover sutil por linha (estado
+// local), igual ao cursor padrão dos demais clicáveis do app.
+// Aditivo: sem dados ou erro → só o gráfico some; a lista segue normal.
+// ==========================================================================
+function LinhaComparativa({ linha, largura, ativa, esmaecida, aoClicarBarra }) {
+  const [hover, setHover] = useState(false)
+
+  return (
+    <button
+      type="button"
+      onClick={() => aoClicarBarra(linha)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={`Ver os lançamentos de ${linha.categoria}`}
+      style={{
+        ...estilos.linhaGrafico,
+        ...(ativa ? estilos.linhaGraficoAtiva : {}),
+        ...(hover ? estilos.linhaGraficoHover : {}),
+      }}
+    >
+      <span style={estilos.nomeGrafico} title={linha.categoria}>
+        {linha.categoria}
+      </span>
+      <span style={estilos.trilha}>
+        <span
+          style={{
+            ...estilos.barra,
+            width: `${largura}%`,
+            background: ativa
+              ? COR_PRINCIPAL
+              : esmaecida
+                ? COR_AZUL_ESMAECIDO
+                : COR_PRINCIPAL,
+            ...(hover ? estilos.barraHover : {}),
+          }}
+        />
+      </span>
+      <span style={estilos.valorGrafico}>{formatoReal.format(linha.valor)}</span>
+    </button>
+  )
+}
+
+function GraficoComparativoCategorias({ linhas, selecao, aoClicarBarra }) {
+  if (!Array.isArray(linhas) || linhas.length === 0) return null
+  const maxValor = Math.max(...linhas.map((l) => l.valor)) || 1
+  const temSelecao = selecao !== TODAS_CATEGORIAS
+
+  return (
+    <section style={estilos.secao}>
+      <h3 style={estilos.tituloSecao}>Comparativo de categorias</h3>
+      <ul style={estilos.listaGrafico}>
+        {linhas.map((linha) => {
+          const ativa = temSelecao && selecao === linha.categoria
+          const largura = Math.max(2, Math.round((linha.valor / maxValor) * 100))
+          return (
+            <li key={linha.categoria} style={estilos.itemGrafico}>
+              <LinhaComparativa
+                linha={linha}
+                largura={largura}
+                ativa={ativa}
+                esmaecida={temSelecao}
+                aoClicarBarra={aoClicarBarra}
+              />
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 export default function AnalisePorCategoria({ periodo, selecao, aoTrocarSelecao }) {
@@ -49,6 +131,15 @@ export default function AnalisePorCategoria({ periodo, selecao, aoTrocarSelecao 
 
   function trocarSelecao(valor) {
     aoTrocarSelecao(valor)
+    setMostrarRanking(false)
+  }
+
+  // Clique numa barra do gráfico = mesma ação do dropdown. Comportamento de
+  // ALTERNÂNCIA só aqui (decisão 12/09/2026): clicar na categoria já
+  // selecionada volta para "todas as categorias".
+  function aoClicarBarra(linha) {
+    const ativa = selecao !== TODAS_CATEGORIAS && selecao === linha.categoria
+    aoTrocarSelecao(ativa ? TODAS_CATEGORIAS : linha.categoria)
     setMostrarRanking(false)
   }
 
@@ -76,6 +167,14 @@ export default function AnalisePorCategoria({ periodo, selecao, aoTrocarSelecao 
 
       {carregando && <p style={estilos.aviso}>Carregando lançamentos do período…</p>}
       {erro && <p style={estilos.erro}>{erro}</p>}
+
+      {!carregando && !erro && dados && (
+        <GraficoComparativoCategorias
+          linhas={dados.resumo.linhas}
+          selecao={selecao}
+          aoClicarBarra={aoClicarBarra}
+        />
+      )}
 
       {!carregando && !erro && dados && visao === 'resumo' && (
         <section style={estilos.secao}>
@@ -286,6 +385,79 @@ const estilos = {
     borderTop: '1px dashed #374151',
   },
   valorForte: { color: COR_PRINCIPAL, fontWeight: 'bold', fontVariantNumeric: 'tabular-nums' },
+  listaGrafico: {
+    listStyle: 'none',
+    margin: '0.25rem 0 0',
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.55rem',
+  },
+  itemGrafico: {
+    borderRadius: '8px',
+  },
+  linhaGrafico: {
+    // Botão resetado: herda tipografia, sem borda/fundo nativos.
+    display: 'grid',
+    gridTemplateColumns: 'minmax(7rem, 28%) 1fr auto',
+    alignItems: 'center',
+    gap: '0.7rem',
+    width: '100%',
+    padding: 0,
+    margin: 0,
+    border: 'none',
+    background: 'transparent',
+    color: 'inherit',
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'opacity 120ms ease',
+  },
+  linhaGraficoAtiva: {
+    // A linha da categoria selecionada fica com o mesmo "clique" visual do
+    // itemResumo ativo (borda azul), reforçando qual é a categoria detalhada.
+    borderLeft: `3px solid ${COR_PRINCIPAL}`,
+    paddingLeft: '0.3rem',
+    marginLeft: '-0.6rem',
+  },
+  linhaGraficoHover: {
+    opacity: 0.85,
+  },
+  barraHover: {
+    // Feedback sutil no hover (linha inteira levemente mais clara).
+    filter: 'brightness(1.08)',
+  },
+  nomeGrafico: {
+    color: COR_TEXTO_SUAVE,
+    fontSize: '0.82rem',
+    fontWeight: 500,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    textAlign: 'right',
+  },
+  trilha: {
+    display: 'block',
+    height: '10px',
+    borderRadius: '999px',
+    background: '#1f2937',
+    overflow: 'hidden',
+  },
+  barra: {
+    display: 'block',
+    height: '100%',
+    borderRadius: '999px',
+    transition: 'width 200ms ease, background 150ms ease',
+  },
+  valorGrafico: {
+    color: COR_TEXTO_FORTE,
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    minWidth: '5.5rem',
+    textAlign: 'right',
+  },
   cabecalhoDetalhe: {
     display: 'flex',
     alignItems: 'baseline',
