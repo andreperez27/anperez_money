@@ -12,6 +12,9 @@
 // ============================================================================
 
 import { semanaIso, inicioDaSemanaIso } from '../../lib/semana.js'
+import { ehConsumoRealInformado } from '../../lib/serieValorVariavel.js'
+
+export { ehConsumoRealInformado }
 
 export const RÓTULO_ESTADO = {
   previsto: 'Previsto',
@@ -121,19 +124,35 @@ export function conteudoItem(item) {
 // Copiados da página validada na E5-E — comportamento visual preservado.
 export const estilosItem = {
   lista: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  item: { display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto auto', alignItems: 'center', columnGap: '0.9rem', rowGap: '0.35rem', padding: '0.9rem 1.1rem', borderRadius: '10px', background: '#111827', border: '1px solid #1f2937' },
-  itemMobile: { display: 'flex', flexDirection: 'column', gap: '0.35rem', padding: '0.9rem 1.1rem', borderRadius: '10px', background: '#111827', border: '1px solid #1f2937' },
+  item: { display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto auto auto', alignItems: 'center', columnGap: '0.9rem', rowGap: '0.35rem', padding: '0.9rem 1.1rem', borderRadius: '10px', background: '#111827', border: '1px solid #1f2937', cursor: 'pointer' },
+  itemMobile: { display: 'flex', flexDirection: 'column', gap: '0.35rem', padding: '0.9rem 1.1rem', borderRadius: '10px', background: '#111827', border: '1px solid #1f2937', cursor: 'pointer' },
+  // Linha EXPANDIDA pelo acordeão: fundo um tom mais claro + borda azul para
+  // fixar o estado aberto (ações visíveis). Unificação Visão geral + Lançamentos.
+  itemAberto: { background: '#16202e', border: '1px solid rgba(66, 165, 245, 0.45)' },
+  // Indica que a linha é clicável (expandir/recolher as ações). "▸" rotaciona
+  // 90° quando aberta (virando ▾) via transform inline — o char não troca.
+  chevron: { color: '#6b7280', fontSize: '0.75rem', lineHeight: 1, transition: 'transform 0.12s ease' },
   linhaMobileTopo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' },
   topoDireita: { display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' },
   linhaMobileBase: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' },
   data: { color: '#9ca3af', fontSize: '0.85rem', whiteSpace: 'nowrap' },
   valor: { fontWeight: 'bold', whiteSpace: 'nowrap' },
-  acoes: { display: 'flex', gap: '0.25rem' },
+  // Ações da linha EXPANDIDA: fluxo horizontal com quebra SÓ quando necessário
+  // (flex-wrap). Espaçamento horizontal 0.5rem entre botões (o mesmo padrão das
+  // ações clássicas Editar/Cancelar/...) e rowGap 0.25rem quando quebra pra 2ª
+  // linha. O container NÃO tem largura fixa: quem define a largura é o layout
+  // pai — desktop ocupa a linha inteira do card (gridColumn 1/-1), mobile ganha
+  // flex-basis 100% (a própria linha). Sem minWidth:0 aqui (foi o que esmagou a
+  // coluna antiga e empilhou os botões um por linha).
+  acoes: { display: 'flex', flexWrap: 'wrap', columnGap: '0.5rem', rowGap: '0.25rem' },
   botaoAcaoNeutro: { background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   botaoAcaoRealizar: { background: 'transparent', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   botaoAcaoFatura: { background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
   botaoAcaoSerie: { background: 'transparent', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   botaoAcaoExcluir: { background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
+  // "Inserir consumo real" (só em ocorrência de Condomínio prevista) — tom TEAL
+  // igual ao badge "Consumo real informado" para manter a mesma associação.
+  botaoAcaoConsumo: { background: 'transparent', border: 'none', color: '#2dd4bf', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   badgeParcela: { padding: '0.15rem 0.5rem', borderRadius: '6px', background: '#1f2937', color: '#9ca3af', fontSize: '0.72rem', whiteSpace: 'nowrap' },
   // Item de FATURA automática (projeção dinâmica do cartão, não persistida) —
   // tom VIOLETA para distinguir de 'previsto' (azul) e de 'Disponível' (amarelo).
@@ -160,4 +179,10 @@ export const estilosItem = {
   // Tom CORAL/LARANJA, distinto de fatura (violeta), projeção (verde-limão),
   // férias (ciano), disponível (amarelo) e previsto (azul).
   badgeJornada: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(251, 146, 60, 0.15)', color: '#fb923c', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Ocorrência de condomínio cuja previsão foi CORRIGIDA pelo consumo real
+  // de Gás/Água informado no gerador (marcador 1055 na observação — ADENDO
+  // PARTE 2, 13/09/2026). O valor não é mais estimativa da média móvel: é o
+  // boleto real do mês e fica imune à reprojeção. Tom TEAL (água/consumo),
+  // distinto do coral do Ponto (#fb923c) e dos demais badges — sem colidir.
+  badgeConsumo: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(45, 212, 191, 0.15)', color: '#2dd4bf', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
 }

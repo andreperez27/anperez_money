@@ -7,8 +7,10 @@ import SeletorCategoria from '../SeletorCategoria'
 import EditarPlanejamentoForm from '../EditarPlanejamentoForm'
 import EditarSerieForm from '../EditarSerieForm'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
+import { identificarRegraValorVariavel } from '../../lib/serieValorVariavel'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 import GeradorCondominio from './GeradorCondominio'
+import ConsumoRealOcorrencia from './ConsumoRealOcorrencia'
 import {
   RÓTULO_ESTADO,
   RÓTULO_TIPO,
@@ -16,6 +18,7 @@ import {
   ehDisponivel,
   ehAtrasado,
   ehAjustadoPonto,
+  ehConsumoRealInformado,
   badgeEstado,
   conteudoItem,
   corTipo,
@@ -23,17 +26,21 @@ import {
 } from './comum'
 
 // ============================================================================
-// LANÇAMENTOS DO PLANEJAMENTO (ETAPA 06/E5-F4)
+// LANÇAMENTOS DO PLANEJAMENTO — LISTA COMPLETA DO PERÍODO (ETAPA 06/E5-F4)
 // ============================================================================
-// Área operacional: formulário de criação (avulsa × parcelada) + lista do
-// período com ações. Porto FIEL do comportamento validado na E5-E — as regras
+// Com a unificação Visão geral + Lançamentos (13/09/2026) este componente
+// deixou de ser "aba": a página renderiza a lista completa logo abaixo dos
+// cards de resumo. Porto FIEL do comportamento validado na E5-E — as regras
 // não mudaram:
 //   • criação avulsa → criarPlanejamento; série parcelada → criarSerieParcelada
 //     (numerador/datas nascem na lib pura; a UI só envia o conjunto);
 //   • badge "3/10" nas linhas de série e tag derivada "Disponível";
 //   • CANCELAR ≠ EXCLUIR; cancelamento de série respeita previsto/realizado;
 //   • totais/contagens NÃO são recalculados aqui — quem exibe números é a
-//     Visão geral; esta aba é edição e listagem.
+//     Visão geral; este componente é edição e listagem.
+//   • ACORDEÃO: as ações (Lançar/Editar/Cancelar/Série/Editar série/Excluir
+//     série/Excluir/Pagar fatura) ficam OCULTAS por padrão e aparecem ao clicar
+//     na linha — só uma linha fica aberta por vez; badges sempre visíveis.
 //
 // FORA de escopo até a E5-F: regeneração pela UI. A EFETIVAÇÃO (botão Lançar)
 // foi implementada para o caminho de CONTAS via RPC realizar_planejamento;
@@ -58,6 +65,14 @@ export default function Lancamentos({
 }) {
   const muyEstrecho = useMuyEstrecho()
   const [erroAcao, setErroAcao] = useState('')
+
+  // ACORDEÃO (unificação Visão geral + Lançamentos, 13/09/2026): só UMA linha
+  // fica expandida por vez; as ações ficam ocultas e aparecem ao clicar na
+  // linha. Clicar numa segunda linha fecha a primeira; clicar na aberta recolhe.
+  const [linhaAberta, setLinhaAberta] = useState(null)
+  function alternarLinha(id) {
+    setLinhaAberta((atual) => (atual === id ? null : id))
+  }
 
   // Contas disponíveis para o destino da realização (efeitvação). O hook
   // busca todas as contas do usuário; a RLS filtra no banco. Só as ATIVAS
@@ -99,6 +114,11 @@ export default function Lancamentos({
   // EditarPlanejamentoForm; aqui só guardamos o item em edição.
   const [editando, setEditando] = useState(null) // item em edição
   const [editandoSerie, setEditandoSerie] = useState(null) // item que abre a edição da SÉRIE
+
+  // "Inserir consumo real" (13/09/2026): a ação abre o ConsumoRealOcorrencia no
+  // contexto da OCORRÊNCIA prevista de Condomínio — o formulário (composição do
+  // boleto + Gás/Água) não vive mais dentro do Novo lançamento → Condomínio.
+  const [consumoRealDe, setConsumoRealDe] = useState(null)
 
   // Modo 'recorrente': despesa fixa mensal genérica (ex.: DAS-MEI, assinaturas).
   // Reutiliza o GeradorRecorrenciaMensal com nome = descrição e calcularValor
@@ -761,6 +781,19 @@ export default function Lancamentos({
         </ModalFormulario>
       )}
 
+      {/* Inserir consumo real da OCORRÊNCIA prevista de Condomínio: composição
+          do boleto (estilo Arrecadação) + Gás/Água + atalho "Reajustar item
+          fixo". Salva com a MESMA action salvarConsumoReal (upsert em
+          condominio_consumo_mensal + recalcular + badge/imunidade à reprojeção). */}
+      {consumoRealDe && (
+        <ConsumoRealOcorrencia
+          item={consumoRealDe}
+          aoSalvarConsumoReal={acoes.salvarConsumoReal}
+          aoPosMutacao={aoPosMutacao}
+          aoFechar={() => setConsumoRealDe(null)}
+        />
+      )}
+
       {/* Realização (Planejado → Realizado): escolha de conta destino, valor
           efetivo e data. O confirmar dispara a RPC atômica no banco. */}
       {realizando && (
@@ -936,6 +969,15 @@ export default function Lancamentos({
             const disponivel = ehDisponivel(item, dataHoje)
             const atrasado = ehAtrasado(item, dataHoje)
             const ajustadoPonto = ehAjustadoPonto(item, dataHoje)
+            const consumoReal = ehConsumoRealInformado(item)
+            // Só a OCORRÊNCIA PREVISTA de Condomínio ganha "Inserir consumo
+            // real" (13/09/2026). Identificação pela MESMA regra canônica da
+            // lib (identificarRegraValorVariavel): cobre "Condomínio"/
+            // "Condominio" com a série recorrente, COM ou SEM o sufixo de
+            // mês/ano na descrição (ocorrências antigas/legadas não têm
+            // sufixo). Requer serie_id — só a série recorrente passa.
+            const ehCondominioPrevisto =
+              item.estado === 'previsto' && identificarRegraValorVariavel(item) === 'condominio'
             const ehSerie = !!item.serie_id
             // Recorrência é despesa fixa mensal (não compra parcelada): além de
             // não exibir "1/24", não carrega a tag de mês na descrição.
@@ -951,8 +993,18 @@ export default function Lancamentos({
             const cartaoDestino = destinoCartao
               ? cartoesAtivos.find((c) => c.id === item.cartao_padrao_id)
               : null
+            const aberta = linhaAberta === item.id
+            const chevronAberto = aberta ? { transform: 'rotate(90deg)' } : {}
             return (
-              <li key={item.id} style={muyEstrecho ? estilosItem.itemMobile : estilosItem.item}>
+              <li
+                key={item.id}
+                onClick={() => alternarLinha(item.id)}
+                className="linha-plano"
+                style={{
+                  ...(muyEstrecho ? estilosItem.itemMobile : estilosItem.item),
+                  ...(aberta ? estilosItem.itemAberto : {}),
+                }}
+              >
                 {muyEstrecho ? (
                   <>
                     <div style={estilosItem.linhaMobileTopo}>
@@ -977,6 +1029,11 @@ export default function Lancamentos({
                             Ajustado pelo Ponto
                           </span>
                         )}
+                        {consumoReal && (
+                          <span style={estilosItem.badgeConsumo} title="Valor corrigido pelo consumo real de Gás/Água informado no gerador de condomínio">
+                            Consumo real informado
+                          </span>
+                        )}
                         {destinoCartao && (
                           <span style={estilosItem.badgeDestinoCartao} title="Destino planejado: cartão de crédito (ainda não efetivado)">
                             Cartão{cartaoDestino ? `: ${cartaoDestino.nome}` : ''}
@@ -993,13 +1050,15 @@ export default function Lancamentos({
                           {RÓTULO_ESTADO[item.estado] ?? item.estado}
                         </span>
                       </span>
+<span className="chevron-plano" style={{ ...estilosItem.chevron, ...chevronAberto }} aria-hidden="true">▸</span>
                     </div>
                     <div style={conteudoItem(item)}>{item.descricao}</div>
                     <div style={estilosItem.linhaMobileBase}>
                       <span style={corTipo(item.tipo_op)}>
                         {RÓTULO_TIPO(item.tipo_op)} · {formatoReal.format(Number(item.valor))}
                       </span>
-                      <span style={estilosItem.acoes}>
+                      {aberta && (
+                      <span style={{ ...estilosItem.acoes, flex: '1 1 100%', minWidth: 0 }} onClick={(e) => e.stopPropagation()}>
                         {ehFerias ? (
                           <span style={estilosItem.textoFerias}>Aviso</span>
                         ) : ehFaturaReal ? (
@@ -1010,6 +1069,9 @@ export default function Lancamentos({
                           <>
                             {item.estado === 'previsto' && (
                               <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
+                            )}
+                            {ehCondominioPrevisto && (
+                              <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
                             )}
                             {item.estado !== 'cancelado' && (
                               <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
@@ -1031,6 +1093,7 @@ export default function Lancamentos({
                           </>
                         )}
                       </span>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -1057,6 +1120,11 @@ export default function Lancamentos({
                           Ajustado pelo Ponto
                         </span>
                       )}
+                      {consumoReal && (
+                        <span style={{ ...estilosItem.badgeConsumo, marginLeft: '0.5rem' }} title="Valor corrigido pelo consumo real de Gás/Água informado no gerador de condomínio">
+                          Consumo real informado
+                        </span>
+                      )}
                       {destinoCartao && (
                         <span style={{ ...estilosItem.badgeDestinoCartao, marginLeft: '0.5rem' }} title="Destino planejado: cartão de crédito (ainda não efetivado)">
                           Cartão{cartaoDestino ? `: ${cartaoDestino.nome}` : ''}
@@ -1077,7 +1145,8 @@ export default function Lancamentos({
                       {formatoReal.format(Number(item.valor))}
                     </span>
                     <span style={badgeEstado(item.estado)}>{RÓTULO_ESTADO[item.estado] ?? item.estado}</span>
-                    <span style={estilosItem.acoes}>
+                    {aberta && (
+                    <span style={{ ...estilosItem.acoes, gridColumn: '1 / -1' }} onClick={(e) => e.stopPropagation()}>
                       {ehFerias ? (
                         <span style={estilosItem.textoFerias}>Aviso</span>
                       ) : ehFaturaReal ? (
@@ -1088,6 +1157,9 @@ export default function Lancamentos({
                         <>
                           {item.estado === 'previsto' && (
                             <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
+                          )}
+                          {ehCondominioPrevisto && (
+                            <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
                           )}
                           {item.estado !== 'cancelado' && (
                             <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
@@ -1109,6 +1181,8 @@ export default function Lancamentos({
                         </>
                       )}
                     </span>
+                    )}
+                    <span style={{ ...estilosItem.chevron, ...chevronAberto, gridColumn: 7 }} aria-hidden="true">▸</span>
                   </>
                 )}
               </li>

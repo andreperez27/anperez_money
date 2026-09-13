@@ -16,10 +16,11 @@ import Lancamentos from '../components/planejamento/Lancamentos'
 // ============================================================================
 // PLANEJAMENTOS — ORQUESTRADOR (ETAPA 06/E5-F4)
 // ============================================================================
-// A página virou estrutura: SELETOR DE PERÍODO (Semana/Mês/Trimestre/Semestre)
-// + ABAS INTERNAS (Visão geral | Lançamentos) — estado local da página, sem
-// rotas novas. Ao abrir, a tela padrão é a VISÃO GERAL (resumo primeiro,
-// formulário não — correção central desta etapa).
+// A página virou estrutura única (13/09/2026): SELETOR DE PERÍODO
+// (Semana/Mês/Trimestre/Semestre) + resumo (cards) + a lista completa do
+// período renderizada pelo Lancamentos.jsx — as antigas abas "Visão geral" e
+// "Lançamentos" foram unificadas. Ao abrir, o resumo vem primeiro
+// (formulário não — correção central desta etapa).
 //
 // Divisão de responsabilidades:
 //   • SEMANA → caminho ÚNICO validado do domínio (listarPorSemana do hook:
@@ -28,8 +29,9 @@ import Lancamentos from '../components/planejamento/Lancamentos'
 //   • MÊS/TRIMESTRE/SEMESTRE → consulta explícita listarPorPeriodo(inicio,fim)
 //     guardada em estado próprio da página; resumo via calcularResumoPlanejamentos
 //     (a MESMA função pura usada pelo hook — nenhuma segunda implementação);
-//   • Lançamentos.jsx concentra formulário e ações (comportamento E5-E intacto);
-//   • VisaoGeral.jsx exibe resumo, contagens, divisão por mês e próximos.
+//   • Lancamentos.jsx concentra o botão "+ Novo lançamento", a lista completa
+//     com ações ocultas em acordeão (comportamento E5-E intacto nas ações);
+//   • VisaoGeral.jsx exibe resumo, contagens e a divisão por mês.
 //
 // Em 31/08/2026 as abas superiores dedicadas Condomínio e DAS-MEI foram
 // REMOVIDAS (decisão com André): os formulários foram consolidados DENTRO do
@@ -76,6 +78,7 @@ export default function Planejamento() {
     criarSerieRecorrente,
     editarPlanejamento,
     cancelarSerieAPartirDe,
+    salvarConsumoReal,
     atualizar,
   } = usePlanejamentos({ ano: semanaInicial.ano, semana: semanaInicial.semana })
 
@@ -96,7 +99,6 @@ export default function Planejamento() {
   const { feriados } = useFeriados()
 
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
-  const [aba, setAba] = useState('visao') // 'visao' | 'lancamentos'
 
   // Contador de mutações para o card "Saldo projetado": qualquer criação/
   // edição/cancelamento/realização incrementa a versão e o hook re-busca os
@@ -296,7 +298,7 @@ export default function Planejamento() {
     }
   }
 
-  // Pós-mutação na aba Lançamentos: na SEMANA o hook já recarrega sozinho
+  // Pós-mutação na lista integrada: na SEMANA o hook já recarrega sozinho
   // (atualizar()); nos períodos maiores a página refaz a PRÓPRIA faixa. Erros
   // daqui caem no estado do período — jamais são confundidos com falha da
   // mutação (que já teve sucesso dentro do domínio).
@@ -346,69 +348,48 @@ export default function Planejamento() {
         aoIrParaHoje={aoIrParaHoje}
       />
 
-      {/* Abas internas — estado local da página (sem rotas novas) */}
-      <div style={estilos.abas}>
-        <button
-          type="button"
-          onClick={() => setAba('visao')}
-          aria-pressed={aba === 'visao'}
-          style={{ ...estilos.aba, ...(aba === 'visao' ? estilos.abaAtiva : {}) }}
-        >
-          Visão geral
-        </button>
-        <button
-          type="button"
-          onClick={() => setAba('lancamentos')}
-          aria-pressed={aba === 'lancamentos'}
-          style={{ ...estilos.aba, ...(aba === 'lancamentos' ? estilos.abaAtiva : {}) }}
-        >
-          Lançamentos
-        </button>
-      </div>
-
-      {aba === 'visao' ? (
-        <VisaoGeral
-          carregando={carregandoVisivel}
-          erro={erroVisivel}
-          totais={totaisVisiveis}
-          contagens={contagensVisiveis}
-          itens={itensVisiveis}
-          itensParaSomatorio={itensParaSomatorio}
-          dividirPorMes={!modoSemana}
-          aoVerLancamentos={() => setAba('lancamentos')}
-          saldoProjetado={saldoAteFimVisivel}
-          saldoProjetadoCarregando={saldoProjetado.carregando}
-          saldoProjetadoErro={saldoProjetado.erro}
-          rotuloPeriodo={rotuloPeriodo}
-        />
-      ) : (
-        <Lancamentos
-          itens={itensVisiveis}
-          carregando={carregandoVisivel}
-          erro={erroVisivel}
-          dataPadrao={dataPadrao}
-          acoes={{
-            criar: comRecarga(criarPlanejamento),
-            criarSerie: comRecarga(criarSerieParcelada),
-            criarSerieRecorrente: comRecarga(criarSerieRecorrente),
-            cancelar: comRecarga(cancelarPlanejamento),
-            cancelarSerie: comRecarga(cancelarSerieAPartirDe),
-            excluir: comRecarga(excluirPlanejamento),
-            excluirSerie: comRecarga(excluirSerie),
-            regenerarSerie: comRecarga(regenerarSerie),
-            editar: comRecarga(editarPlanejamento),
-            realizar: comRecarga(realizarPlanejamento),
-            realizarCartao: comRecarga(realizarPlanejamentoCartao),
-            realizarFatura: aoPagarFatura,
-          }}
-          aoPosMutacao={aoPosMutacao}
-        />
-      )}
+      {/* Tela UNIFICADA (13/09/2026): Visão geral e Lançamentos eram abas
+          separadas; agora o resumo (cards) vem primeiro e a lista completa
+          do período com as ações vem logo abaixo — uma tela só. */}
+      <VisaoGeral
+        carregando={carregandoVisivel}
+        erro={erroVisivel}
+        totais={totaisVisiveis}
+        contagens={contagensVisiveis}
+        itens={itensVisiveis}
+        itensParaSomatorio={itensParaSomatorio}
+        dividirPorMes={!modoSemana}
+        saldoProjetado={saldoAteFimVisivel}
+        saldoProjetadoCarregando={saldoProjetado.carregando}
+        saldoProjetadoErro={saldoProjetado.erro}
+        rotuloPeriodo={rotuloPeriodo}
+      />
+      <Lancamentos
+        itens={itensVisiveis}
+        carregando={carregandoVisivel}
+        erro={erroVisivel}
+        dataPadrao={dataPadrao}
+        acoes={{
+          criar: comRecarga(criarPlanejamento),
+          criarSerie: comRecarga(criarSerieParcelada),
+          criarSerieRecorrente: comRecarga(criarSerieRecorrente),
+          cancelar: comRecarga(cancelarPlanejamento),
+          cancelarSerie: comRecarga(cancelarSerieAPartirDe),
+          excluir: comRecarga(excluirPlanejamento),
+          excluirSerie: comRecarga(excluirSerie),
+          regenerarSerie: comRecarga(regenerarSerie),
+          editar: comRecarga(editarPlanejamento),
+          realizar: comRecarga(realizarPlanejamento),
+          realizarCartao: comRecarga(realizarPlanejamentoCartao),
+          realizarFatura: aoPagarFatura,
+          salvarConsumoReal: comRecarga(salvarConsumoReal),
+        }}
+        aoPosMutacao={aoPosMutacao}
+      />
 
       <p style={estilos.notaEtapa}>
         A realização pode ser feita em conta (RPC realizar_planejamento) ou em
-        cartão de crédito (RPC realizar_planejamento_cartao, à vista) pela aba
-        Lançamentos.
+        cartão de crédito (RPC realizar_planejamento_cartao, à vista).
       </p>
     </div>
   )
@@ -417,17 +398,5 @@ export default function Planejamento() {
 const estilos = {
   titulo: { margin: 0, fontSize: '1.3rem', fontWeight: 'bold', color: '#e5e7eb' },
   subtitulo: { margin: '0.25rem 0 0', color: '#9ca3af', fontSize: '0.9rem' },
-  abas: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' },
-  aba: {
-    padding: '0.45rem 1.1rem',
-    borderRadius: '999px',
-    border: '1px solid #374151',
-    background: '#111827',
-    color: '#9ca3af',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: 'bold',
-  },
-  abaAtiva: { color: '#42A5F5', borderColor: 'rgba(66, 165, 245, 0.45)' },
   notaEtapa: { marginTop: '1.5rem', color: '#6b7280', fontSize: '0.8rem' },
 }

@@ -313,3 +313,17 @@ button:active {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* ============================================================================
+   Lista de lançamentos do Planejamento — linha clicável (acordeão unificado).
+   O hover dá um feedback sutil de affordance só no DESKTOP (mobile não tem
+   hover; lá o chevron + destaque já bastam), sem revelar as ações — o estado
+   aberto (fundo/borda azul) continua sendo o destaque do acordeão. O
+   `!important` é necessário porque a linha usa background inline.
+   ============================================================================ */
+.linha-plano:hover {
+  background-color: var(--surface-2) !important;
+}
+.linha-plano:hover .chevron-plano {
+  color: var(--accent);
+}
+

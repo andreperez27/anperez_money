@@ -4,7 +4,11 @@ import {
   extrairHistoricosVariaveis,
   calcularReprojecaoValorVariavel,
   montarObservacaoEnergia,
+  ehConsumoRealInformado,
+  montarObservacaoCondominioReal,
+  MARCADOR_CONSUMO_REAL,
 } from '../src/lib/serieValorVariavel.js'
+import { montarObservacaoCondominio } from '../src/lib/despesaRecorrenteCalc.js'
 
 // ============================================================================
 // Testes da ATUALIZAÇÃO AUTOMÁTICA de séries de valor variável (09/09/2026).
@@ -227,6 +231,67 @@ caso('montarObservacaoEnergia gera o texto legível com a média atual', () => {
 caso('montarObservacaoEnergia com menos de 3 reais diz que repete o último', () => {
   const obs = montarObservacaoEnergia({ reais: [168.07], projecao: 168.07 })
   assert.ok(obs.includes('1 real disponível(is): 168.07 = 168.07 (regra: repete o último real)'))
+})
+
+// --- Marcador de consumo real informado (ADENDO PARTE 2 — 13/09/2026) ---------
+
+caso('ehConsumoRealInformado reconhece a linha marcadora 1055', () => {
+  const obs = '1002 Cota R$ 840,82\n1010 Consumo de Gás R$ 124,15\n1052 Consumo de Água R$ 158,30\n' + MARCADOR_CONSUMO_REAL
+  assert.strictEqual(ehConsumoRealInformado({ observacao: obs }), true)
+  assert.strictEqual(ehConsumoRealInformado({ observacao: '1002 Cota R$ 840,82\n1010 Consumo de Gás R$ 124,15' }), false)
+  assert.strictEqual(ehConsumoRealInformado({ observacao: null }), false)
+  assert.strictEqual(ehConsumoRealInformado({}), false)
+})
+
+caso('montarObservacaoCondominioReal gera o detalhamento + o marcador no fim', () => {
+  const obs = montarObservacaoCondominioReal([
+    { cod: '1002', descricao: 'Cota Condominial', valor: 840.82, referencia: '', categoria: '' },
+    { cod: '1010', descricao: 'Consumo de Gás', valor: 124.15, referencia: '', categoria: '' },
+  ])
+  assert.ok(obs.startsWith('1002 Cota Condominial R$ 840,82'))
+  assert.ok(obs.includes('1010 Consumo de Gás R$ 124,15'))
+  assert.ok(obs.endsWith('\n' + MARCADOR_CONSUMO_REAL))
+})
+
+caso('condomínio: mês marcado por consumo real fica IMUNE à reprojeção', () => {
+  const itensFixos = [item('1002', 'Cota Condominial', 840.82, '2026-04-01', null)]
+  const obsReal = montarObservacaoCondominio([
+    { cod: '1002', descricao: 'Cota Condominial', valor: 840.82, referencia: '', categoria: '' },
+    { cod: '1010', descricao: 'Consumo de Gás', valor: 125.0, referencia: '', categoria: '' },
+    { cod: '1052', descricao: 'Consumo de Água', valor: 160.0, referencia: '', categoria: '' },
+  ]) + '\n' + MARCADOR_CONSUMO_REAL
+  const linhas = [
+    // Mês corrigido por consumo real: valor/observação travados.
+    linha('p1', { data_prevista: '2026-11-10', valor: 1125.82, observacao: obsReal }),
+    // Outro mês ainda por média: deve ser recalculado.
+    linha('p2', { data_prevista: '2026-12-10', valor: 1463.59, observacao: 'antiga' }),
+  ]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    itensFixos,
+    historicoGas: [124.15, 128.33, 130.0], // média → 127.49
+    historicoAgua: [158.3, 160.99, 162.0], // média → 160.43
+  })
+  assert.deepStrictEqual(updates.map((u) => u.id), ['p2'], 'o mês marcado não entra nos updates')
+  const esperado = Math.round((840.82 + 127.49 + 160.43) * 100) / 100
+  assert.strictEqual(updates[0].valor, esperado)
+  assert.ok(!updates[0].observacao.includes('1055'))
+})
+
+caso('condomínio: imune também quando o valor informado difere da média', () => {
+  const obsReal = montarObservacaoCondominioReal([
+    { cod: '1010', descricao: 'Consumo de Gás', valor: 90.0, referencia: '', categoria: '' },
+    { cod: '1052', descricao: 'Consumo de Água', valor: 52.0, referencia: '', categoria: '' },
+  ])
+  const linhas = [linha('p1', { data_prevista: '2026-11-10', valor: 142.0, observacao: obsReal })]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    historicoGas: [200, 210, 220],
+    historicoAgua: [150, 160, 170],
+  })
+  assert.deepStrictEqual(updates, [], 'valor real travado nunca é sobrescrito pela média')
 })
 
 console.log(`\n${ok} testes passaram, ${falhou} falharam.`)

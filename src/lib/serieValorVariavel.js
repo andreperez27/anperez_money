@@ -37,6 +37,33 @@ import { calcularTotalCondominio, montarObservacaoCondominio } from './despesaRe
 // a mesma convenção para entrar na atualização automática.
 export const MARCADOR_ENERGIA = 'projeção pela regra de valor variável'
 
+// Marcador gravado na observação de UMA OCORRÊNCIA de condomínio cuja
+// previsão foi CORRIGIDA pelo consumo real informado (ADENDO PARTE 2 —
+// 13/09/2026). Código 1055 (não usado pelo boleto); texto livre sem valor.
+// Além de alimentar o badge "Consumo real informado" (comum.js), torna a
+// ocorrência IMUNE à reprojeção automática: o mês corrigido pelo morador não
+// volta a ser estimado pela média móvel (decisão do André).
+export const MARCADOR_CONSUMO_REAL = '1055 Consumo real informado'
+
+// A ocorrência foi corrigida pelo consumo real (observação contém a linha
+// marcadora 1055)? Um mês assim não é mais estimativa — o valor travado vale.
+export function ehConsumoRealInformado(linha) {
+  if (!linha || !linha.observacao) return false
+  return String(linha.observacao)
+    .split('\n')
+    .some((l) => {
+      const t = l.trim()
+      return t === '1055' || t.startsWith('1055 ') || t.startsWith('1055\t')
+    })
+}
+
+// Observação do condomínio já corrigido pelo consumo real: o detalhamento do
+// boleto (fixos vigentes + 1010/1052 REAIS informados) + a linha marcadora.
+export function montarObservacaoCondominioReal(detalhamento) {
+  const base = montarObservacaoCondominio(detalhamento)
+  return `${base}\n${MARCADOR_CONSUMO_REAL}`
+}
+
 // ----------------------------------------------------------------------------
 // Lê o valor em REAIS de uma linha da observação do condomínio que começa com
 // o código procurado (ex.: "1010 Consumo de Gás R$ 90,00" → 90). Devolve null
@@ -145,6 +172,10 @@ export function calcularReprojecaoValorVariavel({
   const updates = []
   for (const linha of linhas) {
     if (!linha || linha.estado !== 'previsto') continue
+    // Mês corrigido por consumo real informado fica IMUNE à reprojeção
+    // (ADENDO PARTE 2 — decisão do André): o valor e a observação dele
+    // representam o boleto real, não estimativa de média móvel.
+    if (ehConsumoRealInformado(linha)) continue
 
     let novoValor
     let novaObservacao

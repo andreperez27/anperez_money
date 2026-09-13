@@ -1,32 +1,20 @@
 import { useMemo } from 'react'
-import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
+import { estilosComuns, formatoReal } from '../../lib/compartilhados'
 import { agruparPorMes } from '../../lib/planejamentoAgregado'
 import { calcularResumoPlanejamentos } from '../../lib/planejamentoCalc'
-import {
-  RÓTULO_ESTADO,
-  RÓTULO_TIPO,
-  ehEntrada,
-  ehDisponivel,
-  ehAtrasado,
-  ehAjustadoPonto,
-  badgeEstado,
-  conteudoItem,
-  MES_ABREV,
-  estilosItem,
-} from './comum'
+import { MES_ABREV } from './comum'
 
 // ============================================================================
-// VISÃO GERAL DO PLANEJAMENTO (ETAPA 06/E5-F4 — primeira versão)
+// VISÃO GERAL DO PLANEJAMENTO — parte superior da tela UNIFICADA
 // ============================================================================
 // Responde imediatamente: quanto tenho previsto de entrada/saída, qual o
 // resultado previsto e o que está planejado no período. Os TOTAIS/CONTAGENS
 // chegam PRONTOS via props (cálculo exclusivo de planejamentoCalc.js) — a
 // única agregação feita aqui é a divisão "Por mês" dos períodos maiores, que
 // reutiliza agruparPorMes + a MESMA função pura de resumo do domínio.
-// A visão analítica enriquecida fica para a próxima etapa (F5).
+// A lista COMPLETA do período (com ações por linha) fica por conta do
+// Lancamentos.jsx, renderizado logo abaixo pela página (unificação 13/09/2026).
 // ============================================================================
-
-const QUANTOS_PROXIMOS = 5
 
 // Resumo "vazio" para mês que existe na timeline mas não tem nada a somar
 // (ex.: mês com só previsto de destino cartão absorvido pela fatura — o
@@ -45,13 +33,11 @@ export default function VisaoGeral({
   itens,
   itensParaSomatorio,
   dividirPorMes,
-  aoVerLancamentos,
   saldoProjetado,
   saldoProjetadoCarregando,
   saldoProjetadoErro,
   rotuloPeriodo,
 }) {
-  const dataHoje = hoje()
 
   // Divisão por mês civil (só para Mês/Trimestre/Semestre). Lib pura, ordem
   // cronológica garantida. A lista de meses (e as linhas dentro de cada mês)
@@ -77,10 +63,6 @@ export default function VisaoGeral({
     }
     return mapa
   }, [dividirPorMes, itensParaSomatorio])
-
-  // Próximos lançamentos: primeiros N não cancelados (a lista já chega
-  // ordenada por data_prevista das duas consultas do domínio).
-  const proximos = itens.filter((item) => item.estado !== 'cancelado').slice(0, QUANTOS_PROXIMOS)
 
   return (
     <section>
@@ -178,81 +160,8 @@ export default function VisaoGeral({
             </div>
           )}
 
-          {/* Próximos lançamentos do período */}
-          {itens.length > 0 && (
-            <div style={estilos.blocoProximos}>
-              <h3 style={estilos.tituloSecao}>Próximos lançamentos</h3>
-              <ul style={estilosItem.lista}>
-                {proximos.map((item) => {
-                  const disponivel = ehDisponivel(item, dataHoje)
-                  const atrasado = ehAtrasado(item, dataHoje)
-                  const ajustadoPonto = ehAjustadoPonto(item, dataHoje)
-                  const ehSerie = !!item.serie_id
-                  const ehRecorrente = item.origem === 'recorrente' || item.origem === 'jornada'
-                  const ehFerias = item.ferias === true
-                  return (
-                    <li key={item.id} style={estilos.linhaProximo}>
-                      <span style={estilosItem.data}>{formatarData(item.data_prevista)}</span>
-                      <span style={{ ...conteudoItem(item), flex: '1 1 auto', minWidth: 0 }}>
-                        {item.descricao}
-                        {ehSerie && !ehRecorrente && (
-                          <span style={{ ...estilosItem.badgeParcela, marginLeft: '0.5rem' }}>
-                            {item.parcela_numero}/{item.total_parcelas}
-                          </span>
-                        )}
-                        {ehFerias && (
-                          <span style={{ ...estilosItem.badgeFerias, marginLeft: '0.5rem' }}>
-                            Férias
-                          </span>
-                        )}
-                        {ajustadoPonto && (
-                          <span style={{ ...estilosItem.badgeJornada, marginLeft: '0.5rem' }} title="Valor real fechado do Ponto (fixo + HE + domingo/feriado)">
-                            Ajustado pelo Ponto
-                          </span>
-                        )}
-                        {atrasado ? (
-                          <span style={{ ...estilosItem.badgeAtrasado, marginLeft: '0.5rem' }} title="Data prevista no passado e ainda não lançado/cancelado">
-                            Atrasado
-                          </span>
-                        ) : disponivel ? (
-                          <span style={{ ...estilosItem.badgeDisponivel, marginLeft: '0.5rem' }}>
-                            Disponível
-                          </span>
-                        ) : null}
-                      </span>
-                      <span style={badgeEstado(item.estado)}>
-                        {RÓTULO_ESTADO[item.estado] ?? item.estado}
-                      </span>
-                      <span
-                        style={{
-                          ...estilosItem.valor,
-                          color: ehFerias ? '#22d3ee' : ehEntrada(item.tipo_op) ? '#4ade80' : '#f87171',
-                        }}
-                      >
-                        {ehFerias
-                          ? 'Aviso de férias'
-                          : `${RÓTULO_TIPO(item.tipo_op)} · ${formatoReal.format(Number(item.valor))}`}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-              <button type="button" onClick={aoVerLancamentos} style={estilos.botaoVerTodos}>
-                Ver todos em Lançamentos →
-              </button>
-            </div>
-          )}
-
-          {itens.length === 0 && (
-            <div style={estilos.vazio}>
-              <p style={{ ...estilosComuns.mensagem, margin: 0 }}>
-                Nenhum planejamento neste período.
-              </p>
-              <p style={{ ...estilosComuns.mensagem, margin: 0, fontSize: '0.85rem' }}>
-                Use ‹ › para consultar outros períodos ou cadastre na aba Lançamentos.
-              </p>
-            </div>
-          )}
+          {/* Lista completa do período: renderizada pelo Lancamentos.jsx logo
+              abaixo pela página (unificação Visão geral + Lançamentos) */}
         </>
       )}
     </section>
@@ -280,26 +189,4 @@ const estilos = {
   },
   mesChave: { color: '#e5e7eb', fontWeight: 'bold', minWidth: '90px' },
   mesValor: { fontWeight: 'bold', whiteSpace: 'nowrap', fontSize: '0.9rem' },
-  blocoProximos: { marginBottom: '1.25rem' },
-  linhaProximo: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '0.6rem',
-    padding: '0.65rem 0.9rem',
-    borderRadius: '10px',
-    background: '#111827',
-    border: '1px solid #1f2937',
-  },
-  botaoVerTodos: {
-    marginTop: '0.6rem',
-    padding: '0.45rem 0.9rem',
-    borderRadius: '999px',
-    border: '1px solid #374151',
-    background: 'transparent',
-    color: '#42A5F5',
-    cursor: 'pointer',
-    fontSize: '0.85rem',
-  },
-  vazio: { padding: '1.25rem', borderRadius: '10px', background: '#111827', border: '1px dashed #374151', display: 'flex', flexDirection: 'column', gap: '0.35rem', textAlign: 'center' },
 }

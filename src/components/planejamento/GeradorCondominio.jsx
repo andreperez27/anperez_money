@@ -5,7 +5,6 @@
 // Condomínio NÃO existe mais — o form é aberto pela pilha [Condomínio].
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react'
-import ModalFormulario from '../ModalFormulario'
 import { useDespesaRecorrenteItens } from '../../hooks/useDespesaRecorrenteItens'
 import { estilosComuns, hoje } from '../../lib/compartilhados'
 import { calcularTotalCondominio } from '../../lib/despesaRecorrenteCalc'
@@ -13,6 +12,7 @@ import { projetarValorVariavel } from '../../lib/mediaMovelCalc'
 import { extrairHistoricosVariaveis } from '../../lib/serieValorVariavel'
 import { supabase } from '../../lib/supabaseClient'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
+import ModalNovoItemFixo from './ModalNovoItemFixo'
 
 // ============================================================================
 // GERADOR DE CONDOMÍNIO (ETAPA 06/P4 — sobre GeradorRecorrenciaMensal)
@@ -25,17 +25,23 @@ import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 // VIVE no componente reutilizável GeradorRecorrenciaMensal. Aqui ficam só as
 // partes específicas do condomínio:
 //   • gerenciamento dos itens FIXOS (tabela despesa_recorrente_item): listagem
-//     vigente no mês, novo item (nova vigência), lista exibida;
+//     vigente no mês, novo item (nova vigência) via ModalNovoItemFixo
+//     (compartilhado com o consumo real da ocorrência — vigência SÓ no hook);
 //   • os campos VARIÁVEIS (Consumo de Gás e Água) — passados como children do
 //     formulário, com estado local aqui;
 //   • calcularValor(mes) = soma itens fixos vigentes + variáveis (a MESMA
 //     função pura calcularTotalCondominio de sempre).
 //
+// O CONSUMO REAL (informar leituras/valores de Gás/Água p/ corrigir a previsão)
+// NÃO mora mais aqui (13/09/2026): passou pra ação "Inserir consumo real" da
+// OCORRÊNCIA prevista de Condomínio (ConsumoRealOcorrencia.jsx), evitando dois
+// lugares com a mesma responsabilidade.
+//
 // O resultado usa o fluxo EXISTENTE de criação de previsão (criarPlanejamento):
 // a data/valor/observação são montados pelo GeradorRecorrenciaMensal. A
-// previsão aparece na aba Lançamentos como qualquer outra ('previsto') e é
-// efetivada pelo MESMO botão "Lançar" de sempre. Esta aba não move saldo e não
-// toca em Cartões.
+// previsão aparece na tela do Planejamento como qualquer outra ('previsto') e
+// é efetivada pelo MESMO botão "Lançar" de sempre. Este form não move saldo e
+// não toca em Cartões.
 // ============================================================================
 
 // Lê um número digitado ("124,08" ou "124.08") → número em reais (padrão app).
@@ -58,12 +64,9 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
   const [contaId, setContaId] = useState('')
   const [itensVigentes, setItensVigentes] = useState([])
 
-  // Modal de cadastro/edicao de item fixo (nova vigência).
+  // Modal de cadastro de item fixo (nova vigência). A lógica mora no hook
+  // criarItem — reutilizado com o MESMO componente da ocorrência de consumo.
   const [mostrandoItem, setMostrandoItem] = useState(false)
-  const [itemForm, setItemForm] = useState({
-    cod: '', descricao: '', valor: '', categoria: '', vigencia_inicio: '', vigencia_termino: '',
-  })
-  const [salvandoItem, setSalvandoItem] = useState(false)
 
   // Busca os itens fixos VIGENTES no mês de referência sempre que ele muda.
   useEffect(() => {
@@ -135,30 +138,12 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
     [itensVigentes, gasNum, aguaNum],
   )
 
-  async function aoSalvarItem(e) {
-    e.preventDefault()
-    if (salvandoItem) return
-    try {
-      setSalvandoItem(true)
-      await criarItem({
-        cod: itemForm.cod,
-        descricao: itemForm.descricao,
-        valor: lerValor(itemForm.valor),
-        categoria: itemForm.categoria,
-        vigencia_inicio: itemForm.vigencia_inicio,
-        vigencia_termino: itemForm.vigencia_termino || null,
-      })
-      setMostrandoItem(false)
-      setItemForm({ cod: '', descricao: '', valor: '', categoria: '', vigencia_inicio: '', vigencia_termino: '' })
-      // Recarrega os itens vigentes do mês corrente.
-      const ultimo = ultimoDia(mesAno)
-      listar(ultimo).then(setItensVigentes).catch(() => {})
-    } catch (err) {
-      // Reexibe o erro dentro do modal de item (feedback local).
-      window.alert(`Não foi possível cadastrar o item: ${err.message}`)
-    } finally {
-      setSalvandoItem(false)
-    }
+  // Cadastro de item fixo via ModalNovoItemFixo: delega ao criarItem do hook
+  // (única implementação de vigência) e recarrega os itens vigentes do mês.
+  async function aoCadastrarItem(payload) {
+    await criarItem(payload)
+    const ultimo = ultimoDia(mesAno)
+    listar(ultimo).then(setItensVigentes).catch(() => {})
   }
 
   return (
@@ -212,6 +197,10 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
         </GeradorRecorrenciaMensal>
       </div>
 
+      {/* Consumo real (REMOVIDO em 13/09/2026): o bloco que vivia aqui migrou
+          para o contexto da OCORRÊNCIA prevista de Condomínio (ação "Inserir
+          consumo real" no acordeão) — evita dois lugares fazendo a mesma coisa. */}
+
       {/* Itens fixos vigentes no mês */}
       <div style={{ marginTop: '1.25rem' }}>
         <h3 style={estilos.subtitulo}>Itens fixos vigentes em {rotuloMes}</h3>
@@ -233,47 +222,11 @@ export default function GeradorCondominio({ aoCriarSerie, aoCriar, aoPosMutacao,
         )}
       </div>
 
-      {/* Modal: novo item fixo (nova vigência — nunca sobrescreve histórico) */}
+      {/* Modal: novo item fixo (nova vigência — nunca sobrescreve histórico).
+          Componente compartilhado com o form de consumo real da ocorrência.
+          A lógica de fechar a vigência anterior vive SÓ no criarItem do hook. */}
       {mostrandoItem && (
-        <ModalFormulario
-          titulo="Novo item fixo do condomínio"
-          aoFechar={() => {
-            if (!salvandoItem) setMostrandoItem(false)
-          }}
-        >
-          <form onSubmit={aoSalvarItem} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }} noValidate>
-            <div style={estilos.grade}>
-              <label style={estilos.rotuloCampo}>
-                Código
-                <input style={estilosComuns.input} placeholder="1002" value={itemForm.cod} onChange={(e) => setItemForm((f) => ({ ...f, cod: e.target.value }))} />
-              </label>
-              <label style={estilos.rotuloCampo}>
-                Valor (R$)
-                <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={itemForm.valor} onChange={(e) => setItemForm((f) => ({ ...f, valor: e.target.value }))} />
-              </label>
-              <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
-                Descrição
-                <input style={estilosComuns.input} placeholder="Cota Condominial" value={itemForm.descricao} onChange={(e) => setItemForm((f) => ({ ...f, descricao: e.target.value }))} />
-              </label>
-              <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
-                Categoria (opcional)
-                <input style={estilosComuns.input} placeholder="Cota Regular" value={itemForm.categoria} onChange={(e) => setItemForm((f) => ({ ...f, categoria: e.target.value }))} />
-              </label>
-              <label style={estilos.rotuloCampo}>
-                Início da vigência
-                <input style={estilosComuns.input} type="date" value={itemForm.vigencia_inicio} onChange={(e) => setItemForm((f) => ({ ...f, vigencia_inicio: e.target.value }))} />
-              </label>
-              <label style={estilos.rotuloCampo}>
-                Fim da vigência (opcional — série com contador)
-                <input style={estilosComuns.input} type="date" value={itemForm.vigencia_termino} onChange={(e) => setItemForm((f) => ({ ...f, vigencia_termino: e.target.value }))} />
-              </label>
-            </div>
-
-            <button type="submit" disabled={salvandoItem} style={salvandoItem ? { ...estilosComuns.botaoCriar, opacity: 0.6 } : estilosComuns.botaoCriar}>
-              {salvandoItem ? 'Salvando...' : 'Cadastrar item fixo'}
-            </button>
-          </form>
-        </ModalFormulario>
+        <ModalNovoItemFixo aoCadastrar={aoCadastrarItem} aoFechar={() => setMostrandoItem(false)} />
       )}
 
       <p style={{ marginTop: '0.75rem', color: '#9ca3af', fontSize: '0.85rem' }}>

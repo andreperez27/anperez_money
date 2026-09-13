@@ -19,7 +19,9 @@ import {
   identificarRegraValorVariavel,
   extrairHistoricosVariaveis,
   calcularReprojecaoValorVariavel,
+  montarObservacaoCondominioReal,
 } from '../lib/serieValorVariavel.js'
+import { calcularTotalCondominio } from '../lib/despesaRecorrenteCalc.js'
 
 // Domínio de Planejamentos (ETAPA 06/E3).
 //
@@ -509,6 +511,100 @@ export function usePlanejamentos({ ano, semana } = {}) {
     }
   }
 
+  // SALVAR CONSUMO REAL DE GÁS/ÁGUA E AJUSTAR A PREVISÃO DO MÊS (ADENDO
+  // PARTE 2 — 13/09/2026, decisão com André). Ao informar leitura/valor de um
+  // mês: grava em condominio_consumo_mensal e, se existir UMA ocorrência
+  // 'previsto' de Condomínio NO MESMO MÊS CIVIL, corrige o valor dela com
+  // calcularTotalCondominio (fixos vigentes do mês + os reais informados),
+  // substituindo a estimativa da média móvel, e marca o badge "Consumo real
+  // informado" na observação (1055 — imune à reprojeção posterior).
+  // Regras:
+  //   • casamento POR MÊS de data_prevista (não a próxima pendente) — permite
+  //     preencher mês atrasado sem errar a ocorrência;
+  //   • só mexe em 'previsto'; 'realizado' fica intocado (o snapshot congelado
+  //     da migration 36 já fotografia o passado);
+  //   • se houver série e avulsa previstas no mês, a da SÉRIE vence;
+  //   • sem ocorrência prevista no mês: salva SÓ o consumo, sem erro.
+  // Devolve { ocorrenciaAjustada: boolean } para o feedback da UI.
+  async function salvarConsumoReal({ mes, gas = {}, agua = {} } = {}) {
+    const mesIso = String(mes ?? '')
+    if (!/^\d{4}-\d{2}$/.test(mesIso)) {
+      throw new Error('Mês inválido para o consumo: use o formato YYYY-MM.')
+    }
+    const dataMes = `${mesIso}-01`
+
+    const montarLinha = (tipo, dados) => {
+      const valor = Number(dados?.valor)
+      if (!Number.isFinite(valor) || valor < 0) return null
+      const linha = { mes: dataMes, tipo, valor }
+      // Leituras opcionais (m³): só enviadas quando preenchidas — no upsert
+      // com onConflict os campos ausentes preservam o valor existente.
+      const atual = Number(dados?.leitura_atual)
+      const anterior = Number(dados?.leitura_anterior)
+      if (Number.isFinite(atual)) linha.leitura_atual = atual
+      if (Number.isFinite(anterior)) linha.leitura_anterior = anterior
+      return linha
+    }
+
+    const linhasConsumo = [
+      montarLinha('gas', gas),
+      montarLinha('agua', agua),
+    ].filter(Boolean)
+
+    if (linhasConsumo.length === 0) {
+      throw new Error('Informe ao menos o valor do consumo de gás ou de água.')
+    }
+
+    const { error: erroConsumo } = await supabase
+      .from('condominio_consumo_mensal')
+      .upsert(linhasConsumo, { onConflict: 'user_id,mes,tipo' })
+    if (erroConsumo) throw new Error(erroConsumo.message)
+
+    // Ocorrências 'previsto' de Condomínio do MESMO mês (casamento por mês).
+    const [a, m] = mesIso.split('-').map(Number)
+    const ultimo = new Date(Date.UTC(a, m, 0)).getUTCDate()
+    const fimIso = `${mesIso}-${String(ultimo).padStart(2, '0')}`
+    const { data: ocorrencias, error: erroOcorr } = await supabase
+      .from('planejamentos')
+      .select('id, estado, serie_id')
+      .eq('estado', 'previsto')
+      .eq('origem', 'recorrente')
+      .ilike('descricao', 'Condomínio%')
+      .gte('data_prevista', `${mesIso}-01`)
+      .lte('data_prevista', fimIso)
+    if (erroOcorr) throw new Error(erroOcorr.message)
+
+    const alvo = (ocorrencias ?? []).find((o) => o.serie_id) ?? (ocorrencias ?? [])[0]
+    if (!alvo) {
+      await atualizar()
+      return { ocorrenciaAjustada: false }
+    }
+
+    const { data: itensFixos, error: erroItens } = await supabase
+      .from('despesa_recorrente_item')
+      .select('cod, descricao, valor, categoria, vigencia_inicio, vigencia_termino')
+      .limit(5000)
+    if (erroItens) throw new Error(erroItens.message)
+
+    const gasValor = Number(gas?.valor) || 0
+    const aguaValor = Number(agua?.valor) || 0
+    const { total, detalhamento } = calcularTotalCondominio({
+      itens: itensFixos ?? [],
+      mes: mesIso,
+      gas: gasValor,
+      agua: aguaValor,
+    })
+
+    const { error: erroUpd } = await supabase
+      .from('planejamentos')
+      .update({ valor: total, observacao: montarObservacaoCondominioReal(detalhamento) })
+      .eq('id', alvo.id)
+    if (erroUpd) throw new Error(erroUpd.message)
+
+    await atualizar()
+    return { ocorrenciaAjustada: true }
+  }
+
   // Criar SÉRIE parcelada. As ocorrências nascem na lib pura
   // (planejamentoSerie → parcelas → semanaIso), então o hook só gera o
   // serie_id e insere o lote inteiro numa ÚNICA requisição. A semana NUNCA
@@ -782,5 +878,6 @@ export function usePlanejamentos({ ano, semana } = {}) {
     cancelarSerieAPartirDe,
     regenerarSerie,
     reconciliarComPonto,
+    salvarConsumoReal,
   }
 }
