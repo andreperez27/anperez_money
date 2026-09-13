@@ -47,6 +47,8 @@ const TABELAS = [
   'caixinha_movimentacoes',
   'caixinhas',
   'cartoes',
+  'condominio_boleto_itens',
+  'condominio_consumo_mensal',
   'compras',
   'contas',
   'despesa_recorrente_item',
