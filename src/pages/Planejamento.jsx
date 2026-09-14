@@ -363,6 +363,9 @@ export default function Planejamento() {
         saldoProjetadoCarregando={saldoProjetado.carregando}
         saldoProjetadoErro={saldoProjetado.erro}
         rotuloPeriodo={rotuloPeriodo}
+        inicioISO={periodoVisivel?.inicio}
+        fimISO={periodoVisivel?.fim}
+        saldoRealHoje={saldoProjetado.saldoInicial}
       />
       <Lancamentos
         itens={itensVisiveis}

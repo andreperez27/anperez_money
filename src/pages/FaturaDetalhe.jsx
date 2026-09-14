@@ -78,7 +78,7 @@ export default function FaturaDetalhe() {
   const [searchParams, setSearchParams] = useSearchParams()
   const mesConsulta = searchParams.get('mes')
 
-  const { cartoes } = useCartoes(null)
+  const { cartoes, excluirCompra } = useCartoes(null)
   const cartao = cartoes.find((c) => c.id === id) ?? null
 
   const {

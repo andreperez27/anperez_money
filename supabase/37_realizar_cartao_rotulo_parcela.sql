@@ -1,61 +1,28 @@
 -- ============================================================================
--- ETAPA 06/P3 (Planejamento) — MIGRATION 19: realizar_planejamento_cartao
+-- ETAPA 06/P3 — MIGRATION 37: rótulo da parcela "(n/total)" na descrição da
+-- compra gerada por realizar_planejamento_cartao
 -- ============================================================================
--- Efetivação de UMA previsão "previsto" em compra no CARTÃO DE CRÉDITO
--- (Planejado → Realizado no cartão). Complementa a migration 16
--- (realizar_planejamento), que só efetiva em CONTA (movimentacoes).
+-- Correção (14/09/2026): ao efetivar ("Lançar") uma PREVISÃO de SÉRIE
+-- parcelada com direcionamento Cartão, a compra criada no módulo Cartões
+-- nascia sempre com a descrição pura (ex.: "Seguro do carro - Mapfre") e
+-- n_parcelas=1 — o extrato mostrava "1/1" em vez do número real da parcela
+-- dentro da série (ex.: "4/10").
 --
--- POR QUE lançamento_tipo?
---   A migration 16 grava lancamento_id apontando para movimentacoes.id. No
---   caminho de cartão, a "efetivação" não gera movimentação — cria uma compra
---   (e sua parcela de fatura). Para que a UI saiba como interpretar
---   lancamento_id (movimentacao.id OU compras.id), adicionamos um
---   discriminador: lancamento_tipo in ('movimentacao', 'compra').
+-- DECISÃO (não integrar os sistemas de parcelamento): a compra continua
+-- avulsa (n_parcelas=1, como hoje); o parcelamento do Planejamento
+-- (serie_id/parcela_numero) NÃO é convertido no parcelamento do Cartões
+-- (criar_compra). A mudança é SÓ NO TEXTO da descrição: quando a previsão
+-- tiver serie_id + parcela_numero + total_parcelas preenchidos, a compra
+-- recebe " {descricao} ({n}/{total})",
+-- ex.: "Seguro do carro - Mapfre (4/10)". Avulsa comum (serie_id nulo)
+-- continua sem parênteses.
 --
--- POR QUE chamar a MESMA função criar_compra (migration 11) e não duplicar?
---   A criação da compra + parcela na fatura (mes_fatura via calcular_mes_fatura,
---   divisão via dividir_valor_em_parcelas, virada de ano) já é atômica e
---   testada dentro de criar_compra. Reutilizamos ela com n_parcelas=1 (à
---   vista): a previsão do planejamento vira UMA parcela na fatura do cartão.
---   Nenhuma lógica de fatura/parcela é re-implementada aqui.
---
--- REGRAS (mesmo espírito da 16):
---   • só 'previsto' realiza; 'realizado' nunca é re-executado (idempotência);
---     'cancelado' não volta à vida por este caminho;
---   • cartão é validado por propriedade (auth.uid()) e atividade — nada
---     confiado ao cliente (security definer + set search_path = public);
---   • FOR UPDATE na previsão bloqueia corrida (duas efetivações simultâneas
---     da mesma linha — só uma passa);
---   • p_valor_real opcional (padrão: valor previsto); p_data_compra padrão
---     current_date.
---
--- OBRIGAÇÕES MANUAIS (fora do código, ver DIARIO_DE_BORDO):
---   • Cadastrar Netflix/HBO/Vivo como previsões mensais avulsas (origem
---     'recorrente', valor fixo, SEM variável) e lancá-las em cartão por aqui.
+-- Não altera a tabela planejamentos nem a lógica de série; não reprocessa
+-- compras já lançadas (backfill manual à parte se desejado).
 -- ============================================================================
 
 
--- ----------------------------------------------------------------------------
--- 1. COLUNA: planejamentos.lancamento_tipo (discriminador do lancamento)
--- ----------------------------------------------------------------------------
--- Nullable: linhas ainda não realizadas não têm lançamento. Já realizadas
--- pelo caminho de conta (migration 16) são retro-preenchidas com
--- 'movimentacao' para manter coerência do histórico.
-alter table public.planejamentos
-    add column if not exists lancamento_tipo text
-    check (lancamento_tipo in ('movimentacao', 'compra'));
-
-update public.planejamentos
-   set lancamento_tipo = 'movimentacao'
- where estado = 'realizado'
-   and lancamento_id is not null
-   and lancamento_tipo is null;
-
-
--- ----------------------------------------------------------------------------
--- 2. RPC: realizar_planejamento_cartao
--- ----------------------------------------------------------------------------
-drop function if exists public.realizar_planejamento_cartao(uuid, uuid);
+drop function if exists public.realizar_planejamento_cartao(uuid, uuid, numeric, date);
 
 create or replace function public.realizar_planejamento_cartao(
     p_planejamento_id uuid,
@@ -73,6 +40,7 @@ declare
     v_descricao     text;
     v_valor         numeric(12, 2);
     v_tipo_op       text;
+    v_categoria     text;
     v_serie_id      uuid;
     v_parcela       integer;
     v_total_parcelas integer;
@@ -94,8 +62,8 @@ begin
 
     -- 3. Previsão a realizar (FOR UPDATE — lock determinístico contra uma
     --    segunda efetivação concorrente da mesma linha, como na migration 16).
-    select descricao, valor, tipo_op, serie_id, parcela_numero, total_parcelas
-      into v_descricao, v_valor, v_tipo_op, v_serie_id, v_parcela, v_total_parcelas
+    select descricao, valor, tipo_op, categoria, serie_id, parcela_numero, total_parcelas
+      into v_descricao, v_valor, v_tipo_op, v_categoria, v_serie_id, v_parcela, v_total_parcelas
       from public.planejamentos
      where id = p_planejamento_id
        and user_id = v_user
@@ -149,14 +117,17 @@ begin
     end if;
 
     -- 8. Criar a compra no cartão reutilizando a RPC atômica criar_compra
-    --    (migration 11) com n_parcelas=1 → à vista, UMA parcela na fatura.
-    --    Não duplicamos mes_fatura/divisão/virada de ano aqui.
+    --    (migration 11/33) com n_parcelas=1 → à vista, UMA parcela na fatura.
+    --    A descrição já carrega o rótulo "(n/total)" quando é parcela de
+    --    série (passo 3b); a categoria da previsão é repassada (p_categoria)
+    --    para a compra nascer já categorizada (migration 35).
     v_compra_id := public.criar_compra(
         p_cartao_id,
         v_data,
         v_descricao,
         v_valor,
-        1
+        1,
+        v_categoria
     );
 
     -- 9. Marcar a previsão como realizada no cartão. lancamento_tipo='compra'
@@ -184,9 +155,7 @@ grant execute on function public.realizar_planejamento_cartao(uuid, uuid, numeri
 
 -- ============================================================================
 -- RLS / TRIGGERS — NENHUMA ALTERAÇÃO NECESSÁRIA
---   • criar_compra (11) já insere em compras/parcelas como owner; a RLS de
---     compras/parcelas (10) não atrapalha a RPC security definer.
+--   • criar_compra (11/33) já insere em compras/parcelas como owner.
 --   • planejamentos tem RLS própria (08); a RPC acessa como dono.
---   • Nenhuma movimentação/ajuste de saldo aqui: compra não mexe no saldo
---     (T08 da 10) — só o pagamento da fatura (pagar_fatura) o faz.
+--   • Nenhuma movimentação/ajuste de saldo aqui (só o pagamento da fatura o faz).
 -- ============================================================================

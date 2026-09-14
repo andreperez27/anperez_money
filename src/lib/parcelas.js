@@ -207,8 +207,18 @@ export function gerarOcorrenciasDaSerie(dados) {
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
       ocorrencia.conta_destino_id = contaDestinoId
     }
-    if (destinoPadrao !== undefined) ocorrencia.destino_padrao = destinoPadrao
-    if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
+    // Invariante de direcionamento (correção 14/09/2026): destino_padrao
+    // 'cartao' SÓ é gravado junto do cartao_padrao_id — um previsto marcado
+    // "Cartão" sem o cartão do par viraria SAÍDA DIRETA na projeção
+    // (montarProjecao exige os dois para separar o previsto de cartão), como
+    // vazava a série do Seguro Mapfre. Sem o id, a parcela nasce sem
+    // direcionamento (saída comum), nunca no estado meio "cartão sem cartão".
+    const cartaoValido =
+      cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== ''
+    if (destinoPadrao !== undefined && (destinoPadrao !== 'cartao' || cartaoValido)) {
+      ocorrencia.destino_padrao = destinoPadrao
+    }
+    if (cartaoValido) {
       ocorrencia.cartao_padrao_id = cartaoPadraoId
     }
     if (observacao !== undefined && observacao !== null && observacao !== '') {
@@ -285,8 +295,14 @@ export function repetirValorEmOcorrencias(dados) {
     if (contaDestinoId !== undefined && contaDestinoId !== null && contaDestinoId !== '') {
       ocorrencia.conta_destino_id = contaDestinoId
     }
-    if (destinoPadrao !== undefined) ocorrencia.destino_padrao = destinoPadrao
-    if (cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== '') {
+    // Mesmo invariante da série parcelada (correção 14/09/2026): 'cartao' sem
+    // cartao_padrao_id NÃO é gravado (evita o previsto vazar como saída direta).
+    const cartaoValido =
+      cartaoPadraoId !== undefined && cartaoPadraoId !== null && cartaoPadraoId !== ''
+    if (destinoPadrao !== undefined && (destinoPadrao !== 'cartao' || cartaoValido)) {
+      ocorrencia.destino_padrao = destinoPadrao
+    }
+    if (cartaoValido) {
       ocorrencia.cartao_padrao_id = cartaoPadraoId
     }
     if (observacao !== undefined && observacao !== null && observacao !== '') {

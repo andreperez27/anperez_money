@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { estilosComuns, formatoReal } from '../../lib/compartilhados'
 import { agruparPorMes } from '../../lib/planejamentoAgregado'
 import { calcularResumoPlanejamentos } from '../../lib/planejamentoCalc'
+import CardRendaComprometida from './CardRendaComprometida'
 import { MES_ABREV } from './comum'
 
 // ============================================================================
@@ -37,6 +38,9 @@ export default function VisaoGeral({
   saldoProjetadoCarregando,
   saldoProjetadoErro,
   rotuloPeriodo,
+  inicioISO,
+  fimISO,
+  saldoRealHoje,
 }) {
 
   // Divisão por mês civil (só para Mês/Trimestre/Semestre). Lib pura, ordem
@@ -121,6 +125,15 @@ export default function VisaoGeral({
                 resultado do {rotuloPeriodo}: {formatoReal.format(totais.resultado)}
               </span>
             </div>
+            {/* Percentual de renda comprometida — mesmo array para somatório,
+                cenário fechado/atual/futuro decidido na lib pura (datas x hoje);
+                no período atual o saldo REAL de hoje é a base disponível. */}
+            <CardRendaComprometida
+              itens={itensParaSomatorio}
+              inicioISO={inicioISO}
+              fimISO={fimISO}
+              saldoRealHoje={saldoRealHoje}
+            />
           </div>
           <p style={{ ...estilosComuns.mensagem, margin: '-0.25rem 0 1.25rem', fontSize: '0.85rem' }}>
             {contagens.previsto} previsto(s) · {contagens.realizado} realizado(s) ·{' '}

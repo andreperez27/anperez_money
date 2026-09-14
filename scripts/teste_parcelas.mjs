@@ -481,6 +481,105 @@ teste('R6 — serie_data_termino propagado somente quando informado', () => {
 })
 
 // ---------------------------------------------------------------------------
+// TESTES DE DIRECIONAMENTO CARTÃO (correção 14/09/2026)
+// ---------------------------------------------------------------------------
+// Invariante de projeto: um previsto com destino_padrao='cartao' SÓ pode
+// existir com cartao_padrao_id preenchido — a projeção (montarProjecao)
+// depende da dupla para separar o cartão da saída direta. Nestes testes a
+// série marca "Cartão" como o formulário faz, com e sem escolher o cartão.
+
+teste('C1 — cartão COMPLETO: dupla destino+cartao propagada em TODAS as parcelas', () => {
+  const ocorrencias = gerarOcorrenciasDaSerie({
+    serieId: 's-cartao',
+    tipoOp: 'Saida',
+    descricao: 'Seguro do carro',
+    totalCentavos: 141150,
+    totalParcelas: 4,
+    dataPrimeiraParcela: '2026-06-02',
+    destinoPadrao: 'cartao',
+    cartaoPadraoId: 'bb0c8659-9088-4924-bdb6-1c6e9099f673',
+  })
+  assert.equal(ocorrencias.length, 4)
+  ocorrencias.forEach((o) => {
+    assert.equal(o.destino_padrao, 'cartao')
+    assert.equal(o.cartao_padrao_id, 'bb0c8659-9088-4924-bdb6-1c6e9099f673')
+  })
+})
+
+teste('C2 — "cartao" SEM cartao_padrao_id: direcionamento NÃO é gravado (bloqueia o vazamento)', () => {
+  const [o] = gerarOcorrenciasDaSerie({
+    serieId: 's-cartao-sem',
+    tipoOp: 'Saida',
+    descricao: 'Sem cartão escolhido',
+    totalCentavos: 10000,
+    totalParcelas: 1,
+    dataPrimeiraParcela: '2026-09-15',
+    destinoPadrao: 'cartao', // formulário marcou "Cartão" mas não escolheu o cartão
+  })
+  // Antes da correção isto gravava destino_padrao='cartao' sem o id → a
+  // parcela vazava como saída direta. Agora nasce sem direcionamento.
+  assert.equal('destino_padrao' in o, false)
+  assert.equal('cartao_padrao_id' in o, false)
+})
+
+teste('C3 — "conta" seguE gravando destino (com e sem conta do par)', () => {
+  const [comConta] = gerarOcorrenciasDaSerie({
+    serieId: 's-conta',
+    tipoOp: 'Saida',
+    descricao: 'Aluguel',
+    totalCentavos: 150000,
+    totalParcelas: 1,
+    dataPrimeiraParcela: '2026-09-05',
+    destinoPadrao: 'conta',
+    contaDestinoId: 'conta-uuid',
+  })
+  assert.equal(comConta.destino_padrao, 'conta')
+  assert.equal(comConta.conta_destino_id, 'conta-uuid')
+
+  const [semConta] = gerarOcorrenciasDaSerie({
+    serieId: 's-conta-sem',
+    tipoOp: 'Saida',
+    descricao: 'Sem conta específica',
+    totalCentavos: 10000,
+    totalParcelas: 1,
+    dataPrimeiraParcela: '2026-09-05',
+    destinoPadrao: 'conta',
+  })
+  // 'conta' sem id não gera vazamento (a projeção só separa 'cartao'); o
+  // comportamento histórico fica preservado.
+  assert.equal(semConta.destino_padrao, 'conta')
+})
+
+teste('C4 — RECORRENTE: cartão completo propagado; "cartao" sem id não grava destino', () => {
+  const [comCartao] = repetirValorEmOcorrencias({
+    serieId: 'rec-cartao',
+    tipoOp: 'Saida',
+    descricao: 'Netflix',
+    valorCentavos: 4490,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2027-01-05',
+    origem: 'recorrente',
+    destinoPadrao: 'cartao',
+    cartaoPadraoId: 'cartao-uuid',
+  })
+  assert.equal(comCartao.destino_padrao, 'cartao')
+  assert.equal(comCartao.cartao_padrao_id, 'cartao-uuid')
+
+  const [semCartao] = repetirValorEmOcorrencias({
+    serieId: 'rec-cartao-sem',
+    tipoOp: 'Saida',
+    descricao: 'Netflix',
+    valorCentavos: 4490,
+    totalParcelas: 2,
+    dataPrimeiraParcela: '2027-01-05',
+    origem: 'recorrente',
+    destinoPadrao: 'cartao',
+  })
+  assert.equal('destino_padrao' in semCartao, false)
+  assert.equal('cartao_padrao_id' in semCartao, false)
+})
+
+// ---------------------------------------------------------------------------
 
 console.log(`\n${ok} ok, ${falhou} falharam`)
 if (falhou > 0) process.exitCode = 1

@@ -164,6 +164,9 @@ declare
     v_valor         numeric(12, 2);
     v_tipo_op       text;
     v_categoria     text;
+    v_serie_id      uuid;
+    v_parcela       integer;
+    v_total_parcelas integer;
     v_cartao_conta  uuid;
     v_compra_id     uuid;
 begin
@@ -182,8 +185,8 @@ begin
 
     -- 3. Previsão a realizar (FOR UPDATE — lock determinístico contra uma
     --    segunda efetivação concorrente da mesma linha, como na migration 16).
-    select descricao, valor, tipo_op, categoria
-      into v_descricao, v_valor, v_tipo_op, v_categoria
+    select descricao, valor, tipo_op, categoria, serie_id, parcela_numero, total_parcelas
+      into v_descricao, v_valor, v_tipo_op, v_categoria, v_serie_id, v_parcela, v_total_parcelas
       from public.planejamentos
      where id = p_planejamento_id
        and user_id = v_user
@@ -191,6 +194,19 @@ begin
 
     if not found then
         raise exception 'Planejamento não encontrado ou não pertence ao usuário.';
+    end if;
+
+    -- 3b. Descrição da COMPRA: parcela de SÉRIE ganha o rótulo "(n/total)" no
+    --     extrato do cartão (decisão 14/09/2026). A compra continua avulsa
+    --     (n_parcelas=1): não há integração entre o parcelamento do
+    --     Planejamento (serie_id/parcela_numero) e o do Cartões (criar_compra)
+    --     — o rótulo é SÓ texto da descrição. Avulsa comum (serie_id nulo)
+    --     segue sem parênteses.
+    if v_serie_id is not null
+       and v_parcela is not null
+       and v_total_parcelas is not null then
+        v_descricao := v_descricao
+                       || ' (' || v_parcela::text || '/' || v_total_parcelas::text || ')';
     end if;
 
     -- 4. Só 'previsto' realiza (idempotente; 'cancelado' não reativa aqui).
