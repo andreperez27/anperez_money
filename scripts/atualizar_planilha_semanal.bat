@@ -14,10 +14,8 @@ if not exist "%PROJ%\backups\logs" mkdir "%PROJ%\backups\logs"
 echo [%date% %time%] Etapa 1: gerando JSON do Supabase... >> "%LOG%"
 cd /d "%PROJ%"
 "%NODE%" scripts\gerar_recebidos_planilha.mjs >> "%LOG%" 2>&1
-if errorlevel 1 (
-    echo [%date% %time%] ERRO na etapa 1 (Node). >> "%LOG%"
-    exit /b 1
-)
+if errorlevel 1 echo [%date% %time%] ERRO na etapa 1 - Node. >> "%LOG%"
+if errorlevel 1 exit /b 1
 
 echo [%date% %time%] Etapa 2: gravando na planilha... >> "%LOG%"
 "%PY%" scripts\sincronizar_planilha_supabase.py >> "%LOG%" 2>&1
