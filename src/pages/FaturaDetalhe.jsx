@@ -8,6 +8,8 @@ import EditarCompraForm from '../components/EditarCompraForm'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 import { vencimentoRealISO } from '../lib/diaUtil'
 import { useFeriados } from '../hooks/useFeriados'
+import { gerarPdfFatura } from '../lib/gerarPdfFatura'
+import { ordenarParcelasCronologicamente, textoParcela } from '../lib/faturaOrdenacao'
 
 const ROTULO_STATUS = {
   aberta: 'ABERTA',
@@ -268,9 +270,18 @@ export default function FaturaDetalhe() {
   const conta = cartao.contas
   const temPagamento = jaPago > 0
 
+  // Listas em ordem cronológica (mais antiga → mais recente), reaproveitando
+  // o mesmo critério do PDF (faturaOrdenacao.js).
+  const itensOrdenados = ordenarParcelasCronologicamente(itens)
+  const extratoOrdenado = ordenarParcelasCronologicamente(extrato)
+
   // Renderiza UMA linha da tabela (usada na fatura e no extrato).
   // Linha 1: grid com Data | Descrição | Parc. | Valor (estilo app antigo).
   //
+  // Descrição limpa: multi-parcela genuína não ganha "(i/n)" — a coluna
+  // Parc. já exibe a fração. Série de Planejamento (n=1) já vem com
+  // "(n/total)" no texto (migration 37) e é exibida como gravada.
+  // Parc. fica vazia quando total=1 (parcela única).
   // Na aba Fatura a lista é APENAS demonstrativa — nenhum botão Editar/
   // Excluir. Só na aba Extrato (em avaliação) as ações aparecem por linha,
   // alinhadas na ÚLTIMA coluna (final da linha, padrão de Contas) junto ao
@@ -294,7 +305,7 @@ export default function FaturaDetalhe() {
             {compra.descricao || 'Compra no cartão'}
           </span>
           <span className="fl-parc" style={estilos.celParcela}>
-            {parcela.numero}/{parcela.total}
+            {textoParcela(parcela)}
           </span>
           <span className="fl-valor" style={estilos.celValor}>{formatoReal.format(Number(parcela.valor))}</span>
           {comAcoes && (
@@ -475,7 +486,7 @@ export default function FaturaDetalhe() {
 
             {!itensCarregando && !itensErro && itens.length > 0 && (
               <ul style={estilos.listaTabela}>
-                {itens.map((p) => linhaFatura(p, { comAcoes: false }))}
+                {itensOrdenados.map((p) => linhaFatura(p, { comAcoes: false }))}
               </ul>
             )}
 
@@ -501,6 +512,26 @@ export default function FaturaDetalhe() {
               <strong style={estilos.totalValor}>{formatoReal.format(total)}</strong>
             </div>
           </section>
+
+          {/* Exportar PDF — mesmo padrão do comprovante do Condomínio (ação secundária da fatura) */}
+          {fatura && (
+            <div style={estilos.linhaPdf}>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    gerarPdfFatura({ cartao, fatura, itens, limiteDisponivel, feriados })
+                  } catch (e) {
+                    setMensagem({ tipo: 'erro', texto: e.message })
+                  }
+                }}
+                title="Exportar a fatura em PDF"
+                style={estilos.botaoPdf}
+              >
+                Exportar PDF
+              </button>
+            </div>
+          )}
 
           {/* Pagar fatura / Desfazer pagamento / estados */}
           <section style={estilosComuns.secao}>
@@ -624,7 +655,7 @@ export default function FaturaDetalhe() {
               )}
               {!extratoCarregando && !extratoErro && extrato.length > 0 && (
                 <ul style={estilos.listaTabela}>
-                  {extrato.map((p) => linhaFatura(p, { comAcoes: true, extraTexto: `Fatura ${p.mes_fatura}` }))}
+                  {extratoOrdenado.map((p) => linhaFatura(p, { comAcoes: true, extraTexto: `Fatura ${p.mes_fatura}` }))}
                 </ul>
               )}
             </div>
@@ -913,4 +944,15 @@ const estilos = {
     fontSize: '0.95rem',
   },
   filtroDatas: { display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.6rem', alignItems: 'center', marginBottom: '0.9rem' },
+  linhaPdf: { display: 'flex', justifyContent: 'flex-end', marginBottom: '1.2rem' },
+  botaoPdf: {
+    background: 'transparent',
+    border: 'none',
+    color: '#60a5fa',
+    cursor: 'pointer',
+    padding: '0.25rem 0.4rem',
+    fontSize: '0.85rem',
+    fontWeight: 'bold',
+    fontFamily: 'inherit',
+  },
 }
