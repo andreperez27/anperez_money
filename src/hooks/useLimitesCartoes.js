@@ -7,7 +7,8 @@ import { supabase } from '../lib/supabaseClient'
 // Reutiliza o cálculo no BANCO (RPC calcular_limite_disponivel) em vez de
 // duplicar "limite − fatura em aberto" no front — mesma fonte da tela de
 // Cartões (useFaturas). Devolve:
-//   cartoesAtivos: lista de cartões ativos (com .limite e .nome);
+//   cartoesAtivos: lista de cartões ativos (com .limite, .nome e o
+//     .dia_fechamento usado pela sugestão de cartão do Dashboard);
 //   limites: { [cartaoId]: limiteDisponivel } calculado no banco;
 //   total: soma do limite disponível de todos os cartões ativos.
 export function useLimitesCartoes() {
@@ -22,7 +23,7 @@ export function useLimitesCartoes() {
     async function carregar() {
       const { data: cartoes, error: errCartoes } = await supabase
         .from('cartoes')
-        .select('id, nome, limite')
+        .select('id, nome, limite, dia_fechamento')
         .eq('ativo', true)
         .order('nome')
       if (errCartoes) throw new Error(errCartoes.message)

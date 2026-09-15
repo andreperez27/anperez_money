@@ -7,6 +7,7 @@ import { useLimitesCartoes } from '../hooks/useLimitesCartoes'
 import { useResumoPonto } from '../hooks/useResumoPonto'
 import { useResumoPlanejamento } from '../hooks/useResumoPlanejamento'
 import { formatoReal } from '../lib/compartilhados'
+import { classificarCartoesParaHoje } from '../lib/cartoesCalc'
 import HomeCard, {
   IconeContas,
   IconeCartoes,
@@ -42,6 +43,20 @@ export default function Dashboard() {
   const resumoPonto = useResumoPonto()
   const resumoPlanejamento = useResumoPlanejamento()
 
+  // Recomendação de cartão para usar hoje (>= 2 cartões ativos): o que fecha
+  // mais tarde ganha, limite desempata (critério + regras em
+  // lib/cartoesCalc.js). Decide apenas a ORDEM do toggle — o recomendado é o
+  // primeiríssimo cartão do ciclo; nenhuma linha extra de texto é criada.
+  const hoje = new Date()
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+  const cartoesRankeados = classificarCartoesParaHoje(cartoesAtivos, limites, hojeIso)
+  // Todos os ativos entram no toggle; os sem dia_fechamento (não comparáveis)
+  // ficam por último, na ordem original da lista.
+  const cartoesOrdenados = [
+    ...cartoesRankeados,
+    ...cartoesAtivos.filter((c) => c.dia_fechamento == null),
+  ]
+
   const contasAtivas = contas.filter((c) => c.ativa)
   const patrimonio =
     contasAtivas.reduce((soma, c) => soma + Number(c.saldo_atual), 0)
@@ -49,22 +64,41 @@ export default function Dashboard() {
       .filter((c) => c.ativa)
       .reduce((soma, c) => soma + Number(c.saldo), 0)
 
-  // O ciclo do card de Contas: cada conta ativa (na ordem da lista) e, por
-  // fim, o patrimônio total. Indice final = contasAtivas.length.
-  const totalEtapas = contasAtivas.length + 1
+  // O ciclo do card de Contas: cada conta ativa e, por fim, o patrimônio
+  // total. Indice final = contasAtivas.length. Como o card ABRE mostrando
+  // uma conta (e não o total), a lista vem ordenada por saldo DECRESCENTE
+  // para a conta com maior saldo aparecer primeiro (mesmo princípio de o
+  // "toggle começar no mais favorável" usado no card de Cartões — aqui é só
+  // ordenação inicial de exibição, sem badge/recomendação). Empate mantém a
+  // ordem atual da lista.
+  const contasDoCiclo = [...contasAtivas].sort(
+    (a, b) =>
+      (Number(b.saldo_atual) || 0) -
+      (Number(a.saldo_atual) || 0)
+      || contasAtivas.indexOf(a) - contasAtivas.indexOf(b)
+  )
+  const totalEtapas = contasDoCiclo.length + 1
   const etapaContas = modoContas % totalEtapas
-  const contaDaEtapa = contasAtivas[etapaContas]
+  const contaDaEtapa = contasDoCiclo[etapaContas]
   const rotuloConta = contaDaEtapa ? `Saldo ${contaDaEtapa.nome}` : 'Patrimônio total'
   const valorConta = contaDaEtapa ? Number(contaDaEtapa.saldo_atual) : patrimonio
 
   // O ciclo do card de Cartões: total do limite disponível e, depois, o
-  // disponível de cada cartão (na ordem da lista). Indice final =
-  // cartoesAtivos.length (sem ativos → só o total).
-  const totalEtapasCartoes = cartoesAtivos.length + 1
-  const etapaCartoes = modoCartoes % totalEtapasCartoes
-  const cartaoDaEtapa = cartoesAtivos[etapaCartoes - 1]
+  // disponível de cada cartão. Com >= 2 cartões comparáveis a lista vem
+  // rankeada pelo critério de recomendação e o card ABRE no recomendado
+  // ("Melhor opção"), seguido dos demais e, por fim, o total. Com 0/1 cartão
+  // abre no total (nada a comparar). No rótulo, o próximo fechamento
+  // acompanha o limite DE QUALQUER cartão selecionado na hora.
+  const totalEtapasCartoes = cartoesOrdenados.length + 1
+  const recomendado = cartoesRankeados.length >= 2 ? cartoesRankeados[0] : null
+  const etapaInicial = recomendado ? 1 : 0
+  const etapaCartoes = (modoCartoes + etapaInicial) % totalEtapasCartoes
+  const cartaoDaEtapa = cartoesOrdenados[etapaCartoes - 1]
+  const ehRecomendado = recomendado != null && cartaoDaEtapa != null && recomendado.id === cartaoDaEtapa.id
   const rotuloCartao = cartaoDaEtapa
-    ? `Disponível ${cartaoDaEtapa.nome}`
+    ? cartaoDaEtapa.proximaDataFechamento
+      ? `Disponível ${cartaoDaEtapa.nome} · fecha ${cartaoDaEtapa.proximaDataFechamento.slice(8, 10)}/${cartaoDaEtapa.proximaDataFechamento.slice(5, 7)}`
+      : `Disponível ${cartaoDaEtapa.nome}`
     : 'Limite disponível total'
   const valorCartao = cartaoDaEtapa
     ? limites[cartaoDaEtapa.id] ?? (Number(cartaoDaEtapa.limite) || 0)
@@ -134,7 +168,12 @@ export default function Dashboard() {
           titulo="Cartões de Crédito"
           descricao={
             <div>
-              <span style={estilos.contaLabel}>{rotuloCartao}</span>
+              <div style={estilos.linhaRotuloCartao}>
+                <span style={estilos.contaLabel}>{rotuloCartao}</span>
+                {ehRecomendado && (
+                  <span style={estilos.badgeMelhorOpcao}>Melhor opção</span>
+                )}
+              </div>
               <span style={{
                 ...estilos.contaValor,
                 filter: valoresVisiveis ? 'none' : 'blur(5px)',
@@ -270,6 +309,24 @@ const estilos = {
     letterSpacing: '0.5px',
     textTransform: 'uppercase',
     marginBottom: '2px',
+  },
+  linhaRotuloCartao: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
+  badgeMelhorOpcao: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '8px',
+    fontWeight: 600,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    background: 'rgba(46, 158, 91, 0.16)',
+    color: '#2e9e5b',
+    borderRadius: '999px',
+    padding: '1px 6px',
+    whiteSpace: 'nowrap',
   },
   contaValor: {
     display: 'block',

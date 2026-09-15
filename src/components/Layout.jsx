@@ -132,6 +132,14 @@ export default function Layout() {
         {!carregando &&
           contas.map((conta) => {
             const ativa = conta.id === contaAtiva?.id
+            // Rótulo curto no botão só para liberar espaço no header.
+            // O nome completo da conta (ex.: "Nubank PF") fica no
+            // title/tooltip — acessibilidade e identificação preservadas.
+            const rotuloCurto = /PJ/i.test(conta.nome)
+              ? 'PJ'
+              : /PF/i.test(conta.nome)
+              ? 'PF'
+              : conta.nome
             return (
               <button
                 key={conta.id}
@@ -139,8 +147,9 @@ export default function Layout() {
                 style={ativa ? estilos.contaAtiva : estilos.conta}
                 className={ativa ? 'pill-conta pill-conta-ativa' : 'pill-conta'}
                 title={ativa ? 'Conta ativa' : `Usar ${conta.nome}`}
+                aria-label={ativa ? 'Conta ativa' : `Usar ${conta.nome}`}
               >
-                {conta.nome}
+                {rotuloCurto}
               </button>
             )
           })}
@@ -167,10 +176,6 @@ export default function Layout() {
         <NavLink to="/cartoes" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
           Cartões
         </NavLink>
-        <span style={estilos.separador} aria-hidden="true" />
-        <NavLink to="/configuracoes" className={({ isActive }) => (isActive ? 'nav-ativo' : '')} style={({ isActive }) => (isActive ? estilos.linkAtivo : estilos.link)}>
-          Configurações
-        </NavLink>
       </>
     )
   }
@@ -193,11 +198,30 @@ export default function Layout() {
                 <LinksMenu />
               </nav>
               <div style={estilos.usuario}>
-                <span style={estilos.email}>{usuario?.email}</span>
                 {!ehRelatorios && <AtalhoRelatorios />}
-                <button onClick={handleLogout} style={estilos.botaoSair}>
-                  Sair
+                <button
+                  onClick={() => setPerfilAberto((abierto) => !abierto)}
+                  style={estilos.botaoPerfil}
+                  aria-label="Conta do usuário"
+                  aria-expanded={perfilAberto}
+                >
+                  {(usuario?.email ?? '?').trim().charAt(0).toUpperCase()}
                 </button>
+                {perfilAberto && (
+                  <div style={{ ...estilos.dropdownPerfil, ...estilos.dropdownPerfilDesktop }}>
+                    <span style={estilos.emailDropdown}>{usuario?.email}</span>
+                    <NavLink
+                      to="/configuracoes"
+                      style={estilos.linkPerfil}
+                      onClick={() => setPerfilAberto(false)}
+                    >
+                      Configurações
+                    </NavLink>
+                    <button onClick={handleLogout} style={estilos.botaoSairPerfil}>
+                      Sair
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -440,7 +464,21 @@ const estilos = {
     fontWeight: 600,
     display: 'block',
   },
-  usuario: { display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 },
+  usuario: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+    minWidth: 0,
+    position: 'relative',
+  },
+  dropdownPerfilDesktop: {
+    position: 'absolute',
+    top: 'calc(100% + 0.5rem)',
+    right: 0,
+    zIndex: 40,
+    minWidth: '220px',
+    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+  },
   email: {
     color: '#9ca3af',
     fontSize: '0.85rem',
