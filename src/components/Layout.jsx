@@ -338,7 +338,7 @@ const estilos = {
     gap: '0.75rem',
     width: '100%',
   },
-  logo: { height: '30px', width: '30px', borderRadius: '6px', display: 'block', flexShrink: 0 },
+  logo: { height: '40px', width: '40px', borderRadius: '10px', display: 'block', flexShrink: 0, border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 1px 6px rgba(0,0,0,0.25)' },
   seletorConta: { display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' },
   seletorContaMobile: {
     display: 'flex',

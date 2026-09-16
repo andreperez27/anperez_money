@@ -116,10 +116,11 @@ const estilos = {
   },
   logo: {
     display: 'block',
-    width: '72px',
-    height: '72px',
+    width: '84px',
+    height: '84px',
     margin: '0 auto 1rem',
-    borderRadius: '16px',
+    borderRadius: '18px',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
   },
   titulo: {
     margin: 0,
