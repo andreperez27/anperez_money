@@ -83,6 +83,32 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
 
   const temLinhas = Array.isArray(linhas) && linhas.length > 0
 
+  // Só o Patrimônio em granularidade diária chega a 31 barras; 2 e 5 barras
+  // (Recebido & horas, Acordo) devem continuar esticando. Ativa o scroll só
+  // quando realmente precisa.
+  const qtdBarras = temGraficoSimples
+    ? grafico.rotulos.length
+    : temGraficoBuckets
+      ? grafico.rotulos.length
+      : 0
+  const precisaScroll = qtdBarras > 12
+
+  const estiloCardGrafico = precisaScroll
+    ? { ...estilos.cardGrafico, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }
+    : estilos.cardGrafico
+  const estiloBarras = precisaScroll
+    ? { ...estilos.barras, minWidth: 'max-content', gap: '4px', paddingBottom: '2px' }
+    : estilos.barras
+  const estiloEixo = precisaScroll
+    ? { ...estilos.eixo, minWidth: 'max-content', gap: '4px' }
+    : estilos.eixo
+  const estiloColunaScroll = precisaScroll
+    ? { ...estilos.coluna, flex: '1 0 14px', minWidth: '14px', maxWidth: '28px' }
+    : estilos.coluna
+  const estiloRotuloScroll = precisaScroll
+    ? { ...estilos.rotuloBarra, flex: '1 0 28px', minWidth: '28px' }
+    : estilos.rotuloBarra
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       {/* Resumo — grade de cards de número */}
@@ -106,8 +132,8 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
       {/* Gráfico — barras proporcionais (simples OU buckets com colunas lado a lado) */}
       <section aria-label="Gráfico">
         {temGrafico ? (
-          <div style={estilos.cardGrafico}>
-            <div style={estilos.barras}>
+          <div style={estiloCardGrafico}>
+            <div style={estiloBarras}>
               {temGraficoBuckets
                 ? grafico.buckets.map((bucket, i) => (
                     <div key={i} style={estilos.bucket}>
@@ -156,7 +182,7 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
                     const alturaExtras = extras > 0 ? Math.min(Math.round((extras / maxValor) * 100), alturaTotal) : 0
                     const alturaAzul = alturaTotal - alturaExtras
                     return (
-                      <div key={i} style={estilos.coluna}>
+                      <div key={i} style={estiloColunaScroll}>
                         {alturaAzul > 0 && <div style={{ ...estilos.barra, height: `${alturaAzul}%` }} />}
                         {alturaExtras > 0 && (
                           <div
@@ -171,9 +197,9 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
                     )
                   })}
             </div>
-            <div style={estilos.eixo}>
+            <div style={estiloEixo}>
               {grafico.rotulos.map((rotulo, i) => (
-                <span key={i} style={estilos.rotuloBarra}>
+                <span key={i} style={estiloRotuloScroll}>
                   {rotulo}
                 </span>
               ))}

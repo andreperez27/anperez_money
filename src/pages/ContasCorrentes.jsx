@@ -9,6 +9,7 @@ import { useResumoMes } from '../hooks/useResumoMes'
 import ModalFormulario from '../components/ModalFormulario'
 import SeletorCategoria from '../components/SeletorCategoria'
 import { estilosComuns, formatoReal, hoje } from '../lib/compartilhados'
+import { calcularPatrimonioAtual } from '../lib/patrimonioCalc'
 
 // "Contas Correntes" — referência de design da tela "Gestão de Contas
 // Correntes" do app antigo: resumo do mês (Entradas/Saídas/Patrimônio),
@@ -36,13 +37,8 @@ export default function ContasCorrentes() {
     atualizar: atualizarCaixinhas,
   } = useTodasCaixinhas()
 
-  // Patrimônio = soma dos saldos das contas ativas + caixinhas ativas.
-  const patrimonio = contas
-    .filter((c) => c.ativa)
-    .reduce((soma, c) => soma + Number(c.saldo_atual), 0)
-    + todasCaixinhas
-      .filter((c) => c.ativa)
-      .reduce((soma, c) => soma + Number(c.saldo), 0)
+  // Patrimônio — ponto único de cálculo (mesma definição do relatório).
+  const patrimonio = calcularPatrimonioAtual(contas, todasCaixinhas)
 
   // Formulário de lançamento
   const [mostrandoLancamento, setMostrandoLancamento] = useState(false)

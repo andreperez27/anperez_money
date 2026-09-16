@@ -13,6 +13,7 @@ import ListaAnosAcordo from '../components/relatorios/ListaAnosAcordo'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
 import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
 import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
+import { useRelatorioPatrimonio } from '../hooks/useRelatorioPatrimonio'
 import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
 import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
 import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
@@ -113,12 +114,14 @@ export default function Relatorios() {
 
   const faixaInvertida = Boolean(dataInicio && dataFim && dataInicio > dataFim)
 
-  // Aba "Recebido & horas", "Acordo trabalhista" e "Entradas x despesas": dados
-  // reais do período. As demais abas continuam sem dados (template em "Em
-  // construção"). Os hooks já devolvem as props no formato do RelatorioTemplate.
+  // Aba "Recebido & horas", "Acordo trabalhista", "Entradas x despesas" e
+  // "Patrimônio": dados reais do período. As demais abas continuam sem dados
+  // (template em "Em construção"). Os hooks já devolvem as props no formato do
+  // RelatorioTemplate.
   const recebidoHoras = useRelatorioRecebidoHoras(periodo ?? undefined)
   const acordo = useRelatorioAcordo()
   const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
+  const patrimonio = useRelatorioPatrimonio(periodo ?? undefined)
 
   return (
     <div style={estilosComuns.conteudo}>
@@ -213,6 +216,18 @@ export default function Relatorios() {
             cards={entradasDespesas.cards}
             grafico={entradasDespesas.grafico}
             linhas={entradasDespesas.linhas}
+          />
+        )
+      ) : aba === 'patrimonio' ? (
+        patrimonio.erro ? (
+          <p style={estilos.erro}>{patrimonio.erro}</p>
+        ) : patrimonio.carregando ? (
+          <p style={estilosComuns.mensagem}>Carregando patrimônio...</p>
+        ) : (
+          <RelatorioTemplate
+            cards={patrimonio.cards}
+            grafico={patrimonio.grafico}
+            linhas={patrimonio.linhas}
           />
         )
       ) : aba === 'por-categoria' ? (

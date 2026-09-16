@@ -7,6 +7,7 @@ import { useLimitesCartoes } from '../hooks/useLimitesCartoes'
 import { useResumoPonto } from '../hooks/useResumoPonto'
 import { useResumoPlanejamento } from '../hooks/useResumoPlanejamento'
 import { formatoReal } from '../lib/compartilhados'
+import { calcularPatrimonioAtual } from '../lib/patrimonioCalc'
 import { classificarCartoesParaHoje } from '../lib/cartoesCalc'
 import HomeCard, {
   IconeContas,
@@ -64,11 +65,7 @@ export default function Dashboard() {
   ]
 
   const contasAtivas = contas.filter((c) => c.ativa)
-  const patrimonio =
-    contasAtivas.reduce((soma, c) => soma + Number(c.saldo_atual), 0)
-    + todasCaixinhas
-      .filter((c) => c.ativa)
-      .reduce((soma, c) => soma + Number(c.saldo), 0)
+  const patrimonio = calcularPatrimonioAtual(contas, todasCaixinhas)
 
   // O ciclo do card de Contas: cada conta ativa e, por fim, o patrimônio
   // total. Indice final = contasAtivas.length. Como o card ABRE mostrando
