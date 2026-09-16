@@ -80,15 +80,24 @@ export function calcularSaldoProjetado(saldoInicial, itens = [], { inicioISO, fi
 // Padaria, Enel, pagamento de fatura), mas a série só devolvia à projeção o
 // que existia no planejamento — as avulsas reais (sem item) ficavam "apagadas".
 //
-// Nova regra: a projeção para HOJE/FUTURO parte do saldo REAL de hoje e soma
-// apenas os itens com data_prevista ESTRITAMENTE depois de hoje (o que já
-// aconteceu já está embutido no saldo real atual; reanimar a véspera duplicava).
+// Regra vigente (16/09/2026 — inclui previstos atrasados pendentes):
+// a projeção para HOJE/FUTURO parte do saldo REAL de hoje e soma
+//   • os itens com data_prevista ESTRITAMENTE depois de hoje (futuro), mais
+//   • os itens com data_prevista <= hoje que ainda estejam pendentes
+//     (estado === 'previsto', não realizado e não cancelado). Esses previstos
+//     vencidos ou vencendo hoje não estão no saldo real (não houve movimentação)
+//     e precisam entrar na projeção; já os realizados com data até hoje já
+//     estão embutidos no saldo real e não podem entrar de novo (duplicaria).
 // Períodos passados continuam reconstruídos por calcularSaldoReal (um
 // lançamento de hoje não retroage no número de ontem).
 export function projetarSerie({ saldoAtual, itens = [], inicioISO, fimISO } = {}) {
-  // Só o que ainda VAI acontecer (data_prevista > inicioISO). O restante do
-  // filtro (cancelado, intervalo fim) e o acumulado ficam na lib base.
-  const futuros = (itens || []).filter((i) => compararISO(i.data_prevista, inicioISO || '') > 0)
+  const futuros = (itens || []).filter((i) => {
+    const cmp = compararISO(i.data_prevista, inicioISO || '')
+    if (cmp > 0) return true
+    // Inclui previstos atrasados/hoje ainda pendentes (não realizados)
+    if (cmp <= 0 && i.estado === 'previsto') return true
+    return false
+  })
   return calcularSaldoProjetado(saldoAtual, futuros, { inicioISO: '', fimISO })
 }
 

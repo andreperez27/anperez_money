@@ -225,12 +225,12 @@ verificar('T8 — meio da semana: projeção parte do saldo REAL de hoje (sem in
   // planejamento — resultado: projetado 2.236,01 (inflado em 1.196,84).
   const saldoAtual = 1039.17
   const itensSomatorio = [
-    item('r9', '2026-09-09', 2050, 'Entrada'), // Pagamento Semanal — ja realizado, no saldo real
-    item('r10', '2026-09-10', 1463.59, 'Saida'), // Condomínio — ja realizado, no saldo real
+    item('r9', '2026-09-09', 2050, 'Entrada', { estado: 'realizado' }), // Pagamento Semanal — ja realizado, no saldo real
+    item('r10', '2026-09-10', 1463.59, 'Saida', { estado: 'realizado' }), // Condomínio — ja realizado, no saldo real
     item('p16', '2026-09-16', 2175, 'Entrada'), // Pagamento Semanal previsto
     item('p20a', '2026-09-20', 900, 'Saida'), // previsto
     item('p20b', '2026-09-20', 86.05, 'Saida'), // previsto
-    item('p9', '2026-09-09', 999, 'Entrada'), // da véspera — reapareceria se reanimássemos; fora do futuro
+    item('p9', '2026-09-09', 999, 'Entrada', { estado: 'realizado' }), // da véspera — reapareceria se reanimássemos; fora do futuro
   ]
   const r = projetarSerie({
     saldoAtual,
@@ -262,7 +262,7 @@ verificar('T9 — meio da semana: realizado da própria semana NÃO conta de nov
   const saldoAtual = 1039.17
   const r = projetarSerie({
     saldoAtual,
-    itens: [item('r9', '2026-09-09', 2050, 'Entrada')], // realizado antes de hoje
+    itens: [item('r9', '2026-09-09', 2050, 'Entrada', { estado: 'realizado' })], // realizado antes de hoje
     inicioISO: '2026-09-11',
     fimISO: '2026-09-20',
   })
@@ -307,6 +307,42 @@ verificar('T11 — encadeamento em cadeia: saldo fim S_{n+1} = saldo fim S_n + r
   assert.ok(Math.abs(fimS38 - 2228.12) < 0.001)
   assert.ok(Math.abs(fimS39 - (fimS38 + 2050)) < 0.001)
   assert.ok(Math.abs(fimS39 - 4278.12) < 0.001)
+})
+
+verificar('T12 — 16/09/2026: previsto atrasado pendente entra no saldo projetado (bug relatado)', () => {
+  // Sintoma 16/09 semana 38 PJ: saldo projetado -875,49 vs resultado 1388,95.
+  // Causa: previstos com data <= hoje (ex.: 15/09) ainda pendentes eram
+  // ignorados. Devem entrar.
+  const saldoAtual = 1000
+  const itens = [
+    item('atrasado', '2026-09-15', 500, 'Saida'), // previsto vencido ontem, pendente
+    item('hoje', '2026-09-16', 200, 'Saida'), // previsto vencendo hoje, pendente
+    item('futuro', '2026-09-20', 300, 'Saida'), // previsto futuro
+  ]
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-16', fimISO: '2026-09-20' })
+  // Todos os três devem entrar: atrasado (15) + hoje (16) + futuro (20)
+  assert.deepEqual(r.serie.map((m) => m.data), ['2026-09-15', '2026-09-16', '2026-09-20'])
+  const fim = saldoAteData(r.serie, '2026-09-20', saldoAtual)
+  assert.equal(fim, 0) // 1000 -500 -200 -300
+})
+
+verificar('T13 — realizado com data passada não entra (senão duplica saldo real)', () => {
+  const saldoAtual = 1000
+  const itens = [
+    item('realizado_passado', '2026-09-10', 500, 'Saida', { estado: 'realizado' }),
+    item('futuro', '2026-09-20', 100, 'Saida'),
+  ]
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-16', fimISO: '2026-09-20' })
+  assert.deepEqual(r.serie.map((m) => m.data), ['2026-09-20'])
+  assert.equal(saldoAteData(r.serie, '2026-09-20', saldoAtual), 900)
+})
+
+verificar('T14 — previsto futuro continua entrando normalmente', () => {
+  const saldoAtual = 500
+  const itens = [item('futuro', '2026-09-20', 150, 'Saida')]
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-16', fimISO: '2026-09-20' })
+  assert.deepEqual(r.serie.map((m) => m.data), ['2026-09-20'])
+  assert.equal(saldoAteData(r.serie, '2026-09-20', saldoAtual), 350)
 })
 
 console.log(`\n${ok} passaram, ${falhou} falharam.`)
