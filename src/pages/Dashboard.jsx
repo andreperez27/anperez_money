@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMuyEstrecho } from '../hooks/useMediaQuery'
 import { useContaAtiva } from '../context/ContaAtivaContext'
@@ -42,6 +42,12 @@ export default function Dashboard() {
   const { cartoesAtivos, limites, total: totalDisponivel } = useLimitesCartoes()
   const resumoPonto = useResumoPonto()
   const resumoPlanejamento = useResumoPlanejamento()
+
+  // Ciclo do card Ponto Inteligente: até três visões reaproveitando o mesmo
+  // mecanismo de Contas/Cartões (useState + % totalEtapas + aoClicarValor).
+  // Visões derivadas de pontoCalc.visoesPontoHome (mesma fonte do fechamento):
+  //  - cumprida → restante → extras, com regras de ciclo no useMemo abaixo.
+  const [modoPonto, setModoPonto] = useState(0)
 
   // Recomendação de cartão para usar hoje (>= 2 cartões ativos): o que fecha
   // mais tarde ganha, limite desempata (critério + regras em
@@ -103,6 +109,41 @@ export default function Dashboard() {
   const valorCartao = cartaoDaEtapa
     ? limites[cartaoDaEtapa.id] ?? (Number(cartaoDaEtapa.limite) || 0)
     : totalDisponivel
+
+  // Visões do card Ponto — ciclo com regras independentes reaproveitando o
+  // mesmo padrão de Contas/Cartões (semanaFechada e extras>0).
+  const visoesPonto = useMemo(() => {
+    const v = resumoPonto.visoes
+    if (!v) return []
+    const lista = []
+    lista.push({
+      id: 'cumprida',
+      rotulo: 'Carga cumprida',
+      valor: `${Math.round(v.cumprida * 100) / 100}h`,
+      detalhe: `de ${Math.round(v.cargaTotal * 100) / 100}h`,
+    })
+    if (!v.semanaFechada) {
+      lista.push({
+        id: 'restante',
+        rotulo: 'Carga restante',
+        valor: `${Math.round(v.restante * 100) / 100}h`,
+        detalhe: `de ${Math.round(v.cargaTotal * 100) / 100}h`,
+      })
+    }
+    if (v.extras > 0) {
+      lista.push({
+        id: 'extras',
+        rotulo: 'Horas extras',
+        valor: `${Math.round(v.extras * 100) / 100}h`,
+        detalhe: 'no período',
+      })
+    }
+    return lista
+  }, [resumoPonto.visoes])
+
+  const totalEtapasPonto = visoesPonto.length
+  const etapaPonto = totalEtapasPonto > 0 ? modoPonto % totalEtapasPonto : 0
+  const visaoPonto = visoesPonto[etapaPonto] || null
 
   return (
     <div style={estilos.root}>
@@ -190,19 +231,36 @@ export default function Dashboard() {
           icone={<IconePonto />}
           titulo="Ponto Inteligente"
           descricao={
-            <div>
-              <span style={estilos.contaLabel}>Saldo de horas da semana</span>
-              <span style={{
-                ...estilos.contaValorPonto,
-                filter: valoresVisiveis ? 'none' : 'blur(5px)',
-                opacity: valoresVisiveis ? 1 : 0.5,
-              }}>
-                {resumoPonto.saldoHoras >= 0 ? '+' : ''}
-                {Math.round(resumoPonto.saldoHoras * 100) / 100}h
-              </span>
-            </div>
+            visaoPonto ? (
+              <div>
+                <span style={estilos.contaLabel}>{visaoPonto.rotulo}</span>
+                <span style={{
+                  ...estilos.contaValorPonto,
+                  filter: valoresVisiveis ? 'none' : 'blur(5px)',
+                  opacity: valoresVisiveis ? 1 : 0.5,
+                }}>
+                  {visaoPonto.valor}
+                </span>
+                {visaoPonto.detalhe && (
+                  <span style={{ ...estilos.contaLabel, marginTop: '2px' }}>{visaoPonto.detalhe}</span>
+                )}
+              </div>
+            ) : (
+              <div>
+                <span style={estilos.contaLabel}>Saldo de horas da semana</span>
+                <span style={{
+                  ...estilos.contaValorPonto,
+                  filter: valoresVisiveis ? 'none' : 'blur(5px)',
+                  opacity: valoresVisiveis ? 1 : 0.5,
+                }}>
+                  {resumoPonto.saldoHoras >= 0 ? '+' : ''}
+                  {Math.round(resumoPonto.saldoHoras * 100) / 100}h
+                </span>
+              </div>
+            )
           }
           aoClicar={() => navigate('/ponto')}
+          aoClicarValor={totalEtapasPonto > 1 ? () => setModoPonto((m) => m + 1) : undefined}
         />
         <HomeCard
           icone={<IconeRelatorios />}

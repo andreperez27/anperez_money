@@ -372,6 +372,93 @@ export function previstoAReceberDaSemana({ fixoSemana = 0, resumo = {}, feriados
 }
 
 // ---------------------------------------------------------------------------
+// Home — três visões do card Ponto (reaproveita fechamento e resumo semanal)
+// ---------------------------------------------------------------------------
+// Semana fechada quando já passou do domingo (fim < hoje) — mesmo conceito
+// usado em reconciliação (valor real já pode substituir o previsto).
+export function semanaFechadaParaHome(fimISO, hojeISO) {
+  return String(fimISO) < String(hojeISO)
+}
+
+// Se o dia de hoje já cumpriu o horário padrão, conta como carga cumprida.
+// Dia sem carga (domingo, feriado, férias) é sempre "cumprido" (nada a fazer).
+// Dia útil com carga só conta quando o turno já encerrou (saída do dia, no
+// dia seguinte quando cruza a meia-noite).
+function diaJaCumprido(dataISO, agora, feriados = [], ferias = []) {
+  // Feriado, férias ou domingo → base 0, já considerado cumprido
+  if (classificarDia(dataISO, feriados) !== 'he') return true
+  if (ferias.some((f) => f.data_inicio <= dataISO && dataISO <= f.data_fim)) return true
+  const turno = turnoPadrao(dataISO)
+  if (!turno) return true
+  // Saída pode ser no dia seguinte quando cruza a meia-noite
+  const [ano, mes, dia] = dataISO.split('-').map(Number)
+  const eMin = horaEmMinutos(turno.entrada)
+  const sMin = horaEmMinutos(turno.saida)
+  const cruza = sMin <= eMin
+  // Data do fim do turno
+  let fimTs = Date.UTC(ano, mes - 1, dia)
+  if (cruza) fimTs += MS_DIA
+  fimTs += sMin * 60 * 1000
+  return agora.getTime() >= fimTs
+}
+
+// Carga cumprida parcial até hoje (inclusive hoje só se já cumpriu).
+// Reaproveita diasDoPeriodo, baseDoDia, classificarDia sem duplicar regra.
+function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], agora = new Date() } = {}) {
+  if (String(hojeISO) < String(inicioISO)) return 0
+  let dias
+  try {
+    dias = diasDoPeriodo(inicioISO, hojeISO)
+  } catch {
+    return 0
+  }
+  let cumpridaBase = 0
+  for (const d of dias) {
+    // Dias antes de hoje sempre contam (se tiverem carga)
+    if (d < hojeISO) {
+      if (classificarDia(d, feriados) === 'he' && !ferias.some((f) => f.data_inicio <= d && d <= f.data_fim)) {
+        cumpridaBase += baseDoDia(d)
+      }
+      continue
+    }
+    // d === hojeISO — só conta se já cumpriu
+    if (d === hojeISO && diaJaCumprido(d, agora, feriados, ferias)) {
+      if (classificarDia(d, feriados) === 'he' && !ferias.some((f) => f.data_inicio <= d && d <= f.data_fim)) {
+        cumpridaBase += baseDoDia(d)
+      }
+    }
+  }
+  return Math.round(cumpridaBase * 100) / 100
+}
+
+// Para uso na Home: devolve as três visões já com regra de feriado/férias
+// e sem duplicar lógica de he/domfer (usa fecharPeriodo).
+export function visoesPontoHome({ excecoes = [], inicioISO, fimISO, hojeISO, feriados = [], ferias = [], agora = new Date() } = {}) {
+  const totalEsperada = cargaEsperadaHoras(inicioISO, fimISO, feriados, ferias)
+  const resumoTotal = fecharPeriodo(excecoes, { inicioISO, fimISO }, ferias)
+  const fechada = semanaFechadaParaHome(fimISO, hojeISO)
+  // Para semana fechada, tudo já era para ter sido cumprido
+  const limiteAteHoje = fechada ? fimISO : hojeISO
+  // Se a semana ainda não começou, nada cumprido
+  const baseCumprida = String(hojeISO) < String(inicioISO)
+    ? 0
+    : fechada
+      ? totalEsperada
+      : cargaCumpridaParcial({ inicioISO, hojeISO: limiteAteHoje, feriados, ferias, agora })
+  const resumoAteHoje = fecharPeriodo(
+    excecoes.filter((e) => String(e.data) <= String(limiteAteHoje)),
+    { inicioISO, fimISO: limiteAteHoje },
+    ferias,
+  )
+  const heAteHoje = resumoAteHoje.he
+  const domferAteHoje = resumoAteHoje.horasDomfer
+  const cumprida = Math.round((baseCumprida + heAteHoje + domferAteHoje) * 100) / 100
+  const restante = Math.round((totalEsperada - baseCumprida) * 100) / 100
+  const extras = resumoTotal.he
+  return { cargaTotal: totalEsperada, cumprida, restante: Math.max(0, restante), extras, semanaFechada: fechada, resumoTotal, resumoAteHoje }
+}
+
+// ---------------------------------------------------------------------------
 // Fechamento (resumo) de um período — espelha o relatório do app antigo,
 // que SUMÁRIAVA as linhas da tabela registros. Aqui a matéria-prima são as
 // exceções da tabela ponto_excecoes (o resto do período é carga cumprida) e
