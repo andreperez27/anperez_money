@@ -261,6 +261,8 @@ const estilos = {
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
+    flexWrap: 'nowrap',
+    minWidth: 0,
   },
   brandMark: {
     width: '44px',
@@ -276,6 +278,7 @@ const estilos = {
     fontWeight: 700,
     color: '#f2f0ea',
     letterSpacing: '0.2px',
+    whiteSpace: 'nowrap',
   },
   brandSub: {
     fontFamily: "'JetBrains Mono', monospace",
@@ -285,6 +288,7 @@ const estilos = {
     letterSpacing: '1.5px',
     textTransform: 'uppercase',
     marginTop: '1px',
+    whiteSpace: 'nowrap',
   },
   eyeIcon: {
     position: 'absolute',
