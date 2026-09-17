@@ -66,7 +66,9 @@ caso('TESTE 2 — período ATUAL com saldo real: realizada do período NÃO soma
       item('Entrada', 6000, { estado: 'realizado', data: '2026-09-05' }),
       // Entrada ainda NÃO realizada, com data entre hoje e o fim: soma.
       item('Entrada', 4000, { data: '2026-09-20' }),
-      // Entrada prevista com data NO PASSADO (não realizada): não soma.
+      // Entrada prevista com data NO PASSADO mas ainda pendente (atrasada):
+      // agora SOMA, pois ainda é renda esperada para o período e não está no
+      // saldo (só realizado entra no saldo).
       item('Entrada', 3000, { data: '2026-09-02' }),
       // Despesas: só comprometidas (recorrente/fatura/série), avulsa fora.
       item('Saida', 2000, { estado: 'realizado', origem: 'manual', data: '2026-09-03' }),
@@ -77,11 +79,11 @@ caso('TESTE 2 — período ATUAL com saldo real: realizada do período NÃO soma
     ],
   })
   assert.strictEqual(res.modo, 'atual')
-  // 2500 (saldo real) + 4000 (prevista futura) = 6500; a realizada de 6000 fica
-  // de fora. Se somasse de novo, a base seria 12500 — o assert pega o erro.
-  assert.strictEqual(res.rendaBase, 6500)
+  // 2500 (saldo real) + 4000 (prevista futura) + 3000 (atrasada pendente) = 9500;
+  // a realizada de 6000 fica de fora.
+  assert.strictEqual(res.rendaBase, 9500)
   assert.strictEqual(res.comprometidoBase, 3500)
-  assert.strictEqual(res.percentual, 54) // 3500/6500 = 53,85 → 54
+  assert.strictEqual(res.percentual, 37) // 3500/9500 = 36,84 → 37
 })
 
 caso('TESTE 3 — renda ZERO: percentual null (sem divisão por zero)', () => {

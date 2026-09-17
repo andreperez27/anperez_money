@@ -95,10 +95,11 @@ export function calcularRendaComprometida({
       } else if (modo === 'futuro') {
         // Período inteiro previsto: todas as entradas não-canceladas formam a base.
         rendaBase += valor
-      } else if (item.estado === 'previsto' && item.data_prevista >= hoje && item.data_prevista <= fim) {
-        // atual: só entradas AINDA NÃO realizadas daqui pra frente — as
-        // realizadas (e as avulsas passadas) já estão dentro do saldo real de
-        // hoje; somá-las de novo duplicaria o valor.
+      } else if (item.estado === 'previsto' && item.data_prevista >= inicio && item.data_prevista <= fim) {
+        // atual: todas as entradas ainda NÃO realizadas no período — as
+        // realizadas já estão dentro do saldo real de hoje; somá-las de novo
+        // duplicaria. Inclui também as atrasadas (com data < hoje) que ainda
+        // estão pendentes, pois ainda são renda esperada para o período.
         rendaBase += valor
       }
       continue
