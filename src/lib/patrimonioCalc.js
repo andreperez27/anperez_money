@@ -30,11 +30,52 @@ import { calcularSaldoReal } from './saldoProjetado.js'
 import { somarEfeito } from './extratoCalc.js'
 import { semanaIso } from './semana.js'
 
-// Soma dos saldos das caixinhas ativas — assumida constante (limitação acima).
+// Soma dos saldos das caixinhas ativas — assumida constante apenas quando
+// não há histórico disponível. Quando há `caixinhaMovs` (histórico por data),
+// o saldo é reconstruído por replay, igual às contas.
 function somarCaixinhasConstante(caixinhas = []) {
   return (caixinhas || [])
-    .filter((c) => c && c.ativa !== false) // ativa ausente = considerar ativa (compat. legada)
+    .filter((c) => c && c.ativa !== false)
     .reduce((s, c) => s + Number(c.saldo || 0), 0)
+}
+
+function saldoCaixinhaEmData(caixinha, movimentos = [], dataAlvo) {
+  // Se não há histórico, assume constante (limitação antiga)
+  if (!movimentos || movimentos.length === 0) {
+    if (caixinha.criado_em && String(caixinha.criado_em).slice(0, 10) > String(dataAlvo)) return 0
+    return Number(caixinha.saldo || 0)
+  }
+  // Com histórico, verifica se a caixinha já existia na dataAlvo:
+  // existe se há algum movimento com data <= dataAlvo, ou se dataAlvo >= criado_em
+  const temMovAteData = movimentos.some((m) => String(m.data) <= String(dataAlvo))
+  const existePorCriacao = !caixinha.criado_em || String(caixinha.criado_em).slice(0, 10) <= String(dataAlvo)
+  if (!temMovAteData && !existePorCriacao) {
+    // Nenhum movimento até a data e ainda não criada → não existia
+    // Para o caso de migração (criado_em 2026-08-20 mas movimentos desde fev),
+    // temMovAteData será true para 2024? Não, 2024 < fev/2026, então false, e
+    // existePorCriacao false para 2024, então retorna 0 — correto para 2024.
+    return 0
+  }
+  // Replay a partir do saldo atual, revertendo movimentos com data > dataAlvo
+  let saldo = Number(caixinha.saldo || 0)
+  for (const m of movimentos) {
+    if (String(m.data) > String(dataAlvo)) {
+      const delta = Number(m.valor)
+      if (m.tipo === 'guardar' || m.tipo === 'rendimento') saldo -= delta
+      else if (m.tipo === 'resgatar' || m.tipo === 'taxa') saldo += delta
+    }
+  }
+  return Math.round(Math.max(0, saldo) * 100) / 100
+}
+
+function somarCaixinhasEmData(caixinhas = [], porCaixinha = new Map(), dataAlvo) {
+  let total = 0
+  for (const c of caixinhas || []) {
+    if (!c || c.ativa === false) continue
+    const movs = porCaixinha.get(c.id) || []
+    total += saldoCaixinhaEmData(c, movs, dataAlvo)
+  }
+  return Math.round(total * 100) / 100
 }
 
 // Patrimônio ATUAL (ponto único) — usado pelo card de Contas Correntes e pelo
@@ -50,10 +91,12 @@ export function calcularPatrimonioAtual(contas = [], caixinhas = []) {
 // `calcularSaldoReal` por conta (mesma regra do Planejamento) e soma caixinhas
 // constantes. Se a data for anterior à cobertura, devolve null (mesma semântica
 // do Planejamento: UI mostra "—").
-// Para datas antes de 2026-01-01, o replay usa o histórico migrado
-// (planejamentos com origem historico_*), pois movimentacoes só existe a partir
-// de jan/2026. O corte evita contar em dobro o que já está em movimentacoes.
-const CORTE_HISTORICO = '2026-01-01'
+// Corte real de confiabilidade: Saída só existe a partir de 2026-06-02
+// (primeira Saida em planejamentos). Antes disso, só Entrada (histórico de
+// renda), sem despesa, então não há como calcular patrimônio líquido real.
+// Não confundir com 2026-01-01 (início de movimentacoes) — o corte para
+// patrimônio é 2026-06-02.
+const CORTE_HISTORICO = '2026-06-02'
 
 function somarHistoricoAteData(historico = [], dataAlvo) {
   let total = 0
@@ -68,34 +111,101 @@ function somarHistoricoAteData(historico = [], dataAlvo) {
   return total
 }
 
-export function patrimonioEmData({ contas = [], caixinhas = [], movimentacoes = [], historico = [], dataAlvo, coberturaMinima }) {
+export function patrimonioEmData({ contas = [], caixinhas = [], movimentacoes = [], historico = [], caixinhaMovs = [], dataAlvo, coberturaMinima }) {
   const contasAtivas = (contas || []).filter((c) => c && c.ativa)
-  const caixa = somarCaixinhasConstante(caixinhas)
+  // Para caixinhas, tenta replay histórico se houver movimentos, senão constante
+  const porCaixinha = new Map()
+  for (const c of caixinhas || []) porCaixinha.set(c.id, [])
+  for (const m of caixinhaMovs || []) {
+    if (!m || !m.caixinha_id) continue
+    if (!porCaixinha.has(m.caixinha_id)) continue
+    porCaixinha.get(m.caixinha_id).push(m)
+  }
+  const caixa = caixinhas && caixinhaMovs && caixinhaMovs.length > 0
+    ? somarCaixinhasEmData(caixinhas, porCaixinha, dataAlvo)
+    : somarCaixinhasConstante(caixinhas)
 
-  // Para qualquer data, o patrimônio é o saldo atual (que já embute todo o
-  // histórico, pois o saldo bancário de hoje reflete tudo) menos o efeito das
-  // movimentações com data > dataAlvo. Para datas antes do corte, o histórico
-  // entra no mesmo conjunto, mas como o saldo atual não contém o histórico
-  // anterior a 2026 de forma isolada, usamos o histórico como aproximação:
-  // se a data é antes do primeiro movimento vivo, o replay do histórico a
-  // partir de zero é a melhor estimativa (limitação: sem saldo inicial real).
-  // Para datas >= corte, o histórico já está embutido no saldoAtual via
-  // movimentacoes? Não — o saldo atual de 2026 não contém o histórico de 2021-
-  // 2025, então somar histórico daria dupla contagem. Por isso, para datas
-  // >= corte, usamos só movimentacoes; para datas < corte, usamos só histórico.
+  // Histórico puro (antes do corte): a melhor estimativa sem snapshot é o
+  // fluxo acumulado do histórico DENTRO do período, ancorado no caixa, não o
+  // fluxo desde 2021 (que daria 491k). Para um mês como dez/2025 com 4
+  // lançamentos (9720), o patrimônio vai de caixa (3253) até caixa+9720
+  // (12973), variação correta e magnitude em milhares, coerente com ago/2026.
+  // Isso evita o salto de meio milhão que vinha da soma desde 2021.
   const ehHistoricoPuro = String(dataAlvo) < CORTE_HISTORICO
-
   if (ehHistoricoPuro) {
-    // Período puro histórico: soma cumulativa do histórico até a data + caixinhas.
-    // É uma aproximação (sem saldo inicial real), mas garante variação correta
-    // no gráfico para esses períodos antigos. O valor absoluto não é o saldo
-    // bancário real da época, e sim o fluxo acumulado — sinalizado no código.
+    // Soma só do histórico DENTRO do período que contém dataAlvo, a partir do
+    // início do período histórico que está sendo consultado. Como não temos o
+    // saldo inicial real de 2021, usamos caixa como base e somamos só o que
+    // aconteceu dentro da janela do período em questão. Para simplificar, aqui
+    // usamos o histórico até dataAlvo mas subtraímos o histórico antes do
+    // início do histórico total (aproximação: variação dentro do período).
+    // Na prática, para um ponto isolado sem contexto de período, usamos só o
+    // histórico até ele, mas o gráfico de um mês usará pontos relativos ao
+    // início do mês, então a variação mensal fica correta.
     const histAteData = somarHistoricoAteData(historico, dataAlvo)
+    // Para não explodir, normalizamos pelo histórico até o corte, mas como
+    // não temos o saldo inicial, mantemos a soma a partir de zero mas com
+    // magnitude reduzida: subtraímos o histórico até 2021-01-01 (zero) é o mesmo,
+    // então mantemos mas documentamos como aproximação.
+    // A correção real para magnitude é usar o período: o ponto inicial do
+    // período histórico deve ser caixa, não 491k. Vamos tratar no
+    // calcularEvolucaoPatrimonio para períodos históricos puros, onde o
+    // patrimônioInicial será o primeiro ponto (caixa + primeiro hist), e a
+    // variação será só dentro do período.
     return Math.round((histAteData + caixa) * 100) / 100
   }
 
+  // Para o replay unificado, juntamos histórico (antes do corte) e vivo
+  // (a partir do corte) num único conjunto e fazemos saldoAtual - efeito(depois).
+  // O histórico já está embutido no saldoAtual? Não — o saldo atual de 2026
+  // reflete só o vivo (movimentacoes), não o histórico de 2021-2025. Por isso,
+  // para datas antes do corte, o histórico precisa ser tratado como parte do
+  // efeito "depois" também, mas como o saldoAtual não o contém, precisamos de
+  // uma base histórica. A forma mais simples e que mantém a magnitude em 3k é:
+  // para datas < corte, o patrimônio é caixa + efeito do histórico até a data
+  // (aproximação), mas normalizado para não explodir. Como o histórico é só
+  // Entrada (390) e representa fluxo acumulado, normalizamos subtraindo o
+  // histórico total até o corte, para que o valor em 2025-12-31 fique próximo
+  // do valor em 2026-01-01 (continuidade).
+  if (String(dataAlvo) < CORTE_HISTORICO) {
+    // Histórico puro: variação dentro do período histórico, mas ancorado no
+    // patrimônio do corte (2026-01-01) para não ficar em 500k. Calcula o
+    // patrimônio no corte via vivo e depois ajusta pela variação histórica
+    // dentro do período histórico.
+    const patrimonioNoCorte = (() => {
+      // Saldo no corte (2026-01-01) via vivo
+      let tot = 0
+      let algumNullCorte = false
+      const porContaCorte = new Map()
+      for (const c of contasAtivas) porContaCorte.set(c.id, [])
+      for (const m of movimentacoes || []) {
+        if (!m || !m.conta_id) continue
+        if (!porContaCorte.has(m.conta_id)) continue
+        porContaCorte.get(m.conta_id).push(m)
+      }
+      for (const conta of contasAtivas) {
+        const saldoAtual = Number(conta.saldo_atual || 0)
+        const movs = porContaCorte.get(conta.id) || []
+        const s = calcularSaldoReal({ saldoAtual, movimentacoes: movs, dataAlvo: CORTE_HISTORICO, coberturaMinima })
+        if (s === null) { algumNullCorte = true; break }
+        tot += s
+      }
+      if (algumNullCorte) return null
+      return tot + caixa
+    })()
+    if (patrimonioNoCorte === null) return null
+    // Variação histórica desde o início do histórico até dataAlvo, menos a
+    // variação até o corte, para ancorar no corte
+    const histAteData = somarHistoricoAteData(historico, dataAlvo)
+    const histAteCorte = somarHistoricoAteData(historico, '2025-12-31')
+    // Para datas em 2024, por exemplo, histAteData é menor que histAteCorte,
+    // então (histAteData - histAteCorte) é negativo, e patrimonio será
+    // patrimonioNoCorte + (negativo) = menor que o corte, o que faz sentido
+    // (patrimônio em 2024 menor que em 2026).
+    return Math.round((patrimonioNoCorte + (histAteData - histAteCorte)) * 100) / 100
+  }
+
   if (contasAtivas.length === 0) {
-    // Sem contas ativas, só histórico + caixinhas (caso raro)
     const histAteData = somarHistoricoAteData(historico, dataAlvo)
     return Math.round((histAteData + caixa) * 100) / 100
   }
@@ -132,17 +242,17 @@ export function patrimonioEmData({ contas = [], caixinhas = [], movimentacoes = 
   return Math.round(total * 100) / 100
 }
 
-// Granularidade do gráfico conforme o tipo de período (mesma decisão visual
-// dos outros relatórios: detalhe diário para janelas curtas, agregação para
-// janelas longas).
+// Granularidade do gráfico conforme o tipo de período.
+// Simplificado 2026-09: Semana/Mês/Personalizado não têm gráfico (só
+// início/fim/variação). Trimestre/Ano têm gráfico mês a mês.
 export function granularidadePatrimonio(tipoPeriodo) {
-  if (tipoPeriodo === 'semana') return 'dia'
-  if (tipoPeriodo === 'mes') return 'dia'
-  if (tipoPeriodo === 'trimestre') return 'semana'
+  if (tipoPeriodo === 'semana') return null // sem gráfico, só resumo
+  if (tipoPeriodo === 'mes') return null
+  if (tipoPeriodo === 'trimestre') return 'mes'
   if (tipoPeriodo === 'semestre') return 'mes'
   if (tipoPeriodo === 'ano') return 'mes'
-  // personalizado: escolhe pela duração
-  return 'dia'
+  // personalizado: por ora, sem gráfico (mesmo que Mês)
+  return null
 }
 
 // Gera os pontos do gráfico + lista detalhada para o período.
@@ -153,33 +263,135 @@ export function calcularEvolucaoPatrimonio({
   caixinhas = [],
   movimentacoes = [],
   historico = [],
+  caixinhaMovs = [],
   periodo, // { tipo, inicio, fim }
   coberturaMinima,
 }) {
   if (!periodo?.inicio || !periodo?.fim) {
-    return { pontos: [], patrimonioAtual: null, patrimonioInicial: null, variacao: null, variacaoPercentual: null }
+    return { pontos: [], patrimonioAtual: null, patrimonioInicial: null, variacao: null, variacaoPercentual: null, inicioAjustado: null }
   }
 
-  const granularidade = granularidadePatrimonio(periodo.tipo)
+  // Corte de confiabilidade: antes de 2026-06-02 só há Entrada no histórico,
+  // sem Saída, então não há patrimônio líquido real.
+  // Corte de confiabilidade: antes de 2026-06-02 só há Entrada no histórico,
+  // sem Saida, então não há patrimônio líquido real.
+  if (periodo.fim < CORTE_HISTORICO) {
+    return {
+      pontos: [],
+      patrimonioAtual: null,
+      patrimonioInicial: null,
+      variacao: null,
+      variacaoPercentual: null,
+      granularidade: null,
+      semDados: true,
+      motivoSemDados: 'Sem dado suficiente para calcular patrimônio antes de junho/2026',
+    }
+  }
+  let periodoEfetivo = periodo
+  let inicioAjustado = null
+  if (periodo.inicio < CORTE_HISTORICO && periodo.fim >= CORTE_HISTORICO) {
+    // Período cruza o corte: considera só a parte a partir do corte
+    periodoEfetivo = { ...periodo, inicio: CORTE_HISTORICO }
+    inicioAjustado = CORTE_HISTORICO
+  }
 
-  // Para personalizado, decide pela duração em dias
+  const granularidade = granularidadePatrimonio(periodoEfetivo.tipo)
+
+  // Para personalizado, por ora sem gráfico (mesmo que Mês)
   let gran = granularidade
-  if (periodo.tipo === 'personalizado') {
-    const dias = Math.round((Date.UTC(...periodo.fim.split('-').map(Number)) - Date.UTC(...periodo.inicio.split('-').map(Number))) / 86_400_000) + 1
-    if (dias <= 31) gran = 'dia'
-    else if (dias <= 92) gran = 'semana'
-    else gran = 'mes'
-  }
+  // (mantido para compatibilidade, mas personalizado agora retorna null)
 
   const pontos = []
-  const inicio = periodo.inicio
-  const fim = periodo.fim
+  const inicio = periodoEfetivo.inicio
+  const fim = periodoEfetivo.fim
 
-  if (gran === 'dia') {
-    // Diário: um ponto por data civil no período
+  // Para períodos totalmente no histórico puro (antes do corte), o patrimônio
+  // absoluto desde 2021 explode (500k). Para manter a magnitude em milhares e
+  // mostrar só a variação DENTRO do período, usamos base = caixa NA DATA de
+  // início do período (via saldoCaixinhaEmData) e somamos só o histórico dentro
+  // da janela. Isso mantém Dec 2025 com variação 9720 mas base correta (0 se a
+  // caixinha ainda não existia, como em dez/2025 onde APê foi criada só em
+  // fev/2026, então 0→9720 em vez de 3253→12973).
+  const ehPeriodoHistoricoPuro = fim < CORTE_HISTORICO
+  // Para histórico puro, a base de caixinhas deve ser a do início do período,
+  // não a atual, para não mostrar R$3.253 em anos onde a caixinha nem existia.
+  const baseHistoricoPuro = ehPeriodoHistoricoPuro
+    ? (() => {
+        const porCaixinha = new Map()
+        for (const c of caixinhas || []) porCaixinha.set(c.id, [])
+        for (const m of caixinhaMovs || []) {
+          if (!m || !m.caixinha_id) continue
+          if (!porCaixinha.has(m.caixinha_id)) continue
+          porCaixinha.get(m.caixinha_id).push(m)
+        }
+        // Usa a data de início do período para a base
+        let total = 0
+        for (const c of caixinhas || []) {
+          if (!c || c.ativa === false) continue
+          const movs = porCaixinha.get(c.id) || []
+          total += saldoCaixinhaEmData(c, movs, inicio)
+        }
+        return Math.round(total * 100) / 100
+      })()
+    : null
+  const histNoPeriodo = ehPeriodoHistoricoPuro
+    ? (historico || []).filter((h) => h && h.data_prevista >= inicio && h.data_prevista <= fim)
+    : null
+
+  if (gran === null) {
+    // Semana/Mês/Personalizado: sem gráfico, só início e fim (ou hoje se período não terminou)
+    const hojeLimite = new Date().toISOString().slice(0, 10)
+    const inicioEfetivo = inicio
+    const fimEfetivo = fim > hojeLimite ? hojeLimite : fim
+    if (inicioEfetivo > hojeLimite) {
+      // Período futuro inteiro: sem pontos
+    } else {
+      const patrimonioInicio = ehPeriodoHistoricoPuro
+        ? (() => {
+            // Para histórico puro, início não tem histórico ainda, só caixa
+            let acc = 0
+            const histInicio = (histNoPeriodo || []).filter((h) => String(h.data_prevista) === inicioEfetivo)
+            for (const h of histInicio) acc += Number(h.valor) * (h.tipo_op === 'Saida' ? -1 : 1)
+            return Math.round((baseHistoricoPuro + acc) * 100) / 100
+          })()
+        : patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: inicioEfetivo, coberturaMinima })
+      const patrimonioFim = ehPeriodoHistoricoPuro
+        ? (() => {
+            let acc = 0
+            for (const h of histNoPeriodo || []) {
+              if (String(h.data_prevista) >= inicioEfetivo && String(h.data_prevista) <= fimEfetivo) {
+                acc += Number(h.valor) * (h.tipo_op === 'Saida' ? -1 : 1)
+              }
+            }
+            return Math.round((baseHistoricoPuro + acc) * 100) / 100
+          })()
+        : patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: fimEfetivo, coberturaMinima })
+      pontos.push({ data: inicioEfetivo, patrimonio: patrimonioInicio })
+      if (fimEfetivo !== inicioEfetivo) {
+        pontos.push({ data: fimEfetivo, patrimonio: patrimonioFim })
+      }
+    }
+  } else if (gran === 'dia') {
+    // Diário: um ponto por data civil no período (usado agora só se granularidade for dia, mas com novo spec, dia só para casos legados)
     let cur = inicio
+    // Para histórico puro, acumula só dentro do período
+    let acumuladoHist = 0
+    const histPorData = new Map()
+    if (ehPeriodoHistoricoPuro) {
+      for (const h of histNoPeriodo || []) {
+        const d = String(h.data_prevista)
+        const v = Number(h.valor) * (h.tipo_op === 'Saida' ? -1 : 1)
+        histPorData.set(d, (histPorData.get(d) || 0) + v)
+      }
+    }
     while (cur <= fim) {
-      const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: cur, coberturaMinima })
+      let patrimonio
+      if (ehPeriodoHistoricoPuro) {
+        if (histPorData.has(cur)) acumuladoHist += histPorData.get(cur)
+        patrimonio = Math.round((baseHistoricoPuro + acumuladoHist) * 100) / 100
+      } else {
+        patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: cur, coberturaMinima })
+      }
       pontos.push({ data: cur, patrimonio })
       // próximo dia
       const [a, m, d] = cur.split('-').map(Number)
@@ -190,12 +402,34 @@ export function calcularEvolucaoPatrimonio({
     // Semanal: bucket por semana ISO (segunda a domingo), patrimônio no domingo
     const primeiraSemana = semanaIso(inicio)
     let semanaInicio = primeiraSemana.inicio
+    // Para histórico puro, acumula só dentro do período
+    let acumuladoHistSemana = 0
+    const histSemanaPorData = new Map()
+    if (ehPeriodoHistoricoPuro) {
+      for (const h of histNoPeriodo || []) {
+        const d = String(h.data_prevista)
+        const v = Number(h.valor) * (h.tipo_op === 'Saida' ? -1 : 1)
+        histSemanaPorData.set(d, (histSemanaPorData.get(d) || 0) + v)
+      }
+    }
     while (semanaInicio <= fim) {
       const sem = semanaIso(semanaInicio)
       const pontoData = sem.fim <= fim ? sem.fim : fim
       // Evita duplicatas quando o período termina no meio da semana
       if (pontos.length === 0 || pontos[pontos.length - 1].data !== pontoData) {
-        const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: pontoData, coberturaMinima })
+        let patrimonio
+        if (ehPeriodoHistoricoPuro) {
+          // Soma histórico dentro do período até pontoData
+          for (let d = semanaInicio; d <= pontoData; ) {
+            if (histSemanaPorData.has(d)) acumuladoHistSemana += histSemanaPorData.get(d)
+            if (d === pontoData) break
+            const [a,m,dd]=d.split('-').map(Number)
+            d = new Date(Date.UTC(a,m-1,dd)+86_400_000).toISOString().slice(0,10)
+          }
+          patrimonio = Math.round((baseHistoricoPuro + acumuladoHistSemana) * 100) / 100
+        } else {
+          patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: pontoData, coberturaMinima })
+        }
         pontos.push({ data: pontoData, patrimonio })
       }
       // próxima segunda
@@ -205,11 +439,17 @@ export function calcularEvolucaoPatrimonio({
     }
     // Garante que o último ponto é exatamente o fim do período se não for domingo
     if (pontos.length > 0 && pontos[pontos.length - 1].data !== fim) {
-      const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: fim, coberturaMinima })
+      let patrimonio
+      if (ehPeriodoHistoricoPuro) {
+        // Já acumulado até o último ponto, só precisa incluir histórico entre último e fim se houver
+        patrimonio = Math.round((baseHistoricoPuro + acumuladoHistSemana) * 100) / 100
+      } else {
+        patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: fim, coberturaMinima })
+      }
       pontos.push({ data: fim, patrimonio })
     }
     if (pontos.length === 0) {
-      const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: fim, coberturaMinima })
+      const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: fim, coberturaMinima })
       pontos.push({ data: fim, patrimonio })
     }
   } else {
@@ -218,6 +458,16 @@ export function calcularEvolucaoPatrimonio({
     const [anoFim, mesFim] = fim.split('-').map(Number)
     let ano = anoInicio
     let mes = mesInicio
+    // Para histórico puro, acumula mensalmente
+    let acumuladoHistMensal = 0
+    const histMensalPorMes = new Map()
+    if (ehPeriodoHistoricoPuro) {
+      for (const h of histNoPeriodo || []) {
+        const mesKey = String(h.data_prevista).slice(0,7)
+        const v = Number(h.valor) * (h.tipo_op === 'Saida' ? -1 : 1)
+        histMensalPorMes.set(mesKey, (histMensalPorMes.get(mesKey) || 0) + v)
+      }
+    }
     while (ano < anoFim || (ano === anoFim && mes <= mesFim)) {
       const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate()
       const pontoData = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
@@ -226,7 +476,14 @@ export function calcularEvolucaoPatrimonio({
       const dataInicioMes = `${ano}-${String(mes).padStart(2, '0')}-01`
       if (dataEfetiva >= inicio && dataEfetiva <= fim) {
         if (pontos.length === 0 || pontos[pontos.length - 1].data !== dataEfetiva) {
-          const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: dataEfetiva, coberturaMinima })
+          let patrimonio
+          if (ehPeriodoHistoricoPuro) {
+            const mesKey = `${ano}-${String(mes).padStart(2,'0')}`
+            if (histMensalPorMes.has(mesKey)) acumuladoHistMensal += histMensalPorMes.get(mesKey)
+            patrimonio = Math.round((baseHistoricoPuro + acumuladoHistMensal) * 100) / 100
+          } else {
+            patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: dataEfetiva, coberturaMinima })
+          }
           pontos.push({ data: dataEfetiva, patrimonio })
         }
       }
@@ -241,7 +498,12 @@ export function calcularEvolucaoPatrimonio({
     }
     // Garante ponto final
     if (pontos.length === 0 || pontos[pontos.length - 1].data !== fim) {
-      const patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, dataAlvo: fim, coberturaMinima })
+      let patrimonio
+      if (ehPeriodoHistoricoPuro) {
+        patrimonio = Math.round((baseHistoricoPuro + acumuladoHistMensal) * 100) / 100
+      } else {
+        patrimonio = patrimonioEmData({ contas, caixinhas, movimentacoes, historico, caixinhaMovs, dataAlvo: fim, coberturaMinima })
+      }
       // Se já existe ponto com mesmo fim, substitui
       if (pontos.length > 0 && pontos[pontos.length - 1].data === fim) {
         pontos[pontos.length - 1].patrimonio = patrimonio
@@ -251,8 +513,17 @@ export function calcularEvolucaoPatrimonio({
     }
   }
 
-  // Remove pontos com patrimônio null (sem cobertura) — mantém só os válidos
-  const pontosValidos = pontos.filter((p) => p.patrimonio !== null)
+  // Corta exibição no futuro: se o período vai além de hoje, mostra só até hoje
+  // (pontos futuros seriam repetição do valor atual, sem informação real).
+  const hojeLimite = new Date().toISOString().slice(0, 10)
+  const fimEfetivo = fim > hojeLimite ? hojeLimite : fim
+  // Se o período inteiro está no futuro, não há dado real
+  if (inicio > hojeLimite) {
+    return { pontos: [], patrimonioAtual: null, patrimonioInicial: null, variacao: null, variacaoPercentual: null, granularidade: gran }
+  }
+  // Filtra pontos além de hoje (quando o período se estende no futuro)
+  const pontosAteHoje = pontos.filter((p) => p.data <= hojeLimite)
+  const pontosValidos = pontosAteHoje.filter((p) => p.patrimonio !== null)
 
   if (pontosValidos.length === 0) {
     return { pontos: [], patrimonioAtual: null, patrimonioInicial: null, variacao: null, variacaoPercentual: null, granularidade: gran }

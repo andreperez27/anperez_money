@@ -38,6 +38,7 @@ export function useRelatorioPatrimonio(periodo) {
   const [caixinhas, setCaixinhas] = useState([])
   const [movimentacoes, setMovimentacoes] = useState([])
   const [historico, setHistorico] = useState([])
+  const [caixinhaMovs, setCaixinhaMovs] = useState([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState(null)
 
@@ -55,7 +56,7 @@ export function useRelatorioPatrimonio(periodo) {
 
     Promise.all([
       supabase.from('contas').select('id, nome, saldo_atual, ativa').eq('ativa', true),
-      supabase.from('caixinhas').select('id, nome, saldo, ativa, conta_id').eq('ativa', true),
+      supabase.from('caixinhas').select('id, nome, saldo, ativa, conta_id, criado_em').eq('ativa', true),
       supabase
         .from('movimentacoes')
         .select('id, conta_id, data, valor, tipo_op, categoria, transferencia_id')
@@ -70,17 +71,25 @@ export function useRelatorioPatrimonio(periodo) {
         .gte('data_prevista', coberturaMinima)
         .lte('data_prevista', hoje)
         .order('data_prevista', { ascending: true }),
+      supabase
+        .from('caixinha_movimentacoes')
+        .select('id, caixinha_id, data, valor, tipo')
+        .gte('data', coberturaMinima)
+        .lte('data', hoje)
+        .order('data', { ascending: true }),
     ])
-      .then(([contasRes, caixRes, movsRes, histRes]) => {
+      .then(([contasRes, caixRes, movsRes, histRes, caixMovRes]) => {
         if (!ativo) return
         if (contasRes.error) throw new Error(contasRes.error.message)
         if (caixRes.error) throw new Error(caixRes.error.message)
         if (movsRes.error) throw new Error(movsRes.error.message)
         if (histRes.error) throw new Error(histRes.error.message)
+        if (caixMovRes.error) throw new Error(caixMovRes.error.message)
         setContas(contasRes.data ?? [])
         setCaixinhas(caixRes.data ?? [])
         setMovimentacoes(movsRes.data ?? [])
         setHistorico(histRes.data ?? [])
+        setCaixinhaMovs(caixMovRes.data ?? [])
       })
       .catch((e) => {
         if (ativo) setErro(e.message)
@@ -105,12 +114,21 @@ export function useRelatorioPatrimonio(periodo) {
       caixinhas,
       movimentacoes,
       historico,
+      caixinhaMovs,
       periodo,
       coberturaMinima,
     })
-  }, [contas, caixinhas, movimentacoes, historico, periodo])
+  }, [contas, caixinhas, movimentacoes, historico, caixinhaMovs, periodo])
 
   const apresentacao = useMemo(() => {
+    if (dados.semDados) {
+      return {
+        cards: [],
+        grafico: null,
+        linhas: [],
+        aviso: dados.motivoSemDados,
+      }
+    }
     const temData = dados.pontos.length > 0 && dados.patrimonioAtual !== null
 
     if (!temData) {
@@ -123,10 +141,18 @@ export function useRelatorioPatrimonio(periodo) {
 
     const variacao = dados.variacao ?? 0
     const variacaoPct = dados.variacaoPercentual
+    const hojeLimite = new Date().toISOString().slice(0, 10)
+    const fimEfetivo = dados.pontos[dados.pontos.length - 1]?.data || periodo?.fim
 
+    // Resumo simplificado: início / fim (ou hoje) / variação
     const cards = [
       {
-        label: 'Patrimônio atual',
+        label: `Patrimônio em ${rotuloLongo(dados.pontos[0].data)}`,
+        valor: formatoReal.format(dados.patrimonioInicial),
+        cor: corPatrimonio,
+      },
+      {
+        label: `Patrimônio em ${rotuloLongo(fimEfetivo)}`,
         valor: formatoReal.format(dados.patrimonioAtual),
         cor: corPatrimonio,
       },
@@ -146,18 +172,27 @@ export function useRelatorioPatrimonio(periodo) {
         : []),
     ]
 
-    const grafico = {
-      rotulos: dados.pontos.map((p) => rotuloData(p.data, dados.granularidade)),
-      valores: dados.pontos.map((p) => p.patrimonio),
-    }
+    // Gráfico só para Trimestre e Ano (mês a mês). Semana/Mês/Personalizado
+    // ficam só com o resumo acima, sem gráfico.
+    const temGrafico = dados.granularidade !== null && dados.pontos.length > 2
+    const grafico = temGrafico
+      ? {
+          rotulos: dados.pontos.map((p) => rotuloData(p.data, dados.granularidade)),
+          valores: dados.pontos.map((p) => p.patrimonio),
+        }
+      : null
 
     const linhas = dados.pontos.map((p) => ({
       label: rotuloLongo(p.data),
       valor: formatoReal.format(p.patrimonio),
     }))
 
-    return { cards, grafico, linhas }
-  }, [dados])
+    const avisoAjuste = dados.inicioAjustado
+      ? `Início ajustado para ${rotuloLongo(dados.inicioAjustado)} por falta de dado anterior a junho/2026`
+      : null
+
+    return { cards, grafico, linhas, avisoAjuste, semDados: dados.semDados, motivoSemDados: dados.motivoSemDados }
+  }, [dados, periodo])
 
   return {
     carregando,
