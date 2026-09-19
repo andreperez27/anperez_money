@@ -40,7 +40,7 @@ export default function VisaoGeral({
   rotuloPeriodo,
   inicioISO,
   fimISO,
-  saldoRealHoje,
+  saldoInicioPeriodo,
 }) {
 
   // Divisão por mês civil (só para Mês/Trimestre/Semestre). Lib pura, ordem
@@ -127,12 +127,13 @@ export default function VisaoGeral({
             </div>
             {/* Percentual de renda comprometida — mesmo array para somatório,
                 cenário fechado/atual/futuro decidido na lib pura (datas x hoje);
-                no período atual o saldo REAL de hoje é a base disponível. */}
+                no período atual a base é o saldo do dia anterior ao início +
+                as entradas do período. */}
             <CardRendaComprometida
               itens={itensParaSomatorio}
               inicioISO={inicioISO}
               fimISO={fimISO}
-              saldoRealHoje={saldoRealHoje}
+              saldoInicioPeriodo={saldoInicioPeriodo}
             />
           </div>
           <p style={{ ...estilosComuns.mensagem, margin: '-0.25rem 0 1.25rem', fontSize: '0.85rem' }}>

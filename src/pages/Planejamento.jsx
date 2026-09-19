@@ -73,6 +73,7 @@ export default function Planejamento() {
     regenerarSerie,
     realizarPlanejamento,
     realizarPlanejamentoCartao,
+    migrarAtraso,
     criarPlanejamento,
     criarSerieParcelada,
     criarSerieRecorrente,
@@ -365,7 +366,7 @@ export default function Planejamento() {
         rotuloPeriodo={rotuloPeriodo}
         inicioISO={periodoVisivel?.inicio}
         fimISO={periodoVisivel?.fim}
-        saldoRealHoje={saldoProjetado.saldoInicial}
+        saldoInicioPeriodo={saldoProjetado.saldoAnterior(periodoVisivel?.inicio)}
       />
       <Lancamentos
         itens={itensVisiveis}
@@ -384,6 +385,7 @@ export default function Planejamento() {
           editar: comRecarga(editarPlanejamento),
           realizar: comRecarga(realizarPlanejamento),
           realizarCartao: comRecarga(realizarPlanejamentoCartao),
+          migrarAtraso: comRecarga(migrarAtraso),
           realizarFatura: aoPagarFatura,
           salvarConsumoReal: comRecarga(salvarConsumoReal),
         }}

@@ -54,21 +54,16 @@ caso('TESTE 1 — mês FECHADO com variável: tudo que foi realizado entra', () 
   assert.strictEqual(res.percentual, 70)
 })
 
-caso('TESTE 2 — período ATUAL com saldo real: realizada do período NÃO soma de novo', () => {
+caso('TESTE 2 — período ATUAL: base = saldo do dia anterior ao início + TODAS as entradas', () => {
   const res = calcularRendaComprometida({
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 2500,
+    saldoInicioPeriodo: 2500,
     itens: [
-      // Entrada JÁ REALIZADA do período: não pode somar de novo — o dinheiro
-      // já está dentro do saldo real de hoje (somá-la inflaria a base).
+      // Realizada OU prevista, tudo soma — nenhuma estava no saldo inicial.
       item('Entrada', 6000, { estado: 'realizado', data: '2026-09-05' }),
-      // Entrada ainda NÃO realizada, com data entre hoje e o fim: soma.
       item('Entrada', 4000, { data: '2026-09-20' }),
-      // Entrada prevista com data NO PASSADO mas ainda pendente (atrasada):
-      // agora SOMA, pois ainda é renda esperada para o período e não está no
-      // saldo (só realizado entra no saldo).
       item('Entrada', 3000, { data: '2026-09-02' }),
       // Despesas: só comprometidas (recorrente/fatura/série), avulsa fora.
       item('Saida', 2000, { estado: 'realizado', origem: 'manual', data: '2026-09-03' }),
@@ -79,11 +74,10 @@ caso('TESTE 2 — período ATUAL com saldo real: realizada do período NÃO soma
     ],
   })
   assert.strictEqual(res.modo, 'atual')
-  // 2500 (saldo real) + 4000 (prevista futura) + 3000 (atrasada pendente) = 9500;
-  // a realizada de 6000 fica de fora.
-  assert.strictEqual(res.rendaBase, 9500)
+  // 2500 (saldo em 31/08) + 6000 + 4000 + 3000 = 15500, sem duplicar nada.
+  assert.strictEqual(res.rendaBase, 15500)
   assert.strictEqual(res.comprometidoBase, 3500)
-  assert.strictEqual(res.percentual, 37) // 3500/9500 = 36,84 → 37
+  assert.strictEqual(res.percentual, 23) // 3500/15500 = 22,58 → 23
 })
 
 caso('TESTE 3 — renda ZERO: percentual null (sem divisão por zero)', () => {
@@ -91,11 +85,23 @@ caso('TESTE 3 — renda ZERO: percentual null (sem divisão por zero)', () => {
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 0,
+    saldoInicioPeriodo: 0,
     itens: [item('Saida', 100, { origem: 'recorrente', data: '2026-09-20' })],
   })
   assert.strictEqual(res.percentual, null)
   assert.strictEqual(res.rendaBase, 0)
+})
+
+caso('TESTE 3b — sem saldo inicial (carregando/fora da cobertura): null, sem chutar', () => {
+  const res = calcularRendaComprometida({
+    inicioISO: SETEMBRO_INI,
+    fimISO: SETEMBRO_FIM,
+    hojeISO: HOJE,
+    saldoInicioPeriodo: null,
+    itens: [item('Entrada', 5000, { data: '2026-09-20' })],
+  })
+  assert.strictEqual(res.modo, 'atual')
+  assert.strictEqual(res.percentual, null)
 })
 
 caso('TESTE 4 — renda zero também no mês fechado', () => {
@@ -113,7 +119,7 @@ caso('TESTE 5 — nenhuma despesa comprometida no período atual: 0%', () => {
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 4000,
+    saldoInicioPeriodo: 4000,
     itens: [
       item('Entrada', 1000, { data: '2026-09-20' }),
       item('Saida', 999, { origem: 'manual', data: '2026-09-25' }),
@@ -121,6 +127,7 @@ caso('TESTE 5 — nenhuma despesa comprometida no período atual: 0%', () => {
   })
   assert.strictEqual(res.percentual, 0)
   assert.strictEqual(res.comprometidoBase, 0)
+  assert.strictEqual(res.rendaBase, 5000)
 })
 
 caso('TESTE 6 — fatura entra no ATUAL e não no FECHADO (sintética é previsto)', () => {
@@ -132,7 +139,7 @@ caso('TESTE 6 — fatura entra no ATUAL e não no FECHADO (sintética é previst
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 5000,
+    saldoInicioPeriodo: 5000,
     itens: comFatura,
   })
   assert.strictEqual(atual.modo, 'atual')
@@ -149,7 +156,7 @@ caso('TESTE 7 — cancelado nunca participa', () => {
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 10000,
+    saldoInicioPeriodo: 10000,
     itens: [
       item('Saida', 9999, { estado: 'cancelado', origem: 'recorrente', data: '2026-09-10' }),
       item('Saida', 100, { origem: 'fatura', data: '2026-09-20' }),
@@ -193,10 +200,30 @@ caso('TESTE 10 — comprometido pode passar de 100%', () => {
     inicioISO: SETEMBRO_INI,
     fimISO: SETEMBRO_FIM,
     hojeISO: HOJE,
-    saldoRealHoje: 1000,
+    saldoInicioPeriodo: 1000,
     itens: [item('Saida', 1100, { origem: 'recorrente', data: '2026-09-20' })],
   })
   assert.strictEqual(res.percentual, 110)
+})
+
+caso('TESTE 11 — cenário real 19/09 (semana 38): base com entrada realizada + saldo anterior', () => {
+  // Semana 14–20/09, hoje 19/09: entrada 2400 realizada dia 16 + saída 900
+  // (recorrente). Saldo no fim de 13/09 era 1500. Base = 1500 + 2400 = 3900;
+  // 900/3900 = 23% (plausível — antes dava 5451% só com o saldo de hoje).
+  const res = calcularRendaComprometida({
+    inicioISO: '2026-09-14',
+    fimISO: '2026-09-20',
+    hojeISO: '2026-09-19',
+    saldoInicioPeriodo: 1500,
+    itens: [
+      item('Entrada', 2400, { estado: 'realizado', data: '2026-09-16' }),
+      item('Saida', 900, { estado: 'realizado', origem: 'recorrente', data: '2026-09-20' }),
+    ],
+  })
+  assert.strictEqual(res.modo, 'atual')
+  assert.strictEqual(res.rendaBase, 3900)
+  assert.strictEqual(res.comprometidoBase, 900)
+  assert.strictEqual(res.percentual, 23)
 })
 
 console.log('')

@@ -25,6 +25,12 @@
 //     Pagamento Semanal previsto 09/09 caiu de fato em 10/09). Sem o mapa
 //     (histórico da planilha e lançamentos antigos, sem lancamento_id), vale a
 //     data_prevista.
+//   • valorRealPorLancamento (opcional, correção 19/09/2026): mapa
+//     { [lancamento_id]: number } com o valor REAL da movimentação. Quando o
+//     item tem lancamento_id presente no mapa, o valor do recebimento (total,
+//     buckets, linha e extras) é o da movimentação — NÃO o valor previsto
+//     (realização parcial: previsto 2400 com só 1200 entrados mostra 1200,
+//     como a planilha lançava "50% do período"). Sem o mapa, vale p.valor.
 //
 //   • porMes    agrupa por MÊS CIVIL do recebimento — a série do gráfico para
 //     Trimestre/Semestre/Ano/Personalizado (barras por mês).
@@ -119,6 +125,11 @@
 //     do Ponto — regra 04/09/2026), então o bruto valorHe+valorDomfer
 //     SUPERA o excedente real: recebido 1.800 → extra real 150 (1800 − 1650),
 //     não 400. Só neste relatório; os cards do Ponto continuam como estão.
+//   • Com recebimento PARCIAL (19/09/2026, molde da planilha "50% do período"),
+//     o extra cheio (sobre o PLANEJADO) é reduzido pela fração recebida:
+//     extras W = max(0, recebido_W − fixo × recebido_W/planejado_W) — ex.:
+//     previsto 2400 com extra 750 e só 1200 entrados → 750 × 50% = 375.
+//     Sem divergência a fração é 1 e a fórmula fica idêntica à anterior.
 //   • Os extras aparecem NAS LINHAS dos pagamentos que cobrem W, enlaçados
 //     pelo mesmo dado gravado: as colunas ano_semana_trabalho/semana_trabalho
 //     (referente). Pagamento SEM colunas (histórico do seguro, netflix...)
@@ -230,7 +241,7 @@ function ratearProporcional(valores, total) {
   return partes
 }
 
-export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana = 0, periodo, dataRealPorLancamento = {} } = {}) {
+export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana = 0, periodo, dataRealPorLancamento = {}, valorRealPorLancamento = {} } = {}) {
   if (!periodo) {
     throw new Error('calcularRecebidoHoras espera um periodo ({ inicio, fim }).')
   }
@@ -249,6 +260,19 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
     p?.lancamento_id && dataRealPorLancamento[p.lancamento_id]
       ? String(dataRealPorLancamento[p.lancamento_id])
       : String(p.data_prevista)
+
+  // Valor DO RECEBIMENTO: quando o lançamento tem lancamento_id (realizado
+  // pelo app com movimentação), o que ENTROU de fato é o valor da movimentação
+  // real — não o valor previsto (ex.: previsto 2400 com só metade entrada =
+  // movimento de 1200; o relatório mostra 1200, como a planilha lançava "50%
+  // do período"). Correção 19/09/2026, mesmo molde da data real (11/09/2026).
+  // Sem lancamento_id (histórico da planilha), vale o valor previsto.
+  const valorDoRecebimento = (p) =>
+    p?.lancamento_id &&
+    valorRealPorLancamento[p.lancamento_id] !== null &&
+    valorRealPorLancamento[p.lancamento_id] !== undefined
+      ? Number(valorRealPorLancamento[p.lancamento_id])
+      : Number(p.valor)
 
   // Mapas das grades para acumulação (chave 'YYYY-MM' e segunda-feira ISO).
   const totalPorMes = new Map()
@@ -276,7 +300,7 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
         p.estado === 'realizado' &&
         dataRecebimento >= inicio &&
         dataRecebimento <= fim &&
-        Number(p.valor) > 0 &&
+        valorDoRecebimento(p) > 0 &&
         // Planilha vale só até a semana 34/2026 (o app é a fonte a partir
         // daí — primeiro lançamento digitado em 24/08/2026).
         !(p.origem === 'historico_planilha' && dataRecebimento >= CORTE_APOS_PLANILHA) &&
@@ -310,7 +334,10 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
     return {
       data,
       semana,
-      valor: Number(p.valor),
+      valor: valorDoRecebimento(p),
+      // Valor PREVISTO da linha (para a proporção do parcial: quando só uma
+      // parte entrou, o extra da semana é rateado pela fração recebida).
+      valorPrevisto: arre2(Number(p.valor)),
       valorSemanal: p.valor_semanal === null || p.valor_semanal === undefined ? null : Number(p.valor_semanal),
       valorExtraHistorico:
         p.valor_extra_historico === null || p.valor_extra_historico === undefined
@@ -388,7 +415,15 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       ? arre2(bases.reduce((a, b) => a + b, 0))
       : valorFixo
 
-    const extras = arre2(Math.max(0, soma - baseSemana))
+    // PROPORÇÃO DO PARCIAL (19/09/2026, mesmo molde da planilha "50% do
+    // período"): quando só parte do previsto entrou, o extra da semana é o
+    // extra cheio (sobre o PLANEJADO) reduzido pela fração recebida — ex.:
+    // previsto 2400 com extra 750 e só 1200 entrados → 750 × 50% = 375.
+    // Sem divergência (tudo integral) a fração é 1 e a fórmula fica idêntica
+    // à anterior.
+    const planejado = grupo.reduce((a, g) => a + (Number(g.valorPrevisto) || 0), 0)
+    const fracaoRecebida = planejado > 0 ? soma / planejado : 1
+    const extras = arre2(Math.max(0, soma - baseSemana * fracaoRecebida))
     if (!(extras > 0)) continue
 
     const partes = ratearProporcional(grupo.map((g) => g.valor), extras)
@@ -451,6 +486,7 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       data: it.data,
       semana: it.semana,
       valor: arre2(it.valor),
+      valorPrevisto: arre2(it.valorPrevisto ?? it.valor),
       valorHorasExtras: arre2(it.valorHorasExtras),
       referente: it.referente,
       descricao: it.descricao,

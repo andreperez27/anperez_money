@@ -131,7 +131,7 @@ export function calcularRegeneração(serie, alteracoes) {
 
   const numerosPreservados = new Set(
     serie
-      .filter((o) => o.estado === 'realizado' || o.estado === 'cancelado')
+      .filter((o) => o.estado === 'realizado' || o.estado === 'cancelado' || o.estado === 'migrado')
       .map((o) => o.parcela_numero),
   )
 
@@ -239,7 +239,7 @@ export function calcularRegeneraçãoRecorrente(serie, alteracoes) {
 
   const numerosPreservados = new Set(
     serie
-      .filter((o) => o.estado === 'realizado' || o.estado === 'cancelado')
+      .filter((o) => o.estado === 'realizado' || o.estado === 'cancelado' || o.estado === 'migrado')
       .map((o) => o.parcela_numero),
   )
 

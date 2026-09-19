@@ -19,14 +19,14 @@ const COBERTURA_PASSADO_DIAS = 400
 // SALDO ACUMULADO PROJETADO — hook.
 // ============================================================================
 // Projeção em CADEIA a partir do saldo REAL de HOJE (não mais da véspera do
-// início da semana corrente — correção 11/09/2026, revisada 16/09/2026): o
-// ponto de partida é o saldo real atual das contas e a série soma
-//   • os lançamentos com data_prevista estritamente maior que hoje (futuro),
-//     mais
-//   • os previstos com data_prevista <= hoje ainda pendentes (estado
-//     'previsto', atrasado/hoje). Esses não estão no saldo real e precisam
-//     entrar na projeção; já os realizados com data até hoje já estão embutidos
-//     e não entram (duplicaria).
+// início da semana corrente — correção 11/09/2026, revisada 16/09 e 19/09):
+// o ponto de partida é o saldo real atual das contas e a série soma SOMENTE
+// itens com estado 'previsto' (futuros + atrasados/hoje pendentes — esses não
+// estão no saldo real e precisam entrar). Itens 'realizado' NUNCA entram, em
+// qualquer data: os de conta já estão embutidos no saldo (a RPC cria a
+// movimentação no mesmo instante) e os de cartão vivem na fatura real — somar
+// qualquer um duplicaria (bug 19/09: saída realizada com data futura era
+// subtraída de novo).
 // Isso elimina a inflação do card no meio da semana em que a antiga base
 // (véspera) revertia as movimentações REAIS do início da semana (Padaria,
 // Enel, pagamento de fatura...) mas a série não as devolvia à projeção por
@@ -58,7 +58,7 @@ const COBERTURA_PASSADO_DIAS = 400
 //   • a união com faturas de cartão usa `montarProjecao` (regra de não duplicar
 //     o previsto de cartão) → `itensParaSomatorio`;
 //   • o acumulado usa a lib pura `projetarSerie` (saldo real de hoje +
-//     futuros e previstos atrasados/hoje ainda pendentes).
+//     somente itens 'previsto'; 'realizado' nunca entra).
 // Cartões, faturas reais, previstos de cartão e férias chegam prontos via props
 // (já buscados pela página) — evitando buscas duplicadas.
 //
@@ -98,14 +98,14 @@ export function useSaldoProjetado({
   const coberturaMinima = adicionarDiasISO(inicioISO, -COBERTURA_PASSADO_DIAS)
 
   // Início da semana CORRENTE (segunda 07/09). A busca da série começa aqui
-  // para atravessar o horizonte INTEIRO (a projeção corta o passado depois:
-  // projetarSerie só deixa os itens com data_prevista > hoje), e o
-  // montarProjecao usa a mesma régua do Planejamento para gerar as faturas.
+  // para atravessar o horizonte INTEIRO (a projeção corta depois: projetarSerie
+  // só deixa itens 'previsto'), e o montarProjecao usa a mesma régua do
+  // Planejamento para gerar as faturas.
   const inicioSemana = useMemo(() => definirPeriodo('semana', inicioISO).inicio, [inicioISO])
 
   // Saldo REAL de hoje = soma das contas ATIVAS (sem caixinhas — ver cabeçalho).
   // É o PONTO DE PARTIDA da projeção (correção 11/09/2026): o que já aconteceu
-  // está embutido aqui; a série soma apenas os previstos de amanhã em diante.
+  // está embutido aqui; a série soma apenas os 'previsto' (nunca 'realizado').
   const saldoInicial = useMemo(() => {
     const contasAtivas = (contas || []).filter((c) => c.ativa)
     return contasAtivas.reduce((soma, c) => soma + Number(c.saldo_atual), 0)
@@ -202,8 +202,8 @@ export function useSaldoProjetado({
   }, [itensHorizonte, cartoes, faturasReais, inicioSemana, fimISO, previstosCartaoExternos, ferias, feriados])
 
   // Acumulado real → saldo dia a dia + saldo ao fim da faixa, partindo do
-  // saldo REAL de HOJE e somando os futuros mais os previstos atrasados/hoje
-  // ainda pendentes (16/09/2026).
+  // saldo REAL de HOJE e somando somente itens 'previsto' (16/09 incluía os
+  // atrasados; 19/09 exclui os 'realizado' em qualquer data — sem duplicar).
   const projecaoSaldo = useMemo(() => {
     return projetarSerie({
       saldoAtual: saldoInicial,
@@ -213,18 +213,34 @@ export function useSaldoProjetado({
     })
   }, [saldoInicial, projecao.itensParaSomatorio, inicioISO, fimISO])
 
+  // Saldo real no fim do dia ANTERIOR ao início de um período (para a base da
+  // Renda Comprometida no modo atual: entradas da semana + saldo da semana
+  // anterior). Reaproveita as movimentações reais já buscadas (contas ativas,
+  // sem caixinha — mesma regra do saldoInicial). Null enquanto carrega, com
+  // erro ou fora da cobertura (o card mostra "sem dados" nesses casos).
+  function saldoAnterior(inicioPeriodoISO) {
+    if (movReaisCarregando || movReaisErro || !inicioPeriodoISO) return null
+    return calcularSaldoReal({
+      saldoAtual: saldoInicial,
+      movimentacoes: movReais,
+      dataAlvo: adicionarDiasISO(inicioPeriodoISO, -1),
+      coberturaMinima,
+    })
+  }
+
   return {
     saldoInicial,
+    saldoAnterior,
     saldoProjetado: projecaoSaldo.saldoAoFim,
     serie: projecaoSaldo.serie,
     // Saldo ao fim de `dataISO`.
     // • fim < hoje → saldo REAL reconstruído (período fechado: um lançamento
     //   feito hoje não retroage nele);
     // • fim >= hoje → projeção em CADEIA a partir do saldo real ATUAL de hoje,
-    //   somando os futuros mais os previstos atrasados/hoje ainda pendentes
-    //   (revisão 16/09/2026 — antes só os futuros entravam e o “Atrasado”
-    //   pendente sumia do saldo). O encadeamento semana a semana é preservado:
-    //   saldo do fim da semana atual + resultado previsto da seguinte.
+    //   somando somente 'previsto' (revisão 16/09 trazia os atrasados; 19/09
+    //   tira os 'realizado' com data futura, que já estão no saldo e
+    //   duplicavam). O encadeamento semana a semana é preservado: saldo do
+    //   fim da semana atual + resultado previsto da seguinte.
     saldoEm: (dataISO) => {
       if (compararISO(dataISO, inicioISO) < 0) {
         if (movReaisCarregando || movReaisErro) return null

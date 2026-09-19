@@ -27,7 +27,7 @@ function item(tipo_op, valor, estado = 'previsto') {
 caso('TESTE 1 — lista vazia: totais e contagens zerados', () => {
   const { totais, contagens } = calcularResumoPlanejamentos([])
   assert.deepStrictEqual(totais, { entradas: 0, saidas: 0, resultado: 0 })
-  assert.deepStrictEqual(contagens, { previsto: 0, realizado: 0, cancelado: 0 })
+  assert.deepStrictEqual(contagens, { previsto: 0, realizado: 0, cancelado: 0, migrado: 0 })
 })
 
 caso('TESTE 2 — somente entradas', () => {
@@ -76,7 +76,7 @@ caso('TESTE 6 — cancelado ENTRA na contagem', () => {
     item('Saida', 620, 'previsto'),
     item('Saida', 300, 'cancelado'),
   ])
-  assert.deepStrictEqual(contagens, { previsto: 2, realizado: 0, cancelado: 1 })
+  assert.deepStrictEqual(contagens, { previsto: 2, realizado: 0, cancelado: 1, migrado: 0 })
 })
 
 caso('TESTE 7 — resultado positivo', () => {
@@ -107,7 +107,7 @@ caso('TESTE 9 — mistura previsto/realizado/cancelado (contagens e totais)', ()
     item('Saida', 300, 'cancelado'),
   ])
   // Contagem conta TUDO, independente dos totais.
-  assert.deepStrictEqual(contagens, { previsto: 3, realizado: 2, cancelado: 1 })
+  assert.deepStrictEqual(contagens, { previsto: 3, realizado: 2, cancelado: 1, migrado: 0 })
   // Totais somam previsto + realizado; cancelado fica de fora.
   assert.strictEqual(totais.entradas, 1500)
   assert.strictEqual(totais.saidas, 450)
@@ -125,7 +125,19 @@ caso('TESTE 10 — valores com centavos (somas exatas)', () => {
   assert.strictEqual(totais.entradas, 1401)
   assert.strictEqual(totais.saidas, 620.5)
   assert.strictEqual(totais.resultado, 780.5)
-  assert.deepStrictEqual(contagens, { previsto: 2, realizado: 1, cancelado: 1 })
+  assert.deepStrictEqual(contagens, { previsto: 2, realizado: 1, cancelado: 1, migrado: 0 })
+})
+
+caso('TESTE 11 — migrado conta na contagem mas fica fora dos totais (migration 38)', () => {
+  const { totais, contagens } = calcularResumoPlanejamentos([
+    item('Entrada', 1000, 'previsto'),
+    item('Saida', 1000, 'migrado'), // já vive na pendência herdeira — não soma
+    item('Saida', 400, 'previsto'),
+  ])
+  assert.deepStrictEqual(contagens, { previsto: 2, realizado: 0, cancelado: 0, migrado: 1 })
+  assert.strictEqual(totais.entradas, 1000)
+  assert.strictEqual(totais.saidas, 400)
+  assert.strictEqual(totais.resultado, 600)
 })
 
 console.log('')

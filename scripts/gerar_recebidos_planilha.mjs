@@ -10,8 +10,10 @@
 // lib PÚRICA do app (src/lib/relatorioRecebidoHoras.js, funkcja calcularRece-
 // bidoHoras) e reproduz a consulta do hook useRelatorioRecebidoHoras:
 //   1) planejamentos realizados Entrada do período (data real dentro da faixa);
-//   2) data real de cada recebimento via movimentacoes.data (dataRealPor-
-//      Lancamento — mapa { [lancamento_id]: 'YYYY-MM-DD' });
+//   2) data E valor reais de cada recebimento via movimentacoes (mapas
+//      dataRealPorLancamento { [lancamento_id]: 'YYYY-MM-DD' } e
+//      valorRealPorLancamento { [lancamento_id]: number } — realização parcial
+//      entra pelo que entrou de fato, não pelo previsto);
 //   3) fixo semanal padrão do Ponto (ponto_config.VALOR_FIXO_SEMANA) — a régua
 //      dos extras;
 //   4) extras = quanto o recebido passou do fixo da semana de TRABALHO (com a
@@ -149,11 +151,16 @@ const rotuloAnoCurto = (dataISO) => {
 // Descrição no MESMO padrão das linhas antigas da planilha:
 //   "Pagamento referente ao período de 17/08/26 à 23/08/26" (a crase é
 //   aplicada pelo Python via corrigir_crasis). O `referente` é a segunda-feira
-//   da semana de trabalho; o fim é o domingo da mesma semana ISO.
+//   da semana de trabalho; o fim é o domingo da mesma semana ISO. Quando só
+//   parte entrou (valor real < previsto), mostra a fração como a planilha
+//   fazia ("Pagamento referente a 50% do período de 01/06/26 a 07/06/26").
 function descricaoPadrao(it, semanaIsoFn) {
   if (!it.referente) return String(it.descricao ?? '').trim()
   const ref = semanaIsoFn(it.referente)
-  return `Pagamento referente ao período de ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}`
+  const previsto = Number(it.valorPrevisto)
+  const fracao = previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100
+  const prefixo = fracao !== 100 ? `a ${fracao}% do período` : 'ao período'
+  return `Pagamento referente ${prefixo} de ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}`
 }
 
 async function main() {
@@ -205,19 +212,24 @@ async function main() {
   }))
   console.log(`planejamentos realizados Entrada (data_prevista >= ${inicioSql}): ${planejamentos.length}`)
 
-  // 2) Datas REAIS dos lançamentos — mesmo mapa do hook useRelatorioRecebidoHoras.
+  // 2) Datas E valores REAIS dos lançamentos — mesmos mapas do hook
+  // useRelatorioRecebidoHoras (realização parcial entra pelo que entrou).
   const lancIds = [...new Set((planejamentos || []).map((p) => p.lancamento_id).filter((id) => id != null))]
   const datasPorLancamento = {}
+  const valoresPorLancamento = {}
   for (let i = 0; i < lancIds.length; i += 100) {
     const pedaco = lancIds.slice(i, i + 100)
     const { status: stMov, corpo: movs } = await rest(
-      construtor('movimentacoes', 'id,data') + `&id=in.(${pedaco.join(',')})&limit=1000`,
+      construtor('movimentacoes', 'id,data,valor') + `&id=in.(${pedaco.join(',')})&limit=1000`,
       apikey, token,
     )
     if (stMov !== 200) throw new Error(`Falha movimentacoes (${stMov}): ${JSON.stringify(movs)}`)
-    for (const m of movs || []) datasPorLancamento[m.id] = String(m.data).slice(0, 10)
+    for (const m of movs || []) {
+      datasPorLancamento[m.id] = String(m.data).slice(0, 10)
+      valoresPorLancamento[m.id] = Number(m.valor)
+    }
   }
-  console.log(`datas reais via movimentacoes: ${Object.keys(datasPorLancamento).length} de ${lancIds.length} lançamentos`)
+  console.log(`datas/valores reais via movimentacoes: ${Object.keys(datasPorLancamento).length} de ${lancIds.length} lançamentos`)
 
   // 3) Cadeia do relatório — a lib pura do app (mesma de src/hooks/useRelatorioRecebidoHoras).
   const dados = calcularRecebidoHoras({
@@ -225,6 +237,7 @@ async function main() {
     fixoSemana,
     periodo,
     dataRealPorLancamento: datasPorLancamento,
+    valorRealPorLancamento: valoresPorLancamento,
   })
 
   // 4) Monta as linhas do JSON intermediário — só recebimentos com data >= corte.

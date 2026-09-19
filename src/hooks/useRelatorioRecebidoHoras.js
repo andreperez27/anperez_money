@@ -67,13 +67,15 @@ export function useRelatorioRecebidoHoras(periodo) {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState(null)
 
-  // Datas REAIS das movimentações que os lançamentos geraram (Bug 2 de
-  // 11/09/2026): o relatório deve usar o dia em que o dinheiro ENTROU de fato
-  // (movimentacoes.data) e não a data_prevista (a data em que o pagamento
-  // DEVERIA cair — que pode divergir, ex.: Pagamento Semanal previsto 09/09
-  // caiu em 10/09). Mapa { [lancamento_id]: 'YYYY-MM-DD' }; recria-se quando os
-  // itens mudam.
+  // Datas e valores REAIS das movimentações que os lançamentos geraram
+  // (Bug 2 de 11/09/2026 para a data; 19/09/2026 para o valor): o relatório
+  // deve usar o dia em que o dinheiro ENTROU de fato (movimentacoes.data) e
+  // QUANTO entrou (movimentacoes.valor) — não a data_prevista nem o valor
+  // previsto (que podem divergir; ex.: previsto 2400 com só 1200 entrados).
+  // Mapas { [lancamento_id]: data } e { [lancamento_id]: valor }; recriam-se
+  // quando os itens mudam.
   const [datasPorLancamento, setDatasPorLancamento] = useState({})
+  const [valoresPorLancamento, setValoresPorLancamento] = useState({})
 
   useEffect(() => {
     let ativo = true
@@ -82,18 +84,24 @@ export function useRelatorioRecebidoHoras(periodo) {
       .filter((id) => id !== null && id !== undefined)
     if (!ids.length) {
       setDatasPorLancamento({})
+      setValoresPorLancamento({})
       return undefined
     }
     supabase
       .from('movimentacoes')
-      .select('id, data')
+      .select('id, data, valor')
       .in('id', ids)
       .then(({ data, error }) => {
         if (!ativo) return
         if (error) return
-        const mapa = {}
-        for (const mov of data ?? []) mapa[mov.id] = mov.data
-        setDatasPorLancamento(mapa)
+        const mapaDatas = {}
+        const mapaValores = {}
+        for (const mov of data ?? []) {
+          mapaDatas[mov.id] = mov.data
+          mapaValores[mov.id] = Number(mov.valor)
+        }
+        setDatasPorLancamento(mapaDatas)
+        setValoresPorLancamento(mapaValores)
       })
     return () => {
       ativo = false
@@ -137,8 +145,9 @@ export function useRelatorioRecebidoHoras(periodo) {
       fixoSemana: ponto.config.fixoSemana,
       periodo,
       dataRealPorLancamento: datasPorLancamento,
+      valorRealPorLancamento: valoresPorLancamento,
     })
-  }, [periodo, itens, ponto.config, datasPorLancamento])
+  }, [periodo, itens, ponto.config, datasPorLancamento, valoresPorLancamento])
 
   const apresentacao = useMemo(() => {
     const series = selecionarSerieDoRelatorio(dados, periodo)
@@ -202,8 +211,15 @@ export function useRelatorioRecebidoHoras(periodo) {
             let referente = []
             if (it.referente) {
               const ref = semanaIso(it.referente)
+              // Parcial recebido (19/09/2026, molde da planilha "50% do
+              // período"): quando o valor que entrou difere do previsto, a
+              // linha mostra a fração — ex.: "referente a 50% do período".
+              const previsto = Number(it.valorPrevisto)
+              const fracao =
+                previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100
+              const prefixo = fracao !== 100 ? `referente a ${fracao}% do período de` : 'referente ao período de'
               referente = [
-                { texto: `referente ao período de ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}` },
+                { texto: `${prefixo} ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}` },
               ]
             } else {
               referente = [{ texto: it.descricao || '' }]

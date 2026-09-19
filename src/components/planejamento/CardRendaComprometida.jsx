@@ -5,9 +5,9 @@
 // Só render + uma chamada à função PURA calcularRendaComprometida (mesma lib
 // do resumo) sobre o MESMO array já carregado pela página (itensParaSomatorio)
 // — nenhum hook novo, nenhuma query adicional, nenhuma regra reimplementada.
-// No período ATUAL o saldo real de hoje entra como recurso disponível (vem do
-// MESMO hook do saldo projetado — aqui só chega o número, sem refazer a busca);
-// no FUTURO a base é a entrada prevista do período inteiro.
+// No período ATUAL a base é o saldo do dia anterior ao início + as entradas do
+// período (vem do MESMO hook do saldo projetado — aqui só chega o número, sem
+// refazer a busca); no FUTURO a base é a entrada prevista do período inteiro.
 //
 // Visual (padrão já usado em AnalisePorCategoria — Relatórios): barra
 // horizontal em CSS puro, uma faixa só (o comprometido em destaque sobre a
@@ -25,13 +25,13 @@ import { calcularRendaComprometida } from '../../lib/planejamentoCalc'
 
 const COR_PRINCIPAL = '#42A5F5'
 
-export default function CardRendaComprometida({ itens = [], inicioISO, fimISO, saldoRealHoje = 0 }) {
+export default function CardRendaComprometida({ itens = [], inicioISO, fimISO, saldoInicioPeriodo = null }) {
   const res = useMemo(
-    () => calcularRendaComprometida({ itens, inicioISO, fimISO, hojeISO: hoje(), saldoRealHoje }),
-    // inicioISO/fimISO únicos por período; itens muda a cada carga; o saldo
-    // real de hoje vem memoizado do hook do saldo projetado. hoje() é estável
+    () => calcularRendaComprometida({ itens, inicioISO, fimISO, hojeISO: hoje(), saldoInicioPeriodo }),
+    // inicioISO/fimISO únicos por período; itens muda a cada carga; o saldo do
+    // dia anterior ao início vem do hook do saldo projetado. hoje() é estável
     // no mesmo dia civil — não entra nas dependências.
-    [itens, inicioISO, fimISO, saldoRealHoje], // eslint-disable-line react-hooks/exhaustive-deps
+    [itens, inicioISO, fimISO, saldoInicioPeriodo], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   if (!inicioISO || !fimISO || !res || res.percentual === null) {

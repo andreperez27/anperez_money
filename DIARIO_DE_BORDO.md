@@ -229,6 +229,7 @@ completo daquele dia.
 - [diario/2026-09-15.md](diario/2026-09-15.md) — Seletor de contas PF/PJ com dropdown de perfil e recomendação de cartão "Melhor opção" no Dashboard
 - [diario/2026-09-16.md](diario/2026-09-16.md) — Saldo projetado com atrasados, novo logo ANPEREZ, Ponto com ciclo cumprida/restante/extras e Patrimônio em Relatórios (evolução com replay do histórico, gráfico com scroll isolado)
 - [diario/2026-09-17.md](diario/2026-09-17.md) — Patrimônio: corte de confiabilidade em 2026-06-02 (sem dado antes, início ajustado quando cruza), correção da caixinha APê (criada 21/02/2026, histórico desde fev) e simplificação da aba (Semana/Mês só início/fim/variação, Trimestre/Ano com gráfico mensal)
+- [diario/2026-09-19.md](diario/2026-09-19.md) — Pendência de atraso (migration 38: parcial na RPC, total via botão, sem lazy), saldo projetado sem duplicar realizado futuro (T15), renda sobre entradas + saldo anterior (34%) e recebido parcial no relatório/planilha (1200 + extra 375, "50% do período")
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +

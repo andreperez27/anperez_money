@@ -345,5 +345,20 @@ verificar('T14 — previsto futuro continua entrando normalmente', () => {
   assert.equal(saldoAteData(r.serie, '2026-09-20', saldoAtual), 350)
 })
 
+verificar('T15 — 19/09/2026: realizado com data FUTURA não entra (bug relatado)', () => {
+  // Sintoma real (semana 38, 0 previstos + 2 realizados): entrada 2400
+  // realizada em 16/09 (passado) e saída 900 realizada com data 20/09 (futuro).
+  // Saldo real 306,51 já contém os dois movimentos; a saída futura era
+  // subtraída de novo → -593,49 em vez de 306,51.
+  const saldoAtual = 306.51
+  const itens = [
+    item('e16', '2026-09-16', 2400, 'Entrada', { estado: 'realizado' }),
+    item('s20', '2026-09-20', 900, 'Saida', { estado: 'realizado' }),
+  ]
+  const r = projetarSerie({ saldoAtual, itens, inicioISO: '2026-09-19', fimISO: '2026-09-20' })
+  assert.deepEqual(r.serie, [])
+  assert.equal(saldoAteData(r.serie, '2026-09-20', saldoAtual), 306.51)
+})
+
 console.log(`\n${ok} passaram, ${falhou} falharam.`)
 process.exit(falhou > 0 ? 1 : 0)

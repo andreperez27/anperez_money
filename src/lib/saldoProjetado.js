@@ -38,14 +38,15 @@ export function compararISO(a, b) {
 }
 
 // Percorre os itens em ordem cronológica acumulando o saldo a partir de
-// `saldoInicial`. Filtra pela faixa [inicioISO, fimISO] e ignora cancelados.
+// `saldoInicial`. Filtra pela faixa [inicioISO, fimISO] e ignora cancelados e
+// migrados (o migrado vive na pendência herdeira — somá-lo duplicaria).
 // `itens` pode vir fora de ordem — a função sempre ordena (determinístico).
 export function calcularSaldoProjetado(saldoInicial, itens = [], { inicioISO, fimISO } = {}) {
   const inicio = inicioISO || ''
   const fim = fimISO || ''
 
   const ativos = (itens || [])
-    .filter((i) => i.estado !== 'cancelado')
+    .filter((i) => i.estado !== 'cancelado' && i.estado !== 'migrado')
     .map((i) => ({ ...i, valor: Number(i.valor || 0) }))
     .filter((i) => (!inicio || i.data_prevista >= inicio) && (!fim || i.data_prevista <= fim))
     .sort((a, b) => compararISO(a.data_prevista, b.data_prevista))
@@ -80,24 +81,20 @@ export function calcularSaldoProjetado(saldoInicial, itens = [], { inicioISO, fi
 // Padaria, Enel, pagamento de fatura), mas a série só devolvia à projeção o
 // que existia no planejamento — as avulsas reais (sem item) ficavam "apagadas".
 //
-// Regra vigente (16/09/2026 — inclui previstos atrasados pendentes):
-// a projeção para HOJE/FUTURO parte do saldo REAL de hoje e soma
-//   • os itens com data_prevista ESTRITAMENTE depois de hoje (futuro), mais
-//   • os itens com data_prevista <= hoje que ainda estejam pendentes
-//     (estado === 'previsto', não realizado e não cancelado). Esses previstos
-//     vencidos ou vencendo hoje não estão no saldo real (não houve movimentação)
-//     e precisam entrar na projeção; já os realizados com data até hoje já
-//     estão embutidos no saldo real e não podem entrar de novo (duplicaria).
+// Regra vigente (19/09/2026 — só pendentes entram na projeção):
+// a projeção para HOJE/FUTURO parte do saldo REAL de hoje e soma APENAS itens
+// com estado === 'previsto' (futuros + atrasados/hoje ainda pendentes — esses
+// não estão no saldo real e precisam entrar). Itens 'realizado' NUNCA entram,
+// em qualquer data: os de conta já estão embutidos no saldo real (a RPC cria a
+// movimentação no mesmo instante) e os de cartão vivem na fatura real — somar
+// qualquer um dos dois duplicaria (bug 19/09/2026: saída de R$ 900 realizada
+// com data futura era subtraída de novo, -593,49 em vez de 306,51).
 // Períodos passados continuam reconstruídos por calcularSaldoReal (um
 // lançamento de hoje não retroage no número de ontem).
 export function projetarSerie({ saldoAtual, itens = [], inicioISO, fimISO } = {}) {
-  const futuros = (itens || []).filter((i) => {
-    const cmp = compararISO(i.data_prevista, inicioISO || '')
-    if (cmp > 0) return true
-    // Inclui previstos atrasados/hoje ainda pendentes (não realizados)
-    if (cmp <= 0 && i.estado === 'previsto') return true
-    return false
-  })
+  // Só 'previsto' projeta (futuro, atrasado ou hoje) — realizado, cancelado
+  // e migrado já estão no saldo real, na fatura ou fora das somas.
+  const futuros = (itens || []).filter((i) => i.estado === 'previsto')
   return calcularSaldoProjetado(saldoAtual, futuros, { inicioISO: '', fimISO })
 }
 

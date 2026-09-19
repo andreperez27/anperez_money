@@ -14,6 +14,8 @@ import { validarFaixaDePeriodo } from '../lib/periodos.js'
 import {
   decidirAtualizacoes,
   valorFechadoDaSemana,
+  ehValorManualPonto,
+  comMarcadorValorManual,
 } from '../lib/reconciliacaoPonto.js'
 import {
   identificarRegraValorVariavel,
@@ -306,6 +308,31 @@ export function usePlanejamentos({ ano, semana } = {}) {
       payload.observacao = observacao === '' ? null : observacao
     }
 
+    // Exceção manual no Ponto (mesmo molde do consumo real do Condomínio):
+    // editou o VALOR de ocorrência origem='jornada' ainda 'previsto' para um
+    // número diferente do gravado → carimba o marcador na observação para a
+    // reconciliação automática pular a linha nas próximas cargas. O valor
+    // calculado pelo Ponto continua existindo no próprio Ponto (card "Previsto
+    // a receber") — aqui só deixamos de sobrescrever, sem apagar nada.
+    if (valor !== undefined) {
+      const { data: atual, error: erroLeitura } = await supabase
+        .from('planejamentos')
+        .select('origem, estado, valor, observacao')
+        .eq('id', id)
+        .maybeSingle()
+      if (erroLeitura) throw new Error(erroLeitura.message)
+      if (
+        atual &&
+        atual.origem === 'jornada' &&
+        atual.estado === 'previsto' &&
+        Number(valor) !== Number(atual.valor) &&
+        !ehValorManualPonto(atual)
+      ) {
+        const baseObs = payload.observacao !== undefined ? payload.observacao : atual.observacao
+        payload.observacao = comMarcadorValorManual(baseObs ?? '')
+      }
+    }
+
     if (Object.keys(payload).length === 0) {
       throw new Error('Informe ao menos um campo para editar.')
     }
@@ -373,18 +400,40 @@ export function usePlanejamentos({ ano, semana } = {}) {
   // A RPC valida propriedade/estado no servidor (nada confiado ao cliente);
   // após o sucesso, atualizar() recarrega a semana (previsão some do montante
   // 'previsto' e passa a 'realizado' — mesma convenção dos demais métodos).
-  async function realizarPlanejamento(id, { conta_id, valor_real, data_realizacao } = {}) {
+  async function realizarPlanejamento(id, { conta_id, valor_real, data_realizacao, nota_pendencia, data_pendente } = {}) {
     const params = { p_planejamento_id: id, p_conta_id: conta_id }
     if (valor_real !== undefined && valor_real !== null && valor_real !== '') {
       params.p_valor_real = Number(valor_real)
     }
     if (data_realizacao) params.p_data_realizacao = data_realizacao
+    // Nota/divergência parcial (migration 38): só faz sentido quando há sobra
+    // (valor < previsto em ocorrência atrasada); a RPC ignora sem pendência.
+    if (nota_pendencia !== undefined && nota_pendencia !== null && String(nota_pendencia).trim() !== '') {
+      params.p_nota_pendencia = String(nota_pendencia).trim()
+    }
+    if (data_pendente) params.p_data_pendente = data_pendente
 
     const { error } = await supabase.rpc('realizar_planejamento', params)
     if (error) throw new Error(error.message)
 
     await reprojetarDepoisDeRealizar(id)
     await atualizar()
+  }
+
+  // MIGRAÇÃO EXPLÍCITA de atrasado (migration 38, caminho 3: sem lazy no
+  // mount): o usuário decide por linha ("Jogar p/ próx. semana"). A RPC
+  // atômica revalida tudo no servidor (previsto, atrasado, sem filho via
+  // NOT EXISTS + UNIQUE parcial) — duplo clique não duplica. Devolve o id da
+  // pendência criada (ou da existente, se outra ação venceu a corrida).
+  async function migrarAtraso(id, dataNova) {
+    const { data, error } = await supabase.rpc('migrar_atraso', {
+      p_origem_id: id,
+      p_data_nova: dataNova,
+    })
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+    return data
   }
 
   // Realizar em CARTÃO (Efetivação Cartão — migration 19): transforma UMA
@@ -873,6 +922,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     excluirSerie,
     realizarPlanejamento,
     realizarPlanejamentoCartao,
+    migrarAtraso,
     criarSerieParcelada,
     criarSerieRecorrente,
     cancelarSerieAPartirDe,

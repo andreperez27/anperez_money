@@ -220,6 +220,7 @@ caso('misto: entradas e valor de extras somam lado a lado', () => {
       data: '2026-07-07',
       semana: '2026-07-06',
       valor: 1790,
+      valorPrevisto: 1790,
       valorHorasExtras: 140,
       referente: '2026-07-06',
       descricao: 'entrada 2026-07-07',
@@ -228,6 +229,7 @@ caso('misto: entradas e valor de extras somam lado a lado', () => {
       data: '2026-07-14',
       semana: '2026-07-13',
       valor: 1690,
+      valorPrevisto: 1690,
       valorHorasExtras: 40,
       referente: '2026-07-13',
       descricao: 'entrada 2026-07-14',
@@ -553,6 +555,7 @@ caso('porSemana usa a semana em que o dinheiro ENTROU; recebimentos separam linh
       data: '2026-08-26',
       semana: '2026-08-24',
       valor: 2050,
+      valorPrevisto: 2050,
       valorHorasExtras: 400,
       referente: '2026-08-17',
       descricao: 'entrada 2026-08-26',
@@ -561,6 +564,7 @@ caso('porSemana usa a semana em que o dinheiro ENTROU; recebimentos separam linh
       data: '2026-08-26',
       semana: '2026-08-24',
       valor: 1650,
+      valorPrevisto: 1650,
       valorHorasExtras: 0,
       referente: null,
       descricao: 'entrada 2026-08-26',
@@ -580,6 +584,7 @@ caso('referente do exemplo do André: 06/08 → ref 27/07 a 02/08 com extras 400
     data: '2026-08-06',
     semana: '2026-08-03',
     valor: 2050,
+    valorPrevisto: 2050,
     valorHorasExtras: 400,
     referente: '2026-07-27',
     descricao: 'entrada 2026-08-06',
@@ -603,6 +608,7 @@ caso('semana de trabalho inválida não derruba (referente null, bucket pelo rec
       data: '2026-08-26',
       semana: '2026-08-24',
       valor: 1000,
+      valorPrevisto: 1000,
       valorHorasExtras: 0,
       referente: null,
       descricao: 'entrada 2026-08-26',
@@ -1044,6 +1050,7 @@ caso('data real pode mover o lançamento para outra semana civil (domingo → se
     data: '2026-09-06',
     semana: '2026-08-31',
     valor: 1650,
+    valorPrevisto: 1650,
     valorHorasExtras: 0,
     referente: '2026-08-24',
     descricao: 'entrada 2026-09-06',
@@ -1084,6 +1091,135 @@ caso('data real fora do período exclui o lançamento do relatório; sem mapa el
   assert.equal(comMapa.totalRecebido, 0)
   assert.deepEqual(comMapa.recebimentos, [])
   assert.deepEqual(comMapa.porData, [])
+})
+
+// ============================================================================
+// 21) VALOR REAL DA MOVIMENTAÇÃO (19/09/2026): quando o item tem
+// lancamento_id presente em valorRealPorLancamento, o relatório mostra o que
+// ENTROU de fato (movimentacoes.valor), não o valor previsto — realização
+// parcial (previsto 2400 com só 1200 entrados mostra 1200, como a planilha
+// lançava "50% do período"). Mesmo molde da data real (item 20).
+// ============================================================================
+caso('valor real (lancamento_id) substitui o valor previsto no total, linha e buckets', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Previsto 2400 em 16/09, mas só metade entrou (movimento de 1200 em 18/09).
+  const plan = [
+    entrada('2026-09-16', 2400, { lancamento_id: 2001 }),
+  ]
+
+  // Sem o mapa: vale o previsto 2400 (comportamento antigo).
+  const semMapa = calcularRecebidoHoras({ planejamentosRealizados: plan, fixoSemana: FIXO, periodo })
+  assert.equal(semMapa.totalRecebido, 2400)
+
+  // Com o mapa: total, linha e bucket mostram os 1200 que entraram.
+  const comMapa = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 2001: '2026-09-18' },
+    valorRealPorLancamento: { 2001: 1200 },
+  })
+  assert.equal(comMapa.totalRecebido, 1200)
+  assert.equal(comMapa.recebimentos[0].valor, 1200)
+  assert.deepEqual(comMapa.porData.map((s) => s.recebido), [1200])
+  assert.deepEqual(comMapa.porMes.map((s) => s.recebido), [1200])
+})
+
+caso('valor real igual ao previsto não muda nada; sem lancamento_id vale o previsto', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  const plan = [
+    // Realização integral: movimento bate com o previsto.
+    entrada('2026-09-16', 2400, { lancamento_id: 2002 }),
+    // Histórico da planilha (sem lancamento_id): previsto continua valendo.
+    entrada('2026-09-10', 2050),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 2002: '2026-09-16' },
+    valorRealPorLancamento: { 2002: 2400 },
+  })
+  assert.equal(r.totalRecebido, 4450)
+})
+
+caso('valor real entra no cálculo dos extras (recebido acima do fixo)', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Semana de trabalho 37 (fixo 1650): entraram 1200 de 2400 previstos.
+  // Extra = 1200 − 1650 × 50% = 375 (proporcional, como no teste seguinte).
+  const plan = [
+    entrada('2026-09-16', 2400, {
+      lancamento_id: 2003,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 2003: '2026-09-16' },
+    valorRealPorLancamento: { 2003: 1200 },
+  })
+  assert.equal(r.totalRecebido, 1200)
+  assert.equal(r.totalValorHorasExtras, 375)
+  assert.equal(r.recebimentos[0].valorHorasExtras, 375)
+})
+
+caso('parcial 50%: extra acompanha a fração recebida (750 × 50% = 375)', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Semana de trabalho 37 (fixo 1650): previsto 2400 (extra cheio 750),
+  // mas só metade entrou (movimento de 1200).
+  const plan = [
+    entrada('2026-09-16', 2400, {
+      lancamento_id: 2004,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 2004: '2026-09-18' },
+    valorRealPorLancamento: { 2004: 1200 },
+  })
+  assert.equal(r.totalRecebido, 1200)
+  assert.equal(r.totalValorHorasExtras, 375)
+  assert.equal(r.recebimentos[0].valor, 1200)
+  assert.equal(r.recebimentos[0].valorPrevisto, 2400)
+  assert.equal(r.recebimentos[0].valorHorasExtras, 375)
+})
+
+caso('parcial não quebra o rateio quando há dois pagamentos na mesma semana', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Mesma semana 37: um integral (1650, sem extra) e um parcial
+  // (previsto 800, entrados 400 → fração 50% da semana: planejado 2450,
+  // recebido 2050; extra = 2050 − 1650 × 2050/2450 = 2050 − 1380,61 = 669,39).
+  const plan = [
+    entrada('2026-09-16', 1650, {
+      lancamento_id: 2005,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+    entrada('2026-09-17', 800, {
+      lancamento_id: 2006,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 2005: '2026-09-16', 2006: '2026-09-17' },
+    valorRealPorLancamento: { 2005: 1650, 2006: 400 },
+  })
+  assert.equal(r.totalRecebido, 2050)
+  assert.equal(r.totalValorHorasExtras, 669.39)
+  // Rateio ∝ recebido: 1650/2050 e 400/2050 de 669,39.
+  assert.equal(r.recebimentos[0].valorHorasExtras, 538.78)
+  assert.equal(r.recebimentos[1].valorHorasExtras, 130.61)
 })
 
 console.log(`\n${passou} testes passaram, ${falhou} falharam.`)

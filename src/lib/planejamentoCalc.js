@@ -10,16 +10,18 @@
 // - Resultado é FLUXO previsto (entradas - saídas) e nunca "saldo".
 export function calcularResumoPlanejamentos(itens = []) {
   const totais = { entradas: 0, saidas: 0, resultado: 0 }
-  const contagens = { previsto: 0, realizado: 0, cancelado: 0 }
+  const contagens = { previsto: 0, realizado: 0, cancelado: 0, migrado: 0 }
 
   for (const item of itens) {
     // Contagem: todos os estados entram aqui.
     if (item.estado === 'previsto') contagens.previsto += 1
     else if (item.estado === 'realizado') contagens.realizado += 1
     else if (item.estado === 'cancelado') contagens.cancelado += 1
+    else if (item.estado === 'migrado') contagens.migrado += 1
 
-    // Totais: cancelado fica de fora das somas.
-    if (item.estado === 'cancelado') continue
+    // Totais: cancelado e migrado ficam de fora das somas (o migrado já
+    // vive na pendência herdeira — somá-lo duplicaria).
+    if (item.estado === 'cancelado' || item.estado === 'migrado') continue
 
     const valor = Number(item.valor || 0)
     if (item.tipo_op === 'Entrada') totais.entradas += valor
@@ -41,11 +43,12 @@ export function calcularResumoPlanejamentos(itens = []) {
 //     E avulsas variáveis já lançadas).
 //   • futuro (inicio > hoje): período nem começou — renda base = ENTRADAS
 //     PREVISTAS do período inteiro (mesma base do card "Entradas previstas").
-//   • atual (inicio <= hoje <= fim): o saldo real de HOJE já está na conta e
-//     conta como recurso disponível (mesma fonte do card de saldo projetado)
-//     MAIS as entradas ainda NÃO realizadas com data prevista entre hoje e o
-//     fim do período. Entradas JÁ realizadas do período NÃO somam de novo —
-//     elas já estão dentro do saldo real de hoje (duplicaria o valor).
+//   • atual (inicio <= hoje <= fim): o que ENTROU na semana + o saldo do fim
+//     da semana anterior — ou seja, o saldo real reconstruído no dia anterior
+//     ao início MAIS todas as entradas do período (realizadas ou previstas,
+//     sem duplicar nada: a realizada ainda não estava no saldo inicial).
+//     O saldo de HOJE não entra (ele já embute o que entrou — somá-lo junto
+//     duplicaria; foi o bug dos 5451% com saldo baixo).
 //
 // Comprometido (atual/futuro) = o valor PLANEJADO (previsto) das despesas
 // comprometidas que caem no período — entram também os itens ainda 'previsto',
@@ -64,17 +67,18 @@ export function calcularResumoPlanejamentos(itens = []) {
 //
 // Devolve { percentual, rendaBase, comprometidoBase, modo }, com modo =
 // 'fechado' | 'atual' | 'futuro'. percentual é null quando não há base de
-// renda (saldo real + entradas não-formam-base ou nenhuma entrada no futuro) —
+// renda (sem saldo inicial reconstruído ou nenhuma entrada no período) —
 // o card vira "sem dados suficientes neste período", sem divisão por zero.
-// `saldoRealHoje` entra pronto (vem do MESMO hook do saldo projetado — a
-// página não refaz a consulta). Cancelados nunca participam.
+// `saldoInicioPeriodo` entra pronto (saldo real no dia anterior ao início,
+// mesma fonte e regra do saldo projetado — a página não refaz a consulta).
+// Cancelados (e migrados) nunca participam.
 // ----------------------------------------------------------------------------
 export function calcularRendaComprometida({
   itens = [],
   inicioISO,
   fimISO,
   hojeISO,
-  saldoRealHoje = 0,
+  saldoInicioPeriodo = null,
 } = {}) {
   const inicio = String(inicioISO ?? '')
   const fim = String(fimISO ?? '')
@@ -86,7 +90,7 @@ export function calcularRendaComprometida({
   let comprometidoBase = 0
 
   for (const item of itens) {
-    if (!item || item.estado === 'cancelado') continue
+    if (!item || item.estado === 'cancelado' || item.estado === 'migrado') continue
     const valor = Number(item.valor || 0)
 
     if (item.tipo_op === 'Entrada') {
@@ -95,11 +99,9 @@ export function calcularRendaComprometida({
       } else if (modo === 'futuro') {
         // Período inteiro previsto: todas as entradas não-canceladas formam a base.
         rendaBase += valor
-      } else if (item.estado === 'previsto' && item.data_prevista >= inicio && item.data_prevista <= fim) {
-        // atual: todas as entradas ainda NÃO realizadas no período — as
-        // realizadas já estão dentro do saldo real de hoje; somá-las de novo
-        // duplicaria. Inclui também as atrasadas (com data < hoje) que ainda
-        // estão pendentes, pois ainda são renda esperada para o período.
+      } else if (item.data_prevista >= inicio && item.data_prevista <= fim) {
+        // atual: TODAS as entradas do período (realizadas ou previstas) —
+        // nenhuma está no saldo do início, então nada duplica.
         rendaBase += valor
       }
       continue
@@ -113,9 +115,14 @@ export function calcularRendaComprometida({
     }
   }
 
-  // Período ATUAL: o saldo real de hoje entra como recurso disponível (contas
-  // ativas, sem caixinha — mesma regra do card de saldo projetado).
-  if (modo === 'atual') rendaBase += Number(saldoRealHoje || 0)
+  // Período ATUAL: base = saldo do fim da semana anterior + entradas da semana.
+  // Sem saldo inicial (carregando ou fora da cobertura) não há base confiável.
+  if (modo === 'atual') {
+    if (saldoInicioPeriodo === null || saldoInicioPeriodo === undefined) {
+      return { percentual: null, rendaBase, comprometidoBase, modo }
+    }
+    rendaBase += Number(saldoInicioPeriodo || 0)
+  }
 
   if (!(rendaBase > 0)) {
     return { percentual: null, rendaBase, comprometidoBase, modo }

@@ -4,6 +4,9 @@ import {
   valorFechadoDaSemana,
   semanaFechada,
   semanaDeTrabalhoDaData,
+  MARCADOR_VALOR_MANUAL,
+  ehValorManualPonto,
+  comMarcadorValorManual,
 } from '../src/lib/reconciliacaoPonto.js'
 
 // ============================================================================
@@ -228,6 +231,52 @@ verificar('P6 — origem não-jornada (recorrente) nunca é reconciliada', async
     buscarValorRealDaSemana: async () => 50,
   })
   assert.deepEqual(updates, [])
+})
+
+verificar('P7 — valor ajustado manualmente NÃO é sobrescrito (semana fechada, valor diferente)', async () => {
+  let chamouBusca = false
+  const updates = await decidirAtualizacoes({
+    linhas: [
+      linha('j7', {
+        ...SEMANA_FECHADA,
+        valor: 2000,
+        observacao: `alguma nota\n${MARCADOR_VALOR_MANUAL}`,
+      }),
+    ],
+    hoje: HOJE,
+    buscarValorRealDaSemana: async () => {
+      chamouBusca = true
+      return 2130
+    },
+  })
+  assert.deepEqual(updates, [])
+  assert.equal(chamouBusca, false)
+})
+
+verificar('P8 — sem marcador, a mesma linha ainda seria reconciliada', async () => {
+  const updates = await decidirAtualizacoes({
+    linhas: [linha('j8', { ...SEMANA_FECHADA, valor: 2000 })],
+    hoje: HOJE,
+    buscarValorRealDaSemana: async () =>
+      valorFechadoDaSemana({ excecoes: [], config: CONFIG, inicioISO: '2026-08-31', fimISO: '2026-09-06' }),
+  })
+  assert.deepEqual(updates, [{ id: 'j8', valor: 2130 }])
+})
+
+verificar('M1 — ehValorManualPonto detecta a linha marcadora (mesmo com sufixo)', () => {
+  assert.equal(ehValorManualPonto({ observacao: MARCADOR_VALOR_MANUAL }), true)
+  assert.equal(ehValorManualPonto({ observacao: `texto\n${MARCADOR_VALOR_MANUAL} extra` }), true)
+  assert.equal(ehValorManualPonto({ observacao: '1055 Consumo real informado' }), false)
+  assert.equal(ehValorManualPonto({ observacao: null }), false)
+  assert.equal(ehValorManualPonto(null), false)
+})
+
+verificar('M2 — comMarcadorValorManual preserva o texto e é idempotente', () => {
+  assert.equal(comMarcadorValorManual(null), MARCADOR_VALOR_MANUAL)
+  assert.equal(comMarcadorValorManual(''), MARCADOR_VALOR_MANUAL)
+  assert.equal(comMarcadorValorManual('nota'), `nota\n${MARCADOR_VALOR_MANUAL}`)
+  const umaVez = comMarcadorValorManual('nota')
+  assert.equal(comMarcadorValorManual(umaVez), umaVez)
 })
 
 console.log(`\n${ok} ok, ${falhou} falha(s).`)

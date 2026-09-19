@@ -10,6 +10,7 @@ import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compar
 import { identificarRegraValorVariavel, ehCondominioDoBoleto } from '../../lib/serieValorVariavel'
 import { supabase } from '../../lib/supabaseClient'
 import { gerarPdfCondominio } from '../../lib/gerarPdfCondominio'
+import { ehValorManualPonto } from '../../lib/reconciliacaoPonto'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 import GeradorCondominio from './GeradorCondominio'
 import ConsumoRealOcorrencia from './ConsumoRealOcorrencia'
@@ -22,10 +23,12 @@ import {
   ehAjustadoPonto,
   ehConsumoRealInformado,
   badgeEstado,
+  badgePendente,
   conteudoItem,
   corTipo,
   estilosItem,
 } from './comum'
+import { proximaDataPendente } from '../../lib/pendenciaAtraso'
 
 // ============================================================================
 // LANÇAMENTOS DO PLANEJAMENTO — LISTA COMPLETA DO PERÍODO (ETAPA 06/E5-F4)
@@ -88,8 +91,10 @@ export default function Lancamentos({
   })
 
   // Efeitvação (Planejado → Realizado): item sendo lançado + payload do modal.
+  // `nota` é o motivo humano da divergência parcial (migration 38) — aparece
+  // só quando o valor informado é menor que o previsto em ocorrência atrasada.
   const [realizando, setRealizando] = useState(null)
-  const [realForm, setRealForm] = useState({ destino: 'conta', conta_id: '', cartao_id: '', valor: '', data: '' })
+  const [realForm, setRealForm] = useState({ destino: 'conta', conta_id: '', cartao_id: '', valor: '', data: '', nota: '' })
   const [confirmando, setConfirmando] = useState(false)
 
   // Formulário de criação — avulsa × parcelada × recorrente × condominio.
@@ -365,8 +370,28 @@ export default function Lancamentos({
       // em cartão, a compra é lançada na data prevista → o mês da fatura real
       // da efetivação bate com o mês calculado na PROJEÇÃO da fatura.
       data: item.data_prevista || hoje(),
+      nota: '',
     })
     setErroAcao('')
+  }
+
+  // Migração explícita de atrasado (migration 38, caminho 3): move o valor
+  // cheio para a próxima ocorrência via RPC idempotente, com confirmação
+  // mostrando valor e destino — decisão financeira equivalente a realizar.
+  async function aoMigrarAtraso(item) {
+    const dataNova = proximaDataPendente(item, hoje())
+    const ddmm = (iso) => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`
+    const ok = window.confirm(
+      `Mover ${formatoReal.format(Number(item.valor))} (previsto de ${ddmm(item.data_prevista)}) pra ${ddmm(dataNova)}?`,
+    )
+    if (!ok) return
+    setErroAcao('')
+    try {
+      await acoes.migrarAtraso(item.id, dataNova)
+      await aoPosMutacao?.()
+    } catch (e) {
+      setErroAcao(`Não foi possível migrar: ${e.message}`)
+    }
   }
 
   // Confirma a realização. A RPC (migration 16) faz INSERT em movimentacoes +
@@ -391,6 +416,14 @@ export default function Lancamentos({
     }
     try {
       setConfirmando(true)
+      // Pendência parcial (migration 38): só quando há sobra (valor < previsto)
+      // em ocorrência já atrasada — a RPC cria a pendente na mesma transação.
+      const geraPendente =
+        realForm.destino !== 'cartao' &&
+        Number.isFinite(valor) &&
+        valor > 0 &&
+        valor < Number(realizando.valor) &&
+        String(realizando.data_prevista) <= hoje()
       if (realForm.destino === 'cartao') {
         await acoes.realizarCartao(realizando.id, {
           cartao_id: realForm.cartao_id,
@@ -402,6 +435,12 @@ export default function Lancamentos({
           conta_id: realForm.conta_id,
           valor_real: valor,
           data_realizacao: realForm.data || undefined,
+          ...(geraPendente
+            ? {
+                nota_pendencia: realForm.nota?.trim() || undefined,
+                data_pendente: proximaDataPendente(realizando, hoje()),
+              }
+            : {}),
         })
       }
       setErroAcao('')
@@ -966,6 +1005,26 @@ export default function Lancamentos({
               </label>
             </div>
 
+            {/* Motivo da divergência (migration 38): só aparece quando o valor
+                informado é menor que o previsto em ocorrência já atrasada —
+                ou seja, só quando uma pendência vai ser gerada. Opcional. */}
+            {realForm.destino !== 'cartao' &&
+              Number.isFinite(lerValor(realForm.valor)) &&
+              lerValor(realForm.valor) > 0 &&
+              lerValor(realForm.valor) < Number(realizando.valor) &&
+              String(realizando.data_prevista) <= hoje() && (
+                <label style={estilos.rotuloCampo}>
+                  Motivo da diferença (opcional)
+                  <input
+                    style={estilosComuns.input}
+                    type="text"
+                    placeholder='Ex.: referente a 50% da semana 37'
+                    value={realForm.nota}
+                    onChange={(e) => campoReal({ nota: e.target.value })}
+                  />
+                </label>
+              )}
+
             <button
               type="submit"
               disabled={confirmando || (realForm.destino === 'cartao' ? cartoesAtivos.length === 0 : contasAtivas.length === 0)}
@@ -1029,6 +1088,7 @@ export default function Lancamentos({
             const atrasado = ehAtrasado(item, dataHoje)
             const ajustadoPonto = ehAjustadoPonto(item, dataHoje)
             const consumoReal = ehConsumoRealInformado(item)
+            const valorManual = ehValorManualPonto(item)
             // Só a OCORRÊNCIA PREVISTA de Condomínio ganha "Inserir consumo
             // real" (13/09/2026). Identificação pela MESMA regra canônica da
             // lib (identificarRegraValorVariavel): cobre "Condomínio"/
@@ -1060,6 +1120,10 @@ export default function Lancamentos({
               : null
             const aberta = linhaAberta === item.id
             const chevronAberto = aberta ? { transform: 'rotate(90deg)' } : {}
+            // Pendência herdada de atraso (migration 38): tag automática na
+            // observacao + motivo humano (nota) gravado na origem e copiado
+            // para a pendente na criação — ambos visíveis sem join.
+            const ehPendente = !!item.origem_atraso_id
             return (
               <li
                 key={item.id}
@@ -1099,9 +1163,19 @@ export default function Lancamentos({
                             Consumo real informado
                           </span>
                         )}
+                        {valorManual && (
+                          <span style={estilosItem.badgeValorManual} title="Valor ajustado manualmente — a reconciliação automática do Ponto não sobrescreve (o calculado continua visível no Ponto)">
+                            Valor ajustado manualmente
+                          </span>
+                        )}
                         {destinoCartao && (
                           <span style={estilosItem.badgeDestinoCartao} title="Destino planejado: cartão de crédito (ainda não efetivado)">
                             Cartão{cartaoDestino ? `: ${cartaoDestino.nome}` : ''}
+                          </span>
+                        )}
+                        {ehPendente && (
+                          <span style={badgePendente()} title={item.observacao || 'Pendente herdada de atraso'}>
+                            Pendente
                           </span>
                         )}
                         {atrasado ? (
@@ -1118,6 +1192,12 @@ export default function Lancamentos({
 <span className="chevron-plano" style={{ ...estilosItem.chevron, ...chevronAberto }} aria-hidden="true">▸</span>
                     </div>
                     <div style={conteudoItem(item)}>{item.descricao}</div>
+                    {ehPendente && item.observacao && (
+                      <div style={estilosItem.linhaNota}>{item.observacao}</div>
+                    )}
+                    {!ehPendente && item.nota_pendencia && (
+                      <div style={estilosItem.linhaNota}>Motivo: {item.nota_pendencia}</div>
+                    )}
                     <div style={estilosItem.linhaMobileBase}>
                       <span style={corTipo(item.tipo_op)}>
                         {RÓTULO_TIPO(item.tipo_op)} · {formatoReal.format(Number(item.valor))}
@@ -1134,6 +1214,9 @@ export default function Lancamentos({
                           <>
                             {item.estado === 'previsto' && (
                               <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
+                            )}
+                            {item.estado === 'previsto' && String(item.data_prevista) < dataHoje && (
+                              <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
                             )}
                             {ehCondominioPrevisto && (
                               <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
@@ -1167,8 +1250,20 @@ export default function Lancamentos({
                 ) : (
                   <>
                     <span style={estilosItem.data}>{formatarData(item.data_prevista)}</span>
-                    <span style={conteudoItem(item)}>
+                    <span
+                      style={conteudoItem(item)}
+                      title={
+                        ehPendente
+                          ? item.observacao || 'Pendente herdada de atraso'
+                          : item.nota_pendencia
+                            ? `Motivo: ${item.nota_pendencia}`
+                            : item.descricao
+                      }
+                    >
                       {item.descricao}
+                      {ehPendente && (
+                        <span style={{ ...badgePendente(), marginLeft: '0.5rem' }}>Pendente</span>
+                      )}
                       {ehSerie && !ehRecorrente && (
                         <span style={{ ...estilosItem.badgeParcela, marginLeft: '0.5rem' }}>
                           {item.parcela_numero}/{item.total_parcelas}
@@ -1191,6 +1286,11 @@ export default function Lancamentos({
                       {consumoReal && (
                         <span style={{ ...estilosItem.badgeConsumo, marginLeft: '0.5rem' }} title="Valor corrigido pelo consumo real de Gás/Água informado no gerador de condomínio">
                           Consumo real informado
+                        </span>
+                      )}
+                      {valorManual && (
+                        <span style={{ ...estilosItem.badgeValorManual, marginLeft: '0.5rem' }} title="Valor ajustado manualmente — a reconciliação automática do Ponto não sobrescreve (o calculado continua visível no Ponto)">
+                          Valor ajustado manualmente
                         </span>
                       )}
                       {destinoCartao && (
@@ -1225,6 +1325,9 @@ export default function Lancamentos({
                         <>
                           {item.estado === 'previsto' && (
                             <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
+                          )}
+                          {item.estado === 'previsto' && String(item.data_prevista) < dataHoje && (
+                            <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
                           )}
                           {ehCondominioPrevisto && (
                             <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>

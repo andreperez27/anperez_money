@@ -20,6 +20,7 @@ export const RÓTULO_ESTADO = {
   previsto: 'Previsto',
   realizado: 'Realizado',
   cancelado: 'Cancelado',
+  migrado: 'Migrado',
 }
 
 export const ehEntrada = (tipoOp) => tipoOp === 'Entrada'
@@ -91,7 +92,8 @@ export function corTipo(tipoOp) {
   }
 }
 
-// Badge de estado: azul (previsto), verde (realizado), cinza (cancelado).
+// Badge de estado: azul (previsto), verde (realizado), cinza (cancelado),
+// lilás (migrado — pendência herdada, histórico preservado).
 export function badgeEstado(estado) {
   const base = {
     padding: '0.15rem 0.55rem',
@@ -108,15 +110,34 @@ export function badgeEstado(estado) {
   if (estado === 'cancelado') {
     return { ...base, color: '#9ca3af', borderColor: '#374151' }
   }
+  if (estado === 'migrado') {
+    return { ...base, color: '#c4b5fd', borderColor: 'rgba(196, 181, 253, 0.45)' }
+  }
   return { ...base, color: '#42A5F5', borderColor: 'rgba(66, 165, 245, 0.45)' }
 }
 
-// Itens cancelados ficam esmaecidos, mas permanecem legíveis (histórico).
+// Badge de pendência herdada de atraso (migration 38) — tom ÂMBAR, distinto de
+// fatura (violeta), jornada (coral) e disponível (amarelo). Marca a linha que
+// nasceu de uma migração (origem_atraso_id preenchido).
+export function badgePendente() {
+  return {
+    padding: '0.15rem 0.55rem',
+    borderRadius: '999px',
+    background: 'rgba(245, 158, 11, 0.15)',
+    color: '#f59e0b',
+    fontSize: '0.7rem',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    whiteSpace: 'nowrap',
+  }
+}
+
+// Itens cancelados/migrados ficam esmaecidos, mas legíveis (histórico).
 export function conteudoItem(item) {
   return {
     fontWeight: 'bold',
     color: '#e5e7eb',
-    opacity: item.estado === 'cancelado' ? 0.55 : 1,
+    opacity: item.estado === 'cancelado' || item.estado === 'migrado' ? 0.55 : 1,
   }
 }
 
@@ -150,12 +171,18 @@ export const estilosItem = {
   botaoAcaoFatura: { background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
   botaoAcaoSerie: { background: 'transparent', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   botaoAcaoExcluir: { background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
+  // "Jogar p/ próx. semana" (migração total do atraso, migration 38) — tom
+  // ÂMBAR igual ao badge Pendente, para associar ação e resultado.
+  botaoAcaoMigrar: { background: 'transparent', border: 'none', color: '#f59e0b', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
   // "Inserir consumo real" (só em ocorrência de Condomínio prevista) — tom TEAL
   // igual ao badge "Consumo real informado" para manter a mesma associação.
   botaoAcaoConsumo: { background: 'transparent', border: 'none', color: '#2dd4bf', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem' },
   // "Exportar PDF" do comprovante do Condomínio (só em ocorrência REALIZADA com
   // snapshot em condominio_boleto_itens) — tom AZUL, distinto dos demais.
   botaoAcaoPdf: { background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: '0.25rem 0.4rem', fontSize: '0.85rem', fontWeight: 'bold' },
+  // Linha secundária sob a descrição: tag "Pendente (atraso da semana de
+  // dd/mm)" da pendente ou "Motivo: ..." da original (migration 38).
+  linhaNota: { color: '#9ca3af', fontSize: '0.78rem', marginTop: '0.15rem' },
   badgeParcela: { padding: '0.15rem 0.5rem', borderRadius: '6px', background: '#1f2937', color: '#9ca3af', fontSize: '0.72rem', whiteSpace: 'nowrap' },
   // Item de FATURA automática (projeção dinâmica do cartão, não persistida) —
   // tom VIOLETA para distinguir de 'previsto' (azul) e de 'Disponível' (amarelo).
@@ -188,4 +215,10 @@ export const estilosItem = {
   // boleto real do mês e fica imune à reprojeção. Tom TEAL (água/consumo),
   // distinto do coral do Ponto (#fb923c) e dos demais badges — sem colidir.
   badgeConsumo: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(45, 212, 191, 0.15)', color: '#2dd4bf', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Ocorrência jornada com VALOR AJUSTADO MANUALMENTE (marcador
+  // "Valor manual (Ponto)" na observação): o digitado vale, imune à
+  // reconciliação automática. Tom ROSA, distinto de todos os demais
+  // (coral do Ponto, teal do consumo, violeta da fatura, ciano das férias,
+  // amarelo do disponível, vermelho do atrasado, azul do previsto).
+  badgeValorManual: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(244, 114, 182, 0.15)', color: '#f472b6', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
 }

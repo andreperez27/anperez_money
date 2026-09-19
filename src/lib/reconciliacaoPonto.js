@@ -27,6 +27,35 @@
 import { semanaIso, inicioDaSemanaIso } from './semana.js'
 import { fecharPeriodo, previstoAReceberDaSemana } from './pontoCalc.js'
 
+// Marcador gravado na observação de UMA OCORRÊNCIA jornada cujo valor foi
+// AJUSTADO MANUALMENTE pelo usuário (edição no acordeão). Mesmo molde do
+// MARCADOR_CONSUMO_REAL (serieValorVariavel.js): sem schema novo, só convenção
+// de texto. Texto puro (sem código numérico) para não colidir com os códigos
+// do boleto (1002/1010/1052/1055). Além de alimentar o badge "Valor ajustado
+// manualmente" (comum.js), torna a ocorrência IMUNE à reconciliação
+// automática: o valor digitado não volta a ser estimado pelo Ponto.
+export const MARCADOR_VALOR_MANUAL = 'Valor manual (Ponto)'
+
+// A ocorrência teve o valor ajustado manualmente (observação contém a linha
+// marcadora)? Linha com esse valor fica fora da reconciliação — o travado vale.
+export function ehValorManualPonto(linha) {
+  if (!linha || !linha.observacao) return false
+  return String(linha.observacao)
+    .split('\n')
+    .some((l) => {
+      const t = l.trim()
+      return t === MARCADOR_VALOR_MANUAL || t.startsWith(`${MARCADOR_VALOR_MANUAL} `)
+    })
+}
+
+// Anexa o marcador à observação (idempotente: já marcado volta igual).
+// Preserva o texto existente — só acrescenta a linha marcadora.
+export function comMarcadorValorManual(observacao) {
+  if (ehValorManualPonto({ observacao })) return observacao ?? ''
+  const base = String(observacao ?? '').replace(/\s+$/, '')
+  return base ? `${base}\n${MARCADOR_VALOR_MANUAL}` : MARCADOR_VALOR_MANUAL
+}
+
 const MS_DIA = 86_400_000
 
 // Data civil 'YYYY-MM-DD' → timestamp UTC. Interno.
@@ -102,13 +131,15 @@ export function semanaFechada(inicioISO, fimISO, dataHoje) {
 // a atualização, já arredondando a 2 casas.
 // ----------------------------------------------------------------------------
 export async function decidirAtualizacoes({ linhas = [], hoje, buscarValorRealDaSemana } = {}) {
-  // Só linhas de origem 'jornada', ainda previstas, com referência de semana.
+  // Só linhas de origem 'jornada', ainda previstas, com referência de semana —
+  // e SEM ajuste manual (valor travado pelo usuário não é reestimado).
   const candidatas = linhas.filter(
     (l) =>
       l.origem === 'jornada' &&
       l.estado === 'previsto' &&
       Number.isInteger(l.semana_trabalho) &&
-      Number.isInteger(l.ano_semana_trabalho),
+      Number.isInteger(l.ano_semana_trabalho) &&
+      !ehValorManualPonto(l),
   )
 
   const updates = []
