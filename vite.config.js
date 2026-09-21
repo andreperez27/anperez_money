@@ -15,7 +15,7 @@ import react from '@vitejs/plugin-react'
 // avisa quando há versão nova — sem isso, celular com página guardada em
 // cache nunca percebe o deploy novo. Gerada uma vez por build, igual nos
 // dois lugares.
-const VERSAO_BUILD = new Date().toISOString().slice(0, 16).replace('T', ' ')
+const VERSAO_BUILD = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
 export default defineConfig({
   plugins: [
