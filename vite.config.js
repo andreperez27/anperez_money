@@ -10,8 +10,30 @@ import react from '@vitejs/plugin-react'
 // "server.host" expõe o dev server para a rede local (acesso pelo celular
 // na mesma rede via http://IP-DA-MAQUINA:5173). Sem isso, o Vite escuta
 // apenas em localhost.
+// Versão do build (AAAA-MM-DD HH:MM): vai para o bundle (define) e para
+// dist/versao.json (asset). O app compara os dois em tempo de execução e
+// avisa quando há versão nova — sem isso, celular com página guardada em
+// cache nunca percebe o deploy novo. Gerada uma vez por build, igual nos
+// dois lugares.
+const VERSAO_BUILD = new Date().toISOString().slice(0, 16).replace('T', ' ')
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'versao-app',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'versao.json',
+          source: JSON.stringify({ versao: VERSAO_BUILD }),
+        })
+      },
+    },
+  ],
+  define: {
+    __VERSAO_APP__: JSON.stringify(VERSAO_BUILD),
+  },
   base: '/anperez_money/',
   server: {
     host: true,

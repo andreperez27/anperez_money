@@ -15,6 +15,22 @@ import Ponto from './pages/Ponto'
 import Planejamento from './pages/Planejamento'
 import Layout from './components/Layout'
 import { ContaAtivaProvider } from './context/ContaAtivaContext'
+import { useVerificarVersao } from './hooks/useVerificarVersao'
+
+// Faixa fixa no topo quando há deploy mais novo que o bundle em execução.
+// O botão recarrega buscando tudo do zero (limpa o cache da página antiga).
+function FaixaAtualizacao() {
+  const { versaoRemota, atualizacaoDisponivel } = useVerificarVersao()
+  if (!atualizacaoDisponivel) return null
+  return (
+    <div style={estilos.faixa}>
+      <span>Nova versão disponível ({versaoRemota})</span>
+      <button type="button" onClick={() => window.location.reload()} style={estilos.botaoFaixa}>
+        Atualizar agora
+      </button>
+    </div>
+  )
+}
 
 // Guardião das rotas autenticadas. Reusa o useAuth (mesma sessão do
 // Supabase, sem sistema paralelo): enquanto a checagem de sessão
@@ -76,7 +92,9 @@ function SomenteDeslogado({ children }) {
 // O basename "/anperez-money" já está configurado no main.jsx.
 function App() {
   return (
-    <Routes>
+    <>
+      <FaixaAtualizacao />
+      <Routes>
       <Route
         path="/login"
         element={
@@ -217,8 +235,35 @@ function App() {
         <Route path="senha" element={<TrocarSenha />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   )
+}
+
+const estilos = {
+  faixa: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.75rem',
+    padding: '0.5rem 1rem',
+    background: '#42A5F5',
+    color: '#0b0f19',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    fontFamily: "'Space Grotesk', system-ui, sans-serif",
+  },
+  botaoFaixa: {
+    padding: '0.3rem 0.9rem',
+    borderRadius: '999px',
+    border: 'none',
+    background: '#0b0f19',
+    color: '#fff',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '0.85rem',
+    fontWeight: 700,
+  },
 }
 
 export default App
