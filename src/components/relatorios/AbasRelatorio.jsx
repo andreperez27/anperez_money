@@ -4,9 +4,10 @@
 // Pílulas roláveis horizontalmente (mesma linguagem visual das abas de
 // Configurações e do detalhe do Cartão, com a ativa preenchida em #42A5F5).
 // A ordem é fixa: Recebido & horas, Acordo trabalhista, Patrimônio, Entradas
-// x despesas, Por categoria, Cartões, Planejado x real. Trocar de aba NÃO
-// reseta o período — quem guarda o período é a página; este componente só
-// comunica qual aba está selecionada.
+// x despesas, Por categoria. Trocar de aba NÃO reseta o período — quem guarda
+// o período é a página; este componente só comunica qual aba está selecionada.
+// (As abas "Cartões" e "Planejado x real" foram removidas em 22/09/2026 —
+// decisão com André: eram só template "Em construção", sem dados reais.)
 // ============================================================================
 
 const ABAS = [
@@ -15,8 +16,6 @@ const ABAS = [
   { chave: 'patrimonio', rotulo: 'Patrimônio' },
   { chave: 'entradas-x-despesas', rotulo: 'Entradas x despesas' },
   { chave: 'por-categoria', rotulo: 'Por categoria' },
-  { chave: 'cartoes', rotulo: 'Cartões' },
-  { chave: 'planejado-x-real', rotulo: 'Planejado x real' },
 ]
 
 export default function AbasRelatorio({ aba, aoTrocarAba }) {

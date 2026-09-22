@@ -114,10 +114,9 @@ export default function Relatorios() {
 
   const faixaInvertida = Boolean(dataInicio && dataFim && dataInicio > dataFim)
 
-  // Aba "Recebido & horas", "Acordo trabalhista", "Entradas x despesas" e
-  // "Patrimônio": dados reais do período. As demais abas continuam sem dados
-  // (template em "Em construção"). Os hooks já devolvem as props no formato do
-  // RelatorioTemplate.
+  // Todas as abas ("Recebido & horas", "Acordo trabalhista",
+  // "Entradas x despesas", "Patrimônio" e "Por categoria") têm dados reais.
+  // Os hooks já devolvem as props no formato do RelatorioTemplate.
   const recebidoHoras = useRelatorioRecebidoHoras(periodo ?? undefined)
   const acordo = useRelatorioAcordo()
   const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
@@ -230,7 +229,7 @@ export default function Relatorios() {
             linhas={patrimonio.linhas}
           />
         )
-      ) : aba === 'por-categoria' ? (
+      ) : (
         /* Busca/análise por categoria — reusa a fonte única de categorização
            do relatório (relatorioPdf.js) e o período da página. A seleção fica
            elevada aqui para o exportar PDF enxergar o filtro ativo. */
@@ -239,9 +238,6 @@ export default function Relatorios() {
           selecao={selecaoCategoria}
           aoTrocarSelecao={setSelecaoCategoria}
         />
-      ) : (
-        /* Demais abas: mesmo template sem dados reais por enquanto. */
-        <RelatorioTemplate />
       )}
     </div>
   )

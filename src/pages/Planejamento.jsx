@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePlanejamentos } from '../hooks/usePlanejamentos'
 import { useFaturasPlanejamento } from '../hooks/useFaturasPlanejamento'
 import { montarProjecao } from '../lib/faturaProjecao'
@@ -12,6 +12,7 @@ import { useSaldoProjetado } from '../hooks/useSaldoProjetado'
 import SeletorPeriodo from '../components/planejamento/SeletorPeriodo'
 import VisaoGeral from '../components/planejamento/VisaoGeral'
 import Lancamentos from '../components/planejamento/Lancamentos'
+import CalendarioPlanejamento from '../components/planejamento/CalendarioPlanejamento'
 
 // ============================================================================
 // PLANEJAMENTOS — ORQUESTRADOR (ETAPA 06/E5-F4)
@@ -83,6 +84,10 @@ export default function Planejamento() {
     atualizar,
   } = usePlanejamentos({ ano: semanaInicial.ano, semana: semanaInicial.semana })
 
+  // Ref para estabilizar listarPorPeriodo (identidade muda a cada render do hook)
+  const listarPorPeriodoRef = useRef(listarPorPeriodo)
+  listarPorPeriodoRef.current = listarPorPeriodo
+
   // Fatura automática: as faturas reais de todos os meses de cada cartão ativo
   // entram como itens sintéticos (não gravados no banco). Projeção = real +
   // previstos de destino cartão. pagarFatura chama a RPC pagar_fatura do módulo
@@ -100,6 +105,41 @@ export default function Planejamento() {
   const { feriados } = useFeriados()
 
   const [tipoPeriodo, setTipoPeriodo] = useState('semana')
+  const [modoVisualizacao, setModoVisualizacao] = useState('lista') // 'lista' | 'calendario'
+
+  // Estado do calendário: mês navegado independentemente do seletor de período
+  const [mesCalendario, setMesCalendario] = useState(() => {
+    const h = new Date()
+    return { ano: h.getFullYear(), mes: h.getMonth() + 1 }
+  })
+  const [itensCalendario, setItensCalendario] = useState([])
+  const [carregandoCalendario, setCarregandoCalendario] = useState(false)
+  const [erroCalendario, setErroCalendario] = useState('')
+
+  // Busca dados do mês exibido no calendário (independente do período selecionado na lista)
+  useEffect(() => {
+    if (modoVisualizacao !== 'calendario') return
+    let ativo = true
+    const inicio = `${mesCalendario.ano}-${String(mesCalendario.mes).padStart(2, '0')}-01`
+    const fimDia = new Date(Date.UTC(mesCalendario.ano, mesCalendario.mes, 0)).getUTCDate()
+    const fim = `${mesCalendario.ano}-${String(mesCalendario.mes).padStart(2, '0')}-${String(fimDia).padStart(2, '0')}`
+    setCarregandoCalendario(true)
+    setErroCalendario('')
+    listarPorPeriodoRef.current(inicio, fim)
+      .then((dados) => {
+        if (!ativo) return
+        setItensCalendario(dados)
+      })
+      .catch((e) => {
+        if (!ativo) return
+        setErroCalendario(e.message)
+        setItensCalendario([])
+      })
+      .finally(() => {
+        if (ativo) setCarregandoCalendario(false)
+      })
+    return () => { ativo = false }
+  }, [modoVisualizacao, mesCalendario])
 
   // Contador de mutações para o card "Saldo projetado": qualquer criação/
   // edição/cancelamento/realização incrementa a versão e o hook re-busca os
@@ -330,6 +370,41 @@ export default function Planejamento() {
     avancarVersao()
   }
 
+  // Ações do calendário (memoizadas para evitar re-renders)
+  const acoesCalendario = useMemo(() => ({
+    criar: comRecarga(criarPlanejamento),
+    criarSerie: comRecarga(criarSerieParcelada),
+    criarSerieRecorrente: comRecarga(criarSerieRecorrente),
+    cancelar: comRecarga(cancelarPlanejamento),
+    cancelarSerie: comRecarga(cancelarSerieAPartirDe),
+    excluir: comRecarga(excluirPlanejamento),
+    excluirSerie: comRecarga(excluirSerie),
+    regenerarSerie: comRecarga(regenerarSerie),
+    editar: comRecarga(editarPlanejamento),
+    realizar: comRecarga(realizarPlanejamento),
+    realizarCartao: comRecarga(realizarPlanejamentoCartao),
+    migrarAtraso: comRecarga(migrarAtraso),
+    realizarFatura: aoPagarFatura,
+    salvarConsumoReal: comRecarga(salvarConsumoReal),
+    exportarPdf: comRecarga((item) => Promise.resolve()),
+  }), [
+    comRecarga,
+    criarPlanejamento,
+    criarSerieParcelada,
+    criarSerieRecorrente,
+    cancelarPlanejamento,
+    cancelarSerieAPartirDe,
+    excluirPlanejamento,
+    excluirSerie,
+    regenerarSerie,
+    editarPlanejamento,
+    realizarPlanejamento,
+    realizarPlanejamentoCartao,
+    migrarAtraso,
+    aoPagarFatura,
+    salvarConsumoReal,
+  ])
+
   return (
     <div style={estilosComuns.conteudo}>
       <header style={{ marginBottom: '1.25rem' }}>
@@ -339,20 +414,56 @@ export default function Planejamento() {
         </p>
       </header>
 
-      <SeletorPeriodo
-        tipo={tipoPeriodo}
-        periodo={periodoVisivel}
-        unidadeAtual={unidadeAtual}
-        desabilitado={carregandoVisivel}
-        aoTrocarTipo={aoTrocarTipo}
-        aoDeslocar={aoDeslocar}
-        aoIrParaHoje={aoIrParaHoje}
-      />
+      {modoVisualizacao !== 'calendario' && (
+        <SeletorPeriodo
+          tipo={tipoPeriodo}
+          periodo={periodoVisivel}
+          unidadeAtual={unidadeAtual}
+          desabilitado={carregandoVisivel}
+          aoTrocarTipo={aoTrocarTipo}
+          aoDeslocar={aoDeslocar}
+          aoIrParaHoje={aoIrParaHoje}
+        />
+      )}
 
-      {/* Tela UNIFICADA (13/09/2026): Visão geral e Lançamentos eram abas
-          separadas; agora o resumo (cards) vem primeiro e a lista completa
-          do período com as ações vem logo abaixo — uma tela só. */}
-      <VisaoGeral
+      <div style={estilos.toolbar}>
+        <div style={estilos.toggleContainer}>
+          <button
+            type="button"
+            onClick={() => setModoVisualizacao('lista')}
+            disabled={carregandoVisivel}
+            style={{ ...estilos.toggleButton, ...(modoVisualizacao === 'lista' ? estilos.toggleButtonAtivo : {}) }}
+          >
+            Lista
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoVisualizacao('calendario')}
+            disabled={carregandoVisivel}
+            style={{ ...estilos.toggleButton, ...(modoVisualizacao === 'calendario' ? estilos.toggleButtonAtivo : {}) }}
+          >
+            Calendário
+          </button>
+        </div>
+      </div>
+
+      {modoVisualizacao === 'calendario' ? (
+        <CalendarioPlanejamento
+          itens={itensCalendario}
+          carregando={carregandoCalendario}
+          erro={erroCalendario}
+          mesAtual={mesCalendario}
+          aoMudarMes={setMesCalendario}
+          dataPadrao={dataPadrao}
+          acoes={acoesCalendario}
+          aoPosMutacao={aoPosMutacao}
+        />
+      ) : (
+        <>
+          {/* Tela UNIFICADA (13/09/2026): Visão geral e Lançamentos eram abas
+              separadas; agora o resumo (cards) vem primeiro e a lista completa
+              do período com as ações vem logo abaixo — uma tela só. */}
+          <VisaoGeral
         carregando={carregandoVisivel}
         erro={erroVisivel}
         totais={totaisVisiveis}
@@ -391,6 +502,9 @@ export default function Planejamento() {
         }}
         aoPosMutacao={aoPosMutacao}
       />
+        </>
+
+      )}
 
       <p style={estilos.notaEtapa}>
         A realização pode ser feita em conta (RPC realizar_planejamento) ou em
@@ -404,4 +518,8 @@ const estilos = {
   titulo: { margin: 0, fontSize: '1.3rem', fontWeight: 'bold', color: '#e5e7eb' },
   subtitulo: { margin: '0.25rem 0 0', color: '#9ca3af', fontSize: '0.9rem' },
   notaEtapa: { marginTop: '1.5rem', color: '#6b7280', fontSize: '0.8rem' },
+  toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '1rem' },
+  toggleContainer: { display: 'flex', background: '#111827', border: '1px solid #374151', borderRadius: '9px', padding: '3px', gap: '2px' },
+  toggleButton: { border: 'none', background: 'transparent', color: '#9ca3af', fontSize: '13px', fontWeight: '600', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', transition: 'background 0.12s ease, color 0.12s ease' },
+  toggleButtonAtivo: { background: '#42A5F5', color: '#0b0f19' },
 }
