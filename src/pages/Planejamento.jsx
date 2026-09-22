@@ -81,6 +81,7 @@ export default function Planejamento() {
     editarPlanejamento,
     cancelarSerieAPartirDe,
     salvarConsumoReal,
+    lerConsumoMes,
     atualizar,
   } = usePlanejamentos({ ano: semanaInicial.ano, semana: semanaInicial.semana })
 
@@ -116,13 +117,22 @@ export default function Planejamento() {
   const [carregandoCalendario, setCarregandoCalendario] = useState(false)
   const [erroCalendario, setErroCalendario] = useState('')
 
+  // Intervalo do mês exibido no calendário (fonte única do efeito de busca
+  // abaixo e do pós-mutação em modo calendário).
+  function intervaloMesCalendario(mes) {
+    const mm = String(mes.mes).padStart(2, '0')
+    const fimDia = new Date(Date.UTC(mes.ano, mes.mes, 0)).getUTCDate()
+    return {
+      inicio: `${mes.ano}-${mm}-01`,
+      fim: `${mes.ano}-${mm}-${String(fimDia).padStart(2, '0')}`,
+    }
+  }
+
   // Busca dados do mês exibido no calendário (independente do período selecionado na lista)
   useEffect(() => {
     if (modoVisualizacao !== 'calendario') return
     let ativo = true
-    const inicio = `${mesCalendario.ano}-${String(mesCalendario.mes).padStart(2, '0')}-01`
-    const fimDia = new Date(Date.UTC(mesCalendario.ano, mesCalendario.mes, 0)).getUTCDate()
-    const fim = `${mesCalendario.ano}-${String(mesCalendario.mes).padStart(2, '0')}-${String(fimDia).padStart(2, '0')}`
+    const { inicio, fim } = intervaloMesCalendario(mesCalendario)
     setCarregandoCalendario(true)
     setErroCalendario('')
     listarPorPeriodoRef.current(inicio, fim)
@@ -340,10 +350,22 @@ export default function Planejamento() {
   }
 
   // Pós-mutação na lista integrada: na SEMANA o hook já recarrega sozinho
-  // (atualizar()); nos períodos maiores a página refaz a PRÓPRIA faixa. Erros
-  // daqui caem no estado do período — jamais são confundidos com falha da
-  // mutação (que já teve sucesso dentro do domínio).
+  // (atualizar()); nos períodos maiores a página refaz a PRÓPRIA faixa; no
+  // CALENDÁRIO refaz o mês navegado. Erros daqui caem no estado do período —
+  // jamais são confundidos com falha da mutação (que já teve sucesso dentro
+  // do domínio).
   async function aoPosMutacao() {
+    if (modoVisualizacao === 'calendario') {
+      try {
+        const { inicio, fim } = intervaloMesCalendario(mesCalendario)
+        const dados = await listarPorPeriodo(inicio, fim)
+        setItensCalendario(dados)
+        setErroCalendario('')
+      } catch (e) {
+        setErroCalendario(e.message)
+      }
+      return
+    }
     if (modoSemana) return
     try {
       const dados = await listarPorPeriodo(periodo.inicio, periodo.fim)
@@ -454,9 +476,9 @@ export default function Planejamento() {
           erro={erroCalendario}
           mesAtual={mesCalendario}
           aoMudarMes={setMesCalendario}
-          dataPadrao={dataPadrao}
           acoes={acoesCalendario}
           aoPosMutacao={aoPosMutacao}
+          aoLerConsumoMes={lerConsumoMes}
         />
       ) : (
         <>
@@ -501,6 +523,7 @@ export default function Planejamento() {
           salvarConsumoReal: comRecarga(salvarConsumoReal),
         }}
         aoPosMutacao={aoPosMutacao}
+        aoLerConsumoMes={lerConsumoMes}
       />
         </>
 

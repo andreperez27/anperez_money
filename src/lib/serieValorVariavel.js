@@ -166,9 +166,15 @@ export function montarObservacaoEnergia({ reais = [], projecao }) {
 //
 //   • condominio → para cada mês previsto, soma os itens fixos VIGENTES no
 //     mês + o Gás/Água projetados pela regra definitiva (média dos 3 últimos
-//     reais; < 3 repete o último; sem histórico = 0);
+//     reais; < 3 repete o último; sem histórico = 0). Item com leitura real
+//     registrada (reaisPorMes, 22/09/2026) NÃO é recalculado: congela no valor
+//     real e só a parte ainda não informada desliza na média;
 //   • energia    → projeta pela média dos últimos N reais de energia da conta;
 //     sem nenhum real ainda (série recém-criada) mantém a projeção atual.
+//
+// reaisPorMes: { 'YYYY-MM': { gas: number|null, agua: number|null } } — fonte
+// da verdade por item (condominio_consumo_mensal). Ausente = comportamento
+// antigo (tudo pela média).
 //
 // Devolve { updates: [{ id, valor, observacao }] } — só linhas cujo valor OU
 // observação realmente mudou (idempotente; re-executar não reescreve nada).
@@ -180,6 +186,7 @@ export function calcularReprojecaoValorVariavel({
   historicoGas = [],
   historicoAgua = [],
   historicoValor = [],
+  reaisPorMes = {},
 }) {
   const updates = []
   for (const linha of linhas) {
@@ -200,9 +207,20 @@ export function calcularReprojecaoValorVariavel({
         projecao,
       })
     } else {
-      const gas = projetarValorVariavel({ historico: historicoGas }) ?? 0
-      const agua = projetarValorVariavel({ historico: historicoAgua }) ?? 0
       const mes = String(linha.data_prevista).slice(0, 7)
+      // Congelamento por item (22/09/2026): o que já tem leitura real
+      // registrada vale; só o ainda-não-informado desce da média móvel.
+      // Atenção ao Number(null) === 0: nulo/vazio conta como ausente.
+      const reais = reaisPorMes[mes] || {}
+      const numReal = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
+      const gasReal = numReal(reais.gas)
+      const aguaReal = numReal(reais.agua)
+      const gas = Number.isFinite(gasReal)
+        ? gasReal
+        : (projetarValorVariavel({ historico: historicoGas }) ?? 0)
+      const agua = Number.isFinite(aguaReal)
+        ? aguaReal
+        : (projetarValorVariavel({ historico: historicoAgua }) ?? 0)
       const { total, detalhamento } = calcularTotalCondominio({
         itens: itensFixos,
         mes,

@@ -67,6 +67,7 @@ export default function Lancamentos({
   dataPadrao,
   acoes,
   aoPosMutacao,
+  aoLerConsumoMes,
 }) {
   const muyEstrecho = useMuyEstrecho()
   const [erroAcao, setErroAcao] = useState('')
@@ -887,6 +888,7 @@ export default function Lancamentos({
         <ConsumoRealOcorrencia
           item={consumoRealDe}
           aoSalvarConsumoReal={acoes.salvarConsumoReal}
+          aoLerConsumoMes={aoLerConsumoMes}
           aoPosMutacao={aoPosMutacao}
           aoFechar={() => setConsumoRealDe(null)}
         />

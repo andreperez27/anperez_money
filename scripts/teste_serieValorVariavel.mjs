@@ -307,5 +307,67 @@ caso('condomínio: imune também quando o valor informado difere da média', () 
   assert.deepStrictEqual(updates, [], 'valor real travado nunca é sobrescrito pela média')
 })
 
+// --- Registro separado Gás/Água (22/09/2026) ----------------------------------
+// Item com leitura real registrada congela; só o outro recalcula pela média.
+
+caso('condomínio: gás real registrado congela, só a água recalcula', () => {
+  const itensFixos = [item('1002', 'Cota Condominial', 840.82, '2026-04-01', null)]
+  const linhas = [linha('p1', { data_prevista: '2026-11-10', valor: 999, observacao: 'antiga' })]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    itensFixos,
+    historicoGas: [120.05, 124.08, 128.33],
+    historicoAgua: [155.2, 158.71, 160.99], // média → 158.30
+    reaisPorMes: { '2026-11': { gas: 90.0, agua: null } },
+  })
+  assert.strictEqual(updates.length, 1)
+  const esperado = Math.round((840.82 + 90.0 + 158.3) * 100) / 100
+  assert.strictEqual(updates[0].valor, esperado)
+  assert.ok(updates[0].observacao.includes('1010 Consumo de Gás R$ 90,00'))
+  assert.ok(updates[0].observacao.includes('1052 Consumo de Água R$ 158,30'))
+  assert.ok(!updates[0].observacao.includes('1055'), 'parcial não ganha o marcador')
+})
+
+caso('condomínio: mês com os dois reais congela o total sem marcar 1055', () => {
+  const itensFixos = []
+  const linhas = [linha('p1', { data_prevista: '2026-11-10', valor: 999, observacao: 'antiga' })]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    itensFixos,
+    historicoGas: [200, 210, 220],
+    historicoAgua: [150, 160, 170],
+    reaisPorMes: { '2026-11': { gas: 90.0, agua: 52.0 } },
+  })
+  assert.strictEqual(updates.length, 1)
+  assert.strictEqual(updates[0].valor, 142.0)
+  assert.ok(!updates[0].observacao.includes('1055'), 'o marcador 1055 só entra pelo save')
+})
+
+caso('condomínio: reaisPorMes de outro mês não afeta a linha', () => {
+  const itensFixos = []
+  const linhas = [linha('p1', { data_prevista: '2026-11-10', valor: 999 })]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    historicoGas: [100],
+    historicoAgua: [40],
+    reaisPorMes: { '2026-12': { gas: 90.0, agua: 52.0 } },
+  })
+  assert.strictEqual(updates[0].valor, 140) // tudo pela média (repete o último: 100+40)
+})
+
+caso('condomínio: sem reaisPorMes mantém o comportamento antigo', () => {
+  const linhas = [linha('p1', { data_prevista: '2026-11-10', valor: 999 })]
+  const { updates } = calcularReprojecaoValorVariavel({
+    linhas,
+    tipo: 'condominio',
+    historicoGas: [100],
+    historicoAgua: [40],
+  })
+  assert.strictEqual(updates[0].valor, 140)
+})
+
 console.log(`\n${ok} testes passaram, ${falhou} falharam.`)
 if (falhou > 0) process.exit(1)

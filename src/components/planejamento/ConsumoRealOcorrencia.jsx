@@ -16,6 +16,10 @@ import ModalNovoItemFixo from './ModalNovoItemFixo'
 // + recalcular com calcularTotalCondominio + marcar "Consumo real informado" e
 // imune à reprojeção) — só muda de onde é disparado.
 //
+// REGISTRO SEPARADO (22/09/2026): os campos começam vazios e só vai para o
+// save o efetivamente preenchido; o pré-preenchimento lê SÓ as leituras reais
+// já registradas (`aoLerConsumoMes`), nunca a estimativa da observação.
+//
 // ANTES dos campos de Gás/Água o formulário mostra a COMPOSIÇÃO do boleto daquele
 // mês no estilo "Composição da Arrecadação" (só leitura), com a referência
 // n/total das séries, para conferir contra o boleto físico. O "Reajustar item
@@ -38,7 +42,7 @@ function ultimoDia(mesAno) {
 
 const MES_3 = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
 
-export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPosMutacao, aoFechar }) {
+export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLerConsumoMes, aoPosMutacao, aoFechar }) {
   // Mês da própria ocorrência (data_prevista) — o alvo da correção.
   const mes = String(item?.data_prevista || '').slice(0, 7)
   const [anoAtual, mesAtual] = mes.split('-').map(Number)
@@ -48,20 +52,53 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
     useDespesaRecorrenteItens()
   const [itensVigentes, setItensVigentes] = useState([])
 
-  // Pré-preenche Gás/Água com os valores ATUAIS da própria ocorrência (lidos
-  // da observação — mesma linha que o boleto). O morador só edita.
-  const [gas, setGas] = useState(() => {
-    const g = parseValorObservacao(item?.observacao, '1010')
-    return Number.isFinite(g) && g > 0 ? String(g).replace('.', ',') : ''
-  })
-  const [agua, setAgua] = useState(() => {
-    const a = parseValorObservacao(item?.observacao, '1052')
-    return Number.isFinite(a) && a > 0 ? String(a).replace('.', ',') : ''
-  })
+  // Campos começam VAZIOS: só vai para o save o que o morador efetivamente
+  // preencher nesta ação (registro separado Gás/Água, 22/09/2026) — a
+  // estimativa da observação nunca é enviada como se fosse leitura real.
+  const [gas, setGas] = useState('')
+  const [agua, setAgua] = useState('')
   const [gasLeitAtual, setGasLeitAtual] = useState('')
   const [gasLeitAnterior, setGasLeitAnterior] = useState('')
   const [aguaLeitAtual, setAguaLeitAtual] = useState('')
   const [aguaLeitAnterior, setAguaLeitAnterior] = useState('')
+
+  // Leituras REAIS já registradas no mês (para pré-preencher e para o
+  // preview): só o que está em condominio_consumo_mensal, nunca estimativa.
+  const [reais, setReais] = useState({ gas: null, agua: null })
+  const [carregandoReais, setCarregandoReais] = useState(false)
+
+  // Estimativas atuais da ocorrência (só para EXIBIR no preview enquanto o
+  // item não tem real registrado — jamais vão para o save).
+  const gasEstimativa = parseValorObservacao(item?.observacao, '1010') ?? 0
+  const aguaEstimativa = parseValorObservacao(item?.observacao, '1052') ?? 0
+
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}$/.test(mes) || !aoLerConsumoMes) return undefined
+    let ativo = true
+    setCarregandoReais(true)
+    aoLerConsumoMes(mes)
+      .then((r) => {
+        if (!ativo) return
+        setReais(r ?? { gas: null, agua: null })
+        const texto = (v) => (Number.isFinite(Number(v)) ? String(v).replace('.', ',') : '')
+        // Só preenche campo ainda vazio (não apaga o que o morador digitou).
+        setGas((atual) => atual || texto(r?.gas?.valor))
+        setAgua((atual) => atual || texto(r?.agua?.valor))
+        setGasLeitAtual((atual) => atual || texto(r?.gas?.leitura_atual))
+        setGasLeitAnterior((atual) => atual || texto(r?.gas?.leitura_anterior))
+        setAguaLeitAtual((atual) => atual || texto(r?.agua?.leitura_atual))
+        setAguaLeitAnterior((atual) => atual || texto(r?.agua?.leitura_anterior))
+      })
+      .catch(() => {
+        if (ativo) setReais({ gas: null, agua: null })
+      })
+      .finally(() => {
+        if (ativo) setCarregandoReais(false)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [mes, aoLerConsumoMes])
 
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState({ tipo: '', texto: '' })
@@ -85,6 +122,16 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
 
   const gasNum = Number.isFinite(lerValor(gas)) ? lerValor(gas) : 0
   const aguaNum = Number.isFinite(lerValor(agua)) ? lerValor(agua) : 0
+  // Campo "efetivamente preenchido" = digitado e maior que zero. Vazio nunca
+  // vai para o save (a linha existente é preservada).
+  const temGas = gas.trim() !== '' && gasNum > 0
+  const temAgua = agua.trim() !== '' && aguaNum > 0
+
+  // Preview da composição: digitado > real registrado > estimativa atual.
+  const gasRealValor = Number(reais.gas?.valor)
+  const aguaRealValor = Number(reais.agua?.valor)
+  const gasExib = temGas ? gasNum : (Number.isFinite(gasRealValor) ? gasRealValor : gasEstimativa)
+  const aguaExib = temAgua ? aguaNum : (Number.isFinite(aguaRealValor) ? aguaRealValor : aguaEstimativa)
 
   // Composição do boleto: mesmo cálculo do total (calcularTotalCondominio) — a
   // tabela só leitura exibe os FIXOS + os variáveis lendo os inputs vivos. O
@@ -93,19 +140,17 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
     const { total, detalhamento } = calcularTotalCondominio({
       itens: itensVigentes,
       mes,
-      gas: gasNum,
-      agua: aguaNum,
+      gas: gasExib,
+      agua: aguaExib,
     })
     const variaveis = detalhamento.filter((l) => l.cod === '1010' || l.cod === '1052')
     const fixos = detalhamento.filter((l) => l.cod !== '1010' && l.cod !== '1052')
     return { total, fixos, variaveis }
-  }, [itensVigentes, mes, gasNum, aguaNum])
+  }, [itensVigentes, mes, gasExib, aguaExib])
 
   async function aoSalvar(e) {
     e.preventDefault()
     if (salvando || !aoSalvarConsumoReal) return
-    const temGas = gasNum > 0
-    const temAgua = aguaNum > 0
     if (!temGas && !temAgua) {
       setMsg({ tipo: 'erro', texto: 'Informe ao menos o valor do consumo de gás ou de água.' })
       return
@@ -129,11 +174,19 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
       }
       const registro = await aoSalvarConsumoReal(payload)
       await aoPosMutacao?.()
+      // Recarrega os reais (o save pode ter travado o mês com os dois itens).
+      if (aoLerConsumoMes && /^\d{4}-\d{2}$/.test(mes)) {
+        aoLerConsumoMes(mes)
+          .then((r) => setReais(r ?? { gas: null, agua: null }))
+          .catch(() => {})
+      }
       setMsg({
         tipo: 'ok',
-        texto: registro?.ocorrenciaAjustada
-          ? `Consumo de ${rotuloMes} salvo e a previsão foi ajustada pelo valor real.`
-          : `Consumo de ${rotuloMes} salvo (não há previsão prevista neste mês para ajustar).`,
+        texto: !registro?.ocorrenciaAjustada
+          ? `Consumo de ${rotuloMes} salvo (não há previsão prevista neste mês para ajustar).`
+          : registro?.mesTravado
+            ? `Consumo de ${rotuloMes} salvo e a previsão foi ajustada pelo valor real.`
+            : `Consumo de ${rotuloMes} salvo (parcial — o mês continua na média móvel até o outro item ser informado).`,
       })
     } catch (err) {
       setMsg({ tipo: 'erro', texto: `Não foi possível salvar o consumo: ${err.message}` })
@@ -204,6 +257,8 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
           Reajustar item fixo
         </button>
 
+        {/* Duas colunas POR ITEM (Gás | Água): cada coluna tem Consumo (R$),
+            leitura anterior e leitura atual daquele item. */}
         <div style={estilos.grade}>
           <label style={estilos.rotuloCampo}>
             Consumo de Gás (R$)
@@ -214,22 +269,28 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoPos
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={agua} onChange={(e) => setAgua(e.target.value)} />
           </label>
           <label style={estilos.rotuloCampo}>
-            Gás — leitura atual (m³, opcional)
-            <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={gasLeitAtual} onChange={(e) => setGasLeitAtual(e.target.value)} />
-          </label>
-          <label style={estilos.rotuloCampo}>
             Gás — leitura anterior (m³, opcional)
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={gasLeitAnterior} onChange={(e) => setGasLeitAnterior(e.target.value)} />
-          </label>
-          <label style={estilos.rotuloCampo}>
-            Água — leitura atual (m³, opcional)
-            <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={aguaLeitAtual} onChange={(e) => setAguaLeitAtual(e.target.value)} />
           </label>
           <label style={estilos.rotuloCampo}>
             Água — leitura anterior (m³, opcional)
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={aguaLeitAnterior} onChange={(e) => setAguaLeitAnterior(e.target.value)} />
           </label>
+          <label style={estilos.rotuloCampo}>
+            Gás — leitura atual (m³, opcional)
+            <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={gasLeitAtual} onChange={(e) => setGasLeitAtual(e.target.value)} />
+          </label>
+          <label style={estilos.rotuloCampo}>
+            Água — leitura atual (m³, opcional)
+            <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={aguaLeitAtual} onChange={(e) => setAguaLeitAtual(e.target.value)} />
+          </label>
         </div>
+
+        {carregandoReais && (
+          <p style={{ ...estilosComuns.mensagem, margin: 0, fontSize: '0.8rem' }}>
+            Carregando leituras já registradas no mês...
+          </p>
+        )}
 
         <button type="submit" disabled={salvando} style={salvando ? { ...estilosComuns.botaoCriar, opacity: 0.6 } : estilosComuns.botaoCriar}>
           {salvando ? 'Salvando consumo...' : 'Salvar consumo real do mês'}

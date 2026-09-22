@@ -22,8 +22,9 @@ import {
   extrairHistoricosVariaveis,
   calcularReprojecaoValorVariavel,
   montarObservacaoCondominioReal,
+  parseValorObservacao,
 } from '../lib/serieValorVariavel.js'
-import { calcularTotalCondominio } from '../lib/despesaRecorrenteCalc.js'
+import { calcularTotalCondominio, montarObservacaoCondominio } from '../lib/despesaRecorrenteCalc.js'
 
 // Domínio de Planejamentos (ETAPA 06/E3).
 //
@@ -539,6 +540,25 @@ export function usePlanejamentos({ ano, semana } = {}) {
       historicoValor = (data ?? []).map((r) => Number(r.valor)).reverse()
     }
 
+    // Leituras reais por mês (condominio_consumo_mensal): a reprojeção
+    // congela o item já registrado e só recalcula o ainda-não-informado
+    // (registro separado Gás/Água, 22/09/2026). Energia não usa (só gas/agua).
+    let reaisPorMes = {}
+    if (tipo === 'condominio') {
+      const { data: consumo, error: erroConsumo } = await supabase
+        .from('condominio_consumo_mensal')
+        .select('mes,tipo,valor')
+      if (erroConsumo) throw new Error(erroConsumo.message)
+      for (const c of consumo ?? []) {
+        const chave = String(c.mes).slice(0, 7)
+        const v = Number(c?.valor)
+        if (!Number.isFinite(v)) continue
+        if (c?.tipo !== 'gas' && c?.tipo !== 'agua') continue
+        if (!reaisPorMes[chave]) reaisPorMes[chave] = {}
+        reaisPorMes[chave][c.tipo] = v
+      }
+    }
+
     const { updates } = calcularReprojecaoValorVariavel({
       linhas: serie,
       tipo,
@@ -546,6 +566,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
       historicoGas,
       historicoAgua,
       historicoValor,
+      reaisPorMes,
     })
     if (updates.length === 0) return
 
@@ -560,21 +581,48 @@ export function usePlanejamentos({ ano, semana } = {}) {
     }
   }
 
+  // LÊ as leituras REAIS registradas de um mês (fonte da verdade por item:
+  // condominio_consumo_mensal). Usado pelo formulário para pré-preencher SÓ o
+  // que já é real (nunca estimativa) e pela regra de travamento.
+  async function lerConsumoMes(mesIso) {
+    const m = String(mesIso ?? '')
+    if (!/^\d{4}-\d{2}$/.test(m)) {
+      throw new Error('Mês inválido para o consumo: use o formato YYYY-MM.')
+    }
+    const { data, error } = await supabase
+      .from('condominio_consumo_mensal')
+      .select('tipo,valor,leitura_atual,leitura_anterior')
+      .eq('mes', `${m}-01`)
+    if (error) throw new Error(error.message)
+    const reais = { gas: null, agua: null }
+    for (const c of data ?? []) {
+      if (c?.tipo === 'gas' || c?.tipo === 'agua') reais[c.tipo] = c
+    }
+    return reais
+  }
+
   // SALVAR CONSUMO REAL DE GÁS/ÁGUA E AJUSTAR A PREVISÃO DO MÊS (ADENDO
-  // PARTE 2 — 13/09/2026, decisão com André). Ao informar leitura/valor de um
-  // mês: grava em condominio_consumo_mensal e, se existir UMA ocorrência
-  // 'previsto' de Condomínio NO MESMO MÊS CIVIL, corrige o valor dela com
-  // calcularTotalCondominio (fixos vigentes do mês + os reais informados),
-  // substituindo a estimativa da média móvel, e marca o badge "Consumo real
-  // informado" na observação (1055 — imune à reprojeção posterior).
+  // PARTE 2 — 13/09/2026 + REGISTRO SEPARADO — 22/09/2026, decisão com André).
+  // Gás e Água chegam em momentos diferentes: cada save grava em
+  // condominio_consumo_mensal SÓ o(s) item(ns) efetivamente preenchido(s) —
+  // estimativa nunca é persistida como leitura real. O badge/marcador 1055
+  // "Consumo real informado" (imune à reprojeção) só vai para a ocorrência
+  // quando os DOIS itens têm leitura real registrada (na mesma ação ou em
+  // ações separadas); com só um, a ocorrência segue na média móvel, mas o
+  // item já real fica congelado (a reprojeção o pula via reaisPorMes).
   // Regras:
   //   • casamento POR MÊS de data_prevista (não a próxima pendente) — permite
   //     preencher mês atrasado sem errar a ocorrência;
   //   • só mexe em 'previsto'; 'realizado' fica intocado (o snapshot congelado
   //     da migration 36 já fotografia o passado);
   //   • se houver série e avulsa previstas no mês, a da SÉRIE vence;
-  //   • sem ocorrência prevista no mês: salva SÓ o consumo, sem erro.
-  // Devolve { ocorrenciaAjustada: boolean } para o feedback da UI.
+  //   • sem ocorrência prevista no mês: salva SÓ o consumo, sem erro;
+  //   • a parte sem real registrado mantém o valor atual da ocorrência (nunca
+  //     zera): só o informado entra no total;
+  //   • campo vazio = não mexe no item (a linha existente é preservada); para
+  //     corrigir leitura já registrada, digite o novo valor (upsert).
+  // Devolve { ocorrenciaAjustada: boolean, mesTravado: boolean } para o
+  // feedback da UI.
   async function salvarConsumoReal({ mes, gas = {}, agua = {} } = {}) {
     const mesIso = String(mes ?? '')
     if (!/^\d{4}-\d{2}$/.test(mesIso)) {
@@ -609,13 +657,19 @@ export function usePlanejamentos({ ano, semana } = {}) {
       .upsert(linhasConsumo, { onConflict: 'user_id,mes,tipo' })
     if (erroConsumo) throw new Error(erroConsumo.message)
 
+    // Reais do mês APÓS o upsert (o que chegou agora + o que já estava de
+    // ações anteriores): é isso que decide o travamento.
+    const reais = await lerConsumoMes(mesIso)
+    const gasReal = Number(reais.gas?.valor)
+    const aguaReal = Number(reais.agua?.valor)
+
     // Ocorrências 'previsto' de Condomínio do MESMO mês (casamento por mês).
     const [a, m] = mesIso.split('-').map(Number)
     const ultimo = new Date(Date.UTC(a, m, 0)).getUTCDate()
     const fimIso = `${mesIso}-${String(ultimo).padStart(2, '0')}`
     const { data: ocorrencias, error: erroOcorr } = await supabase
       .from('planejamentos')
-      .select('id, estado, serie_id')
+      .select('id, estado, serie_id, observacao')
       .eq('estado', 'previsto')
       .eq('origem', 'recorrente')
       .ilike('descricao', 'Condomínio%')
@@ -626,7 +680,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const alvo = (ocorrencias ?? []).find((o) => o.serie_id) ?? (ocorrencias ?? [])[0]
     if (!alvo) {
       await atualizar()
-      return { ocorrenciaAjustada: false }
+      return { ocorrenciaAjustada: false, mesTravado: false }
     }
 
     const { data: itensFixos, error: erroItens } = await supabase
@@ -635,8 +689,12 @@ export function usePlanejamentos({ ano, semana } = {}) {
       .limit(5000)
     if (erroItens) throw new Error(erroItens.message)
 
-    const gasValor = Number(gas?.valor) || 0
-    const aguaValor = Number(agua?.valor) || 0
+    // Total: fixos + real onde há registro; onde não há, mantém a estimativa
+    // atual da ocorrência (parse da observação) — nunca zera a parte alheia.
+    const gasObs = parseValorObservacao(alvo.observacao, '1010')
+    const aguaObs = parseValorObservacao(alvo.observacao, '1052')
+    const gasValor = Number.isFinite(gasReal) ? gasReal : (gasObs ?? 0)
+    const aguaValor = Number.isFinite(aguaReal) ? aguaReal : (aguaObs ?? 0)
     const { total, detalhamento } = calcularTotalCondominio({
       itens: itensFixos ?? [],
       mes: mesIso,
@@ -644,14 +702,20 @@ export function usePlanejamentos({ ano, semana } = {}) {
       agua: aguaValor,
     })
 
+    // Trava (1055) SÓ com os dois itens reais — mesmo que em ações separadas.
+    const travada = Number.isFinite(gasReal) && Number.isFinite(aguaReal)
+    const observacao = travada
+      ? montarObservacaoCondominioReal(detalhamento)
+      : montarObservacaoCondominio(detalhamento)
+
     const { error: erroUpd } = await supabase
       .from('planejamentos')
-      .update({ valor: total, observacao: montarObservacaoCondominioReal(detalhamento) })
+      .update({ valor: total, observacao })
       .eq('id', alvo.id)
     if (erroUpd) throw new Error(erroUpd.message)
 
     await atualizar()
-    return { ocorrenciaAjustada: true }
+    return { ocorrenciaAjustada: true, mesTravado: travada }
   }
 
   // Criar SÉRIE parcelada. As ocorrências nascem na lib pura
@@ -929,5 +993,6 @@ export function usePlanejamentos({ ano, semana } = {}) {
     regenerarSerie,
     reconciliarComPonto,
     salvarConsumoReal,
+    lerConsumoMes,
   }
 }

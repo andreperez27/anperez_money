@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { formatoReal, formatarData, hoje } from '../../lib/compartilhados'
-import { NOME_MES, RÓTULO_TIPO, badgeEstado, corTipo, estilosItem } from './comum'
+import { hoje } from '../../lib/compartilhados'
+import { NOME_MES } from './comum'
 import { ehAtrasado, ehDisponivel, ehAjustadoPonto, ehConsumoRealInformado } from './comum'
 import { ehValorManualPonto } from '../../lib/reconciliacaoPonto'
-import { identificarRegraValorVariavel } from '../../lib/serieValorVariavel'
-import { proximaDataPendente } from '../../lib/pendenciaAtraso'
+import Lancamentos from './Lancamentos'
 
 const MAX_VISIBLE_CHIPS = 2
+
+// ============================================================================
+// CALENDÁRIO DO PLANEJAMENTO — visualização mensal alternativa à lista
+// ============================================================================
+// O grid é só navegação: os LANÇAMENTOS do dia (acordeão + todas as ações e
+// formulários) são o próprio componente Lancamentos.jsx embutido no painel —
+// nenhuma regra de ação é duplicada aqui (a tentativa anterior chamava as
+// actions com assinatura errada e os botões não abriam nada).
+// ============================================================================
 
 export default function CalendarioPlanejamento({
   itens,
@@ -14,14 +22,11 @@ export default function CalendarioPlanejamento({
   erro,
   mesAtual,
   aoMudarMes,
-  dataPadrao,
   acoes,
   aoPosMutacao,
+  aoLerConsumoMes,
 }) {
   const [diaAberto, setDiaAberto] = useState(null)
-  const [itensDoDia, setItensDoDia] = useState([])
-  const [erroAcao, setErroAcao] = useState('')
-  const [confirmandoMigracao, setConfirmandoMigracao] = useState(false)
 
   // O card usa width 100vw (inclui a scrollbar no desktop): trava o overflow
   // horizontal do body enquanto o calendário está montado para não criar barra
@@ -98,83 +103,34 @@ export default function CalendarioPlanejamento({
   function abrirPainelDia(ano, mes, dia) {
     const itens = obterItensDoDia(ano, mes, dia)
     if (itens.length === 0) return
-    setItensDoDia(itens)
     setDiaAberto({ ano, mes, dia })
   }
 
   function fecharPainelDia() {
     setDiaAberto(null)
-    setItensDoDia([])
   }
 
   function labelMesAno() {
     return `${NOME_MES[mesAtual.mes - 1]} ${mesAtual.ano}`
   }
 
-  async function aoMigrarAtraso(item) {
-    const dataNova = proximaDataPendente(item, dataHoje)
-    const ddmm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
-    const ok = window.confirm(
-      `Mover ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.valor))} (previsto de ${ddmm(item.data_prevista)}) pra ${ddmm(dataNova)}?`
-    )
-    if (!ok) return
-    setErroAcao('')
-    setConfirmandoMigracao(true)
-    try {
-      await acoes.migrarAtraso(item.id, dataNova)
-      await aoPosMutacao?.()
-      fecharPainelDia()
-    } catch (e) {
-      setErroAcao(`Não foi possível migrar: ${e.message}`)
-    } finally {
-      setConfirmandoMigracao(false)
+  // Itens do dia ABERTO, calculados ao vivo das props (não snapshot): após
+  // mutação a página recarrega o mês e o painel já mostra o resultado.
+  const itensDoDia = diaAberto
+    ? obterItensDoDia(diaAberto.ano, diaAberto.mes, diaAberto.dia)
+    : []
+
+  // Data padrão dos formulários dentro do painel = o próprio dia aberto.
+  const dataPadraoDia = diaAberto
+    ? `${diaAberto.ano}-${String(diaAberto.mes).padStart(2, '0')}-${String(diaAberto.dia).padStart(2, '0')}`
+    : undefined
+
+  // Se o dia esvaziar (ex.: único item excluído/movido), fecha o painel.
+  useEffect(() => {
+    if (diaAberto && itensDoDia.length === 0) {
+      setDiaAberto(null)
     }
-  }
-
-  function aoAbrirRealizar(item) {
-    setErroAcao('')
-    acoes.realizar && acoes.realizar(item)
-  }
-
-  function aoAbrirEditar(item) {
-    setErroAcao('')
-    acoes.editar && acoes.editar(item)
-  }
-
-  function aoCancelar(item) {
-    setErroAcao('')
-    acoes.cancelar && acoes.cancelar(item)
-  }
-
-  function aoCancelarSerie(item) {
-    setErroAcao('')
-    acoes.cancelarSerie && acoes.cancelarSerie(item)
-  }
-
-  function aoExcluir(item) {
-    setErroAcao('')
-    acoes.excluir && acoes.excluir(item)
-  }
-
-  function aoExcluirSerie(item) {
-    setErroAcao('')
-    acoes.excluirSerie && acoes.excluirSerie(item)
-  }
-
-  function aoEditarSerie(item) {
-    setErroAcao('')
-    acoes.regenerarSerie && acoes.regenerarSerie(item)
-  }
-
-  function aoSalvarConsumoReal(item) {
-    setErroAcao('')
-    acoes.salvarConsumoReal && acoes.salvarConsumoReal(item)
-  }
-
-  function aoEfetivarFatura(item) {
-    setErroAcao('')
-    acoes.realizarFatura && acoes.realizarFatura(item)
-  }
+  }, [diaAberto, itensDoDia.length])
 
   const renderChip = (item) => {
     const disponivel = ehDisponivel(item, dataHoje)
@@ -341,77 +297,18 @@ export default function CalendarioPlanejamento({
               </div>
               <button type="button" onClick={fecharPainelDia} style={estilos.botaoFechar}>✕</button>
             </div>
-            <div style={estilos.painelItens}>
-              {itensDoDia.map((item) => (
-                <div key={item.id} style={estilos.painelItem}>
-                  <div style={estilos.painelItemTopo}>
-                    <div>
-                      <div style={estilos.painelItemDesc}>{item.descricao}</div>
-                      <div style={{ ...corTipo(item.tipo_op), ...estilos.painelItemValor }}>
-                        {RÓTULO_TIPO(item.tipo_op)} · {formatoReal.format(Number(item.valor))}
-                        {item.hora ? (
-                          <span style={estilos.painelItemHoraExtra}> · {String(item.hora).slice(0, 5)}</span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <span style={badgeEstado(item.estado)}>
-                      {item.estado === 'previsto' ? 'Previsto' :
-                       item.estado === 'realizado' ? 'Realizado' :
-                       item.estado === 'cancelado' ? 'Cancelado' : 'Migrado'}
-                    </span>
-                  </div>
-                  <div style={estilos.painelAcoes}>
-                    {item.ferias === true && (
-                      <span style={estilosItem.textoFerias}>Aviso</span>
-                    )}
-                    {item.fatura === true && item.tipo === 'real' && (
-                      <button type="button" onClick={() => aoEfetivarFatura(item)} style={estilosItem.botaoAcaoFatura}>Pagar fatura</button>
-                    )}
-                    {item.fatura === true && item.tipo === 'projetada' && (
-                      <span style={estilosItem.botaoAcaoNeutro}>Projeção</span>
-                    )}
-                    {item.estado === 'previsto' && !item.ferias && !item.fatura && (
-                      <>
-                        <button type="button" onClick={() => aoAbrirRealizar(item)} style={estilosItem.botaoAcaoRealizar}>Lançar</button>
-                        {String(item.data_prevista) < dataHoje && (
-                          <button
-                            type="button"
-                            onClick={() => aoMigrarAtraso(item)}
-                            disabled={confirmandoMigracao}
-                            style={estilosItem.botaoAcaoMigrar}
-                          >
-                            {confirmandoMigracao ? 'Migrando…' : 'Jogar p/ próx. semana'}
-                          </button>
-                        )}
-                        {item.estado === 'previsto' && identificarRegraValorVariavel(item) === 'condominio' && (
-                          <button type="button" onClick={() => aoSalvarConsumoReal(item)} style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
-                        )}
-                        {item.estado !== 'cancelado' && (
-                          <button type="button" onClick={() => aoAbrirEditar(item)} style={estilosItem.botaoAcaoNeutro}>Editar</button>
-                        )}
-                        {item.estado !== 'cancelado' && (
-                          <button type="button" onClick={() => aoCancelar(item)} style={estilosItem.botaoAcaoNeutro}>Cancelar</button>
-                        )}
-                        {item.estado !== 'cancelado' && !!item.serie_id && item.origem !== 'recorrente' && (
-                          <button type="button" onClick={() => aoCancelarSerie(item)} style={estilosItem.botaoAcaoSerie}>Série</button>
-                        )}
-                        {item.origem === 'recorrente' && (
-                          <button type="button" onClick={() => aoEditarSerie(item)} style={estilosItem.botaoAcaoNeutro}>Editar série</button>
-                        )}
-                        {!!item.serie_id ? (
-                          <button type="button" onClick={() => aoExcluirSerie(item)} style={estilosItem.botaoAcaoExcluir}>Excluir série</button>
-                        ) : (
-                          <button type="button" onClick={() => aoExcluir(item)} style={estilosItem.botaoAcaoExcluir}>Excluir</button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <button type="button" style={estilos.botaoNovoNoDia} onClick={() => {}}>
-                + Novo lançamento neste dia
-              </button>
-            </div>
+            {/* Lançamentos REAIS do dia: acordeão + ações + formulários idênticos
+                ao modo Lista (o "+ Novo lançamento" de dentro já nasce com a
+                data deste dia via dataPadrao). */}
+            <Lancamentos
+              itens={itensDoDia}
+              carregando={false}
+              erro={null}
+              dataPadrao={dataPadraoDia}
+              acoes={acoes}
+              aoPosMutacao={aoPosMutacao}
+              aoLerConsumoMes={aoLerConsumoMes}
+            />
           </div>
         </div>
       )}
@@ -662,62 +559,5 @@ const estilos = {
     color: '#9BA3AF',
     cursor: 'pointer',
     fontSize: '14px',
-  },
-  painelItens: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  painelItem: {
-    border: '1px solid #2B2F37',
-    borderRadius: '10px',
-    padding: '12px 14px',
-  },
-  painelItemTopo: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: '10px',
-    marginBottom: '8px',
-  },
-  painelItemDesc: {
-    fontSize: '14.5px',
-    fontWeight: '600',
-    color: '#EDEFF2',
-  },
-  painelItemHora: {
-    fontSize: '12px',
-    color: '#9BA3AF',
-    fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
-    marginTop: '2px',
-  },
-  // Linha tipo + valor (mesmo padrão do acordeão de Lancamentos.jsx via
-  // corTipo/RÓTULO_TIPO): nunca é substituída pelo horário.
-  painelItemValor: {
-    fontSize: '12.5px',
-    marginTop: '2px',
-  },
-  // Horário só como informação adicional, quando o item tiver (planejamentos
-  // não tem coluna hora — na prática quase nunca aparece).
-  painelItemHoraExtra: {
-    color: '#9BA3AF',
-    fontWeight: 'normal',
-  },
-  painelAcoes: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-  },
-  botaoNovoNoDia: {
-    width: '100%',
-    marginTop: '4px',
-    padding: '11px',
-    border: '1px dashed #2B2F37',
-    borderRadius: '10px',
-    background: 'transparent',
-    color: '#9BA3AF',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
   },
 }
