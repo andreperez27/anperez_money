@@ -1147,7 +1147,9 @@ export default function Lancamentos({
                           </span>
                         )}
                         {ehFaturaReal && (
-                          <span style={estilosItem.badgeFatura}>Fatura</span>
+                          <span style={item.fatura_fechada ? estilosItem.badgeFaturaFechada : estilosItem.badgeFatura}>
+                            {item.fatura_fechada ? 'Fatura Fechada' : 'Fatura em Aberto'}
+                          </span>
                         )}
                         {ehFaturaProjetada && (
                           <span style={estilosItem.badgeProjecao}>Projeção</span>
@@ -1272,7 +1274,9 @@ export default function Lancamentos({
                         </span>
                       )}
                       {ehFaturaReal && (
-                        <span style={{ ...estilosItem.badgeFatura, marginLeft: '0.5rem' }}>Fatura</span>
+                        <span style={{ ...(item.fatura_fechada ? estilosItem.badgeFaturaFechada : estilosItem.badgeFatura), marginLeft: '0.5rem' }}>
+                          {item.fatura_fechada ? 'Fatura Fechada' : 'Fatura em Aberto'}
+                        </span>
                       )}
                       {ehFaturaProjetada && (
                         <span style={{ ...estilosItem.badgeProjecao, marginLeft: '0.5rem' }}>Projeção</span>

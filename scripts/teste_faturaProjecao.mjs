@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { montarProjecao } from '../src/lib/faturaProjecao.js'
+import { statusExibicaoFatura } from '../src/lib/faturaPlanejamento.js'
 import { calcularResumoPlanejamentos } from '../src/lib/planejamentoCalc.js'
 import { agruparPorMes } from '../src/lib/planejamentoAgregado.js'
 
@@ -63,6 +64,7 @@ verificar('P1 — previsto de cartão absorvido NÃO duplica no somatório do pe
     faturasReais: [],
     inicioISO: '2026-05-01',
     fimISO: '2026-05-31',
+    hojeISO: '2026-05-10', // fatura de maio aberta (fecha dia 15)
   })
 
   // Timeline mantém o previsto como linha + a fatura projetada.
@@ -86,6 +88,7 @@ verificar('P2 — previsto de cartão com mês FORA da faixa NÃO conta como sa�
     faturasReais: [],
     inicioISO: '2026-04-01',
     fimISO: '2026-04-30',
+    hojeISO: '2026-04-15',
   })
 
   // Continua visível na timeline (lista / "Próximos lançamentos").
@@ -117,6 +120,7 @@ verificar('P2b — cenário da semana 36: previsto de cartão cuja fatura vence 
     faturasReais: [],
     inicioISO: '2026-08-31',
     fimISO: '2026-09-06', // semana 36: 31/08 a 06/09
+    hojeISO: '2026-09-01', // fatura de setembro aberta (fecha dia 15)
   })
   // Timeline mantém os dois previstos visíveis e também a água.
   assert.equal(itensVisiveis.length, 3)
@@ -144,6 +148,7 @@ verificar('P3 — total do período não duplica quando há previsto absorvido E
     faturasReais: [],
     inicioISO: '2026-05-01',
     fimISO: '2026-05-31',
+    hojeISO: '2026-05-10', // fatura de maio aberta (fecha dia 15)
   })
   const resumo = calcularResumoPlanejamentos(itensParaSomatorio)
   assert.equal(resumo.totais.saidas, 400) // 300 (fatura) + 100 (normal)
@@ -158,6 +163,7 @@ verificar('P4 — mes com dado real + previsto: fatura tipo real soma os dois se
     faturasReais: [{ cartao: cartaoA, mes: '2026-05', valor_restante: 100 }],
     inicioISO: '2026-05-01',
     fimISO: '2026-05-31',
+    hojeISO: '2026-05-10', // fatura de maio aberta (fecha dia 15)
   })
   const fatura = itensVisiveis.find((i) => i.fatura === true)
   assert.equal(fatura.tipo, 'real')
@@ -179,6 +185,7 @@ verificar('P5 — previsto vincula a cartão INATIVO gera fatura projetada (não
     faturasReais: [],
     inicioISO: '2026-05-01',
     fimISO: '2026-05-31',
+    hojeISO: '2026-05-10', // fatura de maio aberta (fecha dia 15)
   })
   // Fatura projetada aparece mesmo com o cartão inativo.
   const fatura = itensVisiveis.find((i) => i.fatura === true)
@@ -208,6 +215,7 @@ verificar('P6 — projeção respeita o fechamento e aparece no mês do VENCIMEN
     inicioISO: '2026-08-01',
     fimISO: '2026-08-31',
     previstosCartaoExternos: [netflix],
+    hojeISO: '2026-08-15',
   })
   assert.equal(ago.itensVisiveis.filter((i) => i.fatura === true).length, 0)
   assert.equal(calcularResumoPlanejamentos(ago.itensParaSomatorio).totais.saidas, 0)
@@ -221,6 +229,7 @@ verificar('P6 — projeção respeita o fechamento e aparece no mês do VENCIMEN
     inicioISO: '2026-09-01',
     fimISO: '2026-09-30',
     previstosCartaoExternos: [netflix],
+    hojeISO: '2026-09-01', // setembro aberto (fecha dia 15)
   })
   const faturaSet = set.itensVisiveis.find((i) => i.fatura === true)
   assert.ok(faturaSet, 'deveria gerar a fatura projetada em setembro (vencimento)')
@@ -243,6 +252,7 @@ verificar('P7 — previsto dentro do período + externo duplicado não soma duas
     inicioISO: '2026-09-01',
     fimISO: '2026-09-30',
     previstosCartaoExternos: [previstoCartao('p1', '2026-08-31', 300)],
+    hojeISO: '2026-09-01',
   })
   assert.equal(calcularResumoPlanejamentos(itensParaSomatorio).totais.saidas, 300)
 })
@@ -262,6 +272,7 @@ verificar('P8 — modo SEMANA: navegando para a semana do VENCIMENTO a Projeçã
     inicioISO: '2026-09-07',
     fimISO: '2026-09-13', // semana 37
     previstosCartaoExternos: [netflix, seguro],
+    hojeISO: '2026-09-08', // setembro aberto (fecha dia 15)
   })
   const fatura = itensVisiveis.find((i) => i.fatura === true)
   assert.ok(fatura, 'deveria aparecer a Projeção na semana do vencimento')
@@ -297,6 +308,7 @@ verificar('P9 — item REALIZADO em cartão NÃO soma como saída do fluxo (só 
     faturasReais: [], // fatura real paga em outra semana/fora desta faixa
     inicioISO: '2026-08-31',
     fimISO: '2026-09-06', // semana 36 (mesma da queixa)
+    hojeISO: '2026-09-01',
   })
 
   // Continuam visíveis na timeline (computados como realizados).
@@ -331,6 +343,7 @@ verificar('P10 — em cartão REALIZADO fora da faixa da fatura não soma; dentr
     faturasReais: [{ cartao: cartaoA, mes: '2026-09', valor_restante: 186.05 }],
     inicioISO: '2026-09-01',
     fimISO: '2026-09-30',
+    hojeISO: '2026-09-01',
   })
   // Timeline: item realizado + a fatura real.
   assert.equal(itensVisiveis.length, 2)
@@ -357,6 +370,7 @@ verificar('P11 — divisão "Por mês" da Visão Geral usa itensParaSomatorio (m
     faturasReais: [],
     inicioISO: '2026-04-01',
     fimISO: '2026-06-30',
+    hojeISO: '2026-05-10', // fatura de maio aberta (fecha dia 15)
   })
 
   // Card principal do trimestre (fonte da correção): 186,05 uma única vez.
@@ -391,6 +405,132 @@ verificar('P11 — divisão "Por mês" da Visão Geral usa itensParaSomatorio (m
   // A soma dos meses BATE com o total do trimestre (sem dupla contagem).
   const somaMeses = gruposMes.reduce((s, g) => s + saidaDoMes(g.chave), 0)
   assert.equal(somaMeses, totalTrimestre)
+})
+
+// --- fatura FECHADA (22/09/2026) ------------------------------------------------
+// Passou o dia de fechamento: nada mais entra no mês — o item vale o REAL
+// (v_faturas) e o previsto pendurado é ignorado no agregado (a linha própria
+// continua visível na timeline, para migrar/cancelar).
+
+verificar('P12 — caso real PF: fatura fechada de setembro vale o real (984,99), sem o previsto pendurado', () => {
+  // CC NU PF: fechamento dia 16. Real de setembro 984,99 + avulsa "Seguro do
+  // carro" 141,15 com data 02/09 (mês de fatura 09). Em 22/09 a fatura fechou.
+  const cartaoPF = { id: 'cartao-PF', nome: 'NU PF', dia_fechamento: 16, dia_vencimento: 24 }
+  const seguro = {
+    id: 'seguro-avulsa', estado: 'previsto', destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-PF', data_prevista: '2026-09-02', valor: 141.15, tipo_op: 'Saida',
+  }
+  const { itensVisiveis, itensParaSomatorio } = montarProjecao({
+    itensBase: [seguro],
+    cartoes: [cartaoPF],
+    faturasReais: [{ cartao: cartaoPF, mes: '2026-09', valor_restante: 984.99 }],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+    hojeISO: '2026-09-22',
+  })
+  const fatura = itensVisiveis.find((i) => i.fatura === true)
+  assert.ok(fatura, 'deveria gerar o item da fatura')
+  assert.equal(fatura.tipo, 'real')
+  assert.equal(fatura.valor_real, 984.99)
+  assert.equal(fatura.valor_previsto, 0)
+  assert.equal(fatura.valor, 984.99) // NÃO 1126,14
+  assert.equal(fatura.fatura_fechada, true) // tag [Fatura Fechada]
+  // A avulsa continua visível como linha própria (atrasada, para migrar/cancelar).
+  assert.ok(itensVisiveis.some((i) => i.id === 'seguro-avulsa'))
+  const resumo = calcularResumoPlanejamentos(itensParaSomatorio)
+  assert.equal(resumo.totais.saidas, 984.99)
+})
+
+verificar('P13 — fatura fechada sem real e só com previsto NÃO gera item fantasma', () => {
+  // Agosto PF: real 0 + avulsa 141,15 (compra 02/08, fatura 08, fechada em 16/08).
+  const cartaoPF = { id: 'cartao-PF', nome: 'NU PF', dia_fechamento: 16, dia_vencimento: 24 }
+  const seguro = {
+    id: 'seguro-avulsa', estado: 'previsto', destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-PF', data_prevista: '2026-08-02', valor: 141.15, tipo_op: 'Saida',
+  }
+  const { itensVisiveis } = montarProjecao({
+    itensBase: [seguro],
+    cartoes: [cartaoPF],
+    faturasReais: [{ cartao: cartaoPF, mes: '2026-08', valor_restante: 0 }],
+    inicioISO: '2026-08-01',
+    fimISO: '2026-08-31',
+    hojeISO: '2026-09-22',
+  })
+  assert.equal(itensVisiveis.filter((i) => i.fatura === true).length, 0)
+  assert.ok(itensVisiveis.some((i) => i.id === 'seguro-avulsa'))
+})
+
+verificar('P14 — fronteira: no dia do fechamento ainda aberto; no dia seguinte fechado', () => {
+  // Cartão A: fechamento dia 15. Previsto compra 10/05 (fatura 05) + real 100.
+  const aberta = montarProjecao({
+    itensBase: [previstoCartao('p1', '2026-05-10', 300)],
+    cartoes: [cartaoA],
+    faturasReais: [{ cartao: cartaoA, mes: '2026-05', valor_restante: 100 }],
+    inicioISO: '2026-05-01',
+    fimISO: '2026-05-31',
+    hojeISO: '2026-05-15', // dia do fechamento: ainda entra compra
+  })
+  const faturaAberta = aberta.itensVisiveis.find((i) => i.fatura === true)
+  assert.equal(faturaAberta.valor, 400)
+  assert.equal(faturaAberta.fatura_fechada, false) // tag [Fatura em Aberto]
+  const fechada = montarProjecao({
+    itensBase: [previstoCartao('p1', '2026-05-10', 300)],
+    cartoes: [cartaoA],
+    faturasReais: [{ cartao: cartaoA, mes: '2026-05', valor_restante: 100 }],
+    inicioISO: '2026-05-01',
+    fimISO: '2026-05-31',
+    hojeISO: '2026-05-16',
+  })
+  const fatura = fechada.itensVisiveis.find((i) => i.fatura === true)
+  assert.equal(fatura.valor, 100)
+  assert.equal(fatura.valor_previsto, 0)
+  assert.equal(fatura.fatura_fechada, true) // tag [Fatura Fechada]
+})
+
+verificar('P16 — projetada (só previstos, mês aberto) segue com tipo projetada e flag aberta', () => {
+  const { itensVisiveis } = montarProjecao({
+    itensBase: [previstoCartao('p1', '2026-04-20', 300)],
+    cartoes: [cartaoA],
+    faturasReais: [],
+    inicioISO: '2026-05-01',
+    fimISO: '2026-05-31',
+    hojeISO: '2026-05-10',
+  })
+  const fatura = itensVisiveis.find((i) => i.fatura === true)
+  assert.equal(fatura.tipo, 'projetada')
+  assert.equal(fatura.valor, 300)
+  assert.equal(fatura.fatura_fechada, false)
+})
+
+verificar('P15 — fechamento maior que o mês usa o último dia (clamp)', () => {
+  // Fechamento dia 31 em fevereiro/26 (28 dias): fecha em 28/02.
+  const cartao31 = { id: 'cartao-31', nome: 'X', dia_fechamento: 31, dia_vencimento: 10 }
+  const prev = {
+    id: 'p1', estado: 'previsto', destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-31', data_prevista: '2026-02-10', valor: 300, tipo_op: 'Saida',
+  }
+  const real = [{ cartao: cartao31, mes: '2026-02', valor_restante: 100 }]
+  const base = {
+    itensBase: [prev], cartoes: [cartao31], faturasReais: real,
+    inicioISO: '2026-02-01', fimISO: '2026-02-28',
+  }
+  const aberta = montarProjecao({ ...base, hojeISO: '2026-02-28' })
+  assert.equal(aberta.itensVisiveis.find((i) => i.fatura === true).valor, 400)
+  const fechada = montarProjecao({ ...base, hojeISO: '2026-03-01' })
+  assert.equal(fechada.itensVisiveis.find((i) => i.fatura === true).valor, 100)
+})
+
+verificar('P17 — status de exibição: paga/parcial preservam; sem pagamento vale o fechamento', () => {
+  const cartao = { id: 'c', nome: 'X', dia_fechamento: 16, dia_vencimento: 24 }
+  const paga = { mes_fatura: '2026-09', status: 'paga' }
+  const parcial = { mes_fatura: '2026-09', status: 'parcialmente_paga' }
+  const aberta = { mes_fatura: '2026-09', status: 'aberta' }
+  assert.equal(statusExibicaoFatura(paga, cartao, '2026-09-22'), 'paga')
+  assert.equal(statusExibicaoFatura(parcial, cartao, '2026-09-22'), 'parcialmente_paga')
+  assert.equal(statusExibicaoFatura(aberta, cartao, '2026-09-22'), 'fechada')
+  assert.equal(statusExibicaoFatura(aberta, cartao, '2026-09-16'), 'aberta')
+  assert.equal(statusExibicaoFatura(aberta, cartao, '2026-09-10'), 'aberta')
+  assert.equal(statusExibicaoFatura(null, cartao, '2026-09-22'), null)
 })
 
 console.log(`\n${ok} ok, ${falhou} falharam`)

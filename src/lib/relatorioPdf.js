@@ -382,6 +382,9 @@ export function calcularFaturasECompromissos({
     fimISO: fim,
     cartoes,
     feriados,
+    // Referência da fatura FECHADA (22/09/2026): mês fechado vale o real.
+    // Sem hojeISO, tudo conta como aberto (comportamento anterior).
+    hojeISO: hoje || undefined,
   }).map((f) => ({
     id: f.id,
     descricao: f.descricao,

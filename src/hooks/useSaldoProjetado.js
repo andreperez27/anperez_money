@@ -198,6 +198,8 @@ export function useSaldoProjetado({
       previstosCartaoExternos,
       ferias,
       feriados,
+      // Referência da fatura FECHADA (22/09/2026): mês fechado vale o real.
+      hojeISO: hoje(),
     })
   }, [itensHorizonte, cartoes, faturasReais, inicioSemana, fimISO, previstosCartaoExternos, ferias, feriados])
 

@@ -264,9 +264,30 @@ export default function Planejamento() {
       previstosCartaoExternos: previstosCartaoTotal,
       ferias: feriasMarcadas,
       feriados,
+      // Referência da fatura FECHADA (22/09/2026): mês fechado vale o real.
+      hojeISO: hoje(),
     })
     return res
   }, [itensBase, cartoes, faturasReais, periodoVisivel, previstosCartaoTotal, feriasMarcadas, feriados])
+
+  // Projeção da FATURA também para o CALENDÁRIO: o grid recebe os itens do
+  // mês COM os sintéticos de fatura/projeção (mesma régua do modo Lista) —
+  // sem isso as faturas não apareciam no calendário.
+  const itensVisiveisCalendario = useMemo(() => {
+    const { inicio, fim } = intervaloMesCalendario(mesCalendario)
+    return montarProjecao({
+      itensBase: itensCalendario,
+      cartoes,
+      faturasReais,
+      inicioISO: inicio,
+      fimISO: fim,
+      previstosCartaoExternos: previstosCartaoTotal,
+      ferias: feriasMarcadas,
+      feriados,
+      // Referência da fatura FECHADA (22/09/2026): mês fechado vale o real.
+      hojeISO: hoje(),
+    }).itensVisiveis
+  }, [mesCalendario, itensCalendario, cartoes, faturasReais, previstosCartaoTotal, feriasMarcadas, feriados])
 
   // Resumo: SEMPRE via a função pura do domínio sobre o array PARA SOMATÓRIO
   // (que exclui os previstos de cartão absorvidos pela fatura, evitando contar
@@ -358,9 +379,15 @@ export default function Planejamento() {
     if (modoVisualizacao === 'calendario') {
       try {
         const { inicio, fim } = intervaloMesCalendario(mesCalendario)
-        const dados = await listarPorPeriodo(inicio, fim)
+        // Recarrega o mês + os previstos de cartão (fonte da projeção da
+        // fatura — sem isso a fatura do calendário fica desatualizada).
+        const [dados, previstos] = await Promise.all([
+          listarPorPeriodo(inicio, fim),
+          listarPrevistosCartao(),
+        ])
         setItensCalendario(dados)
         setErroCalendario('')
+        setPrevistosCartaoTotal(previstos)
       } catch (e) {
         setErroCalendario(e.message)
       }
@@ -471,7 +498,7 @@ export default function Planejamento() {
 
       {modoVisualizacao === 'calendario' ? (
         <CalendarioPlanejamento
-          itens={itensCalendario}
+          itens={itensVisiveisCalendario}
           carregando={carregandoCalendario}
           erro={erroCalendario}
           mesAtual={mesCalendario}

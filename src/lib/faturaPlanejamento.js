@@ -26,6 +26,7 @@
 // ============================================================================
 
 import { vencimentoRealISO } from './diaUtil.js'
+import { hoje } from './compartilhados.js'
 
 // ESPELHO fiel do SQL calcular_mes_fatura (migration 10_cartoes_schema).
 // p_data_compra → dataIso (YYYY-MM-DD), p_dia_fechamento → diaFechamento.
@@ -48,17 +49,48 @@ export function calcularMesFatura(dataIso, diaFechamento) {
   return `${anoFatura}-${String(mesFatura).padStart(2, '0')}`
 }
 
+// FATURA FECHADA (22/09/2026, decisão com André): o mês de fatura M fecha no
+// dia de fechamento do cartão (clamp no último dia do mês, espelho da regra
+// de calcular_mes_fatura) — depois disso nenhuma compra nova entra em M.
+// Numa fatura fechada vale o REAL (v_faturas); previstos pendurados naquele
+// mês NÃO somam no item (continuam visíveis como linha própria na timeline,
+// para migrar/cancelar). Sem dia de fechamento válido, considera aberta.
+export function faturaFechada(mesFatura, diaFechamento, hojeISO) {
+  const [ano, mes] = String(mesFatura).split('-').map(Number)
+  const fech = Number(diaFechamento)
+  if (!Number.isInteger(ano) || !Number.isInteger(mes) || !Number.isFinite(fech)) return false
+  const ultimo = new Date(ano, mes, 0).getDate()
+  const diaEfetivo = Math.min(Math.max(fech, 1), ultimo)
+  const fechISO = `${ano}-${String(mes).padStart(2, '0')}-${String(diaEfetivo).padStart(2, '0')}`
+  return String(hojeISO) > fechISO
+}
+
+// Status de EXIBIÇÃO da fatura no app (22/09/2026): o v_faturas.status é sobre
+// PAGAMENTO; aqui aplica o FECHAMENTO — sem nenhum pagamento e passada a data
+// de fechamento, a fatura é FECHADA (nada mais entra nela). Paga/parcialmente
+// paga preservam a informação de pagamento. Devolve a chave para os mapas de
+// rótulo/cor das telas ('aberta' | 'fechada' | 'parcialmente_paga' | 'paga').
+export function statusExibicaoFatura(fatura, cartao, hojeISO) {
+  if (!fatura) return null
+  if (fatura.status === 'paga' || fatura.status === 'parcialmente_paga') return fatura.status
+  const fechada = faturaFechada(fatura.mes_fatura, cartao?.dia_fechamento, hojeISO || hoje())
+  return fechada ? 'fechada' : 'aberta'
+}
+
 // Monta UM item sintético de fatura para um (cartão, mes).
 // - faturaReal: linha de v_faturas daquele mês (ou null/undefined se não houver).
-// - valorPrevisto: soma dos previstos de destino cartão daquele mês (0 se nenhum).
+// - valorPrevisto: soma dos previstos de destino cartão daquele mês (0 se nenhum;
+//   IGNORADO quando a fatura está fechada — vale só o real).
 // - feriados: lista do Ponto (ponto_feriados) para o vencimento REAL pular
 //   fim de semana E feriado (diaUtil.vencimentoRealISO, função central).
+// - hojeISO: referência para fatura fechada (default = hoje civil).
 // - tipo: 'real' quando há valor real em v_faturas (existe fatura de fato);
 //   'projetada' quando o mês só tem previstos (não há parcela real ainda).
-export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feriados = [] }) {
+export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feriados = [], hojeISO }) {
   if (!cartao || !mes) return null
   const valorReal = faturaReal ? Number(faturaReal.valor_restante) : 0
-  const previsto = Number(valorPrevisto) || 0
+  const fechada = faturaFechada(mes, cartao.dia_fechamento, hojeISO || hoje())
+  const previsto = fechada ? 0 : (Number(valorPrevisto) || 0)
   const valor = valorReal + previsto
   if (!(valor > 0)) return null
 
@@ -68,6 +100,8 @@ export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feria
     id: `fatura:${cartao.id}:${mes}`,
     fatura: true,
     tipo: ehReal ? 'real' : 'projetada',
+    // Para a tag [Fatura Fechada] / [Fatura em Aberto] da lista.
+    fatura_fechada: fechada,
     fatura_cartao_id: cartao.id,
     fatura_nome: nomeCartao,
     fatura_mes: mes,
@@ -102,7 +136,7 @@ export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feria
 //   para projetar meses futuros).
 //
 // Retorna os itens ordenados por data_prevista, filtrando pelo vencimento.
-export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioISO, fimISO, cartoes, feriados = [] }) {
+export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioISO, fimISO, cartoes, feriados = [], hojeISO }) {
   if (!faturasReais && !previstosPorCartaoMes) return []
   const inicio = inicioISO || ''
   const fim = fimISO || ''
@@ -138,6 +172,7 @@ export function montarItensFatura({ faturasReais, previstosPorCartaoMes, inicioI
       faturaReal: faturaRealPorChave.get(`${cartao.id}|${mes}`),
       valorPrevisto: (previstosPorCartaoMes?.[cartao.id]?.[mes]) || 0,
       feriados,
+      hojeISO,
     })
     if (!item) continue
     if (inicio && item.data_prevista < inicio) continue

@@ -31,6 +31,11 @@
 //   período — correto, pois nenhum dinheiro sai da conta nessa janela. Ele
 //   continua aparecendo em itensVisiveis (timeline / "Próximos lançamentos")
 //   com o badge "Cartão: [nome]", só não soma fora da fatura.
+//
+// EXCEÇÃO — FATURA FECHADA (22/09/2026): passou o dia de fechamento, nada
+// mais entra naquele mês: o item da fatura vale o REAL (v_faturas) e os
+// previstos pendurados são ignorados no agregado (a linha própria continua
+// visível para migrar/cancelar). Ver faturaFechada em faturaPlanejamento.js.
 // ============================================================================
 
 import { calcularMesFatura, montarItensFatura } from './faturaPlanejamento.js'
@@ -69,7 +74,7 @@ export function montarItensFerias(ferias = [], { inicioISO, fimISO } = {}) {
   return marcadores
 }
 
-export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias, feriados = [] }) {
+export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fimISO, previstosCartaoExternos, ferias, feriados = [], hojeISO }) {
   const base = itensBase || []
   const cartoesLista = cartoes || []
   const cartaoPorId = new Map(cartoesLista.map((c) => [c.id, c]))
@@ -153,6 +158,7 @@ export function montarProjecao({ itensBase, cartoes, faturasReais, inicioISO, fi
     fimISO,
     cartoes: cartoesLista,
     feriados,
+    hojeISO,
   })
 
   // Item de cartão NUNCA volta pro somatório como linha própria (seja previsto

@@ -7,18 +7,21 @@ import ModalCompra from '../components/ModalCompra'
 import EditarCompraForm from '../components/EditarCompraForm'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 import { vencimentoRealISO } from '../lib/diaUtil'
+import { statusExibicaoFatura } from '../lib/faturaPlanejamento'
 import { useFeriados } from '../hooks/useFeriados'
 import { gerarPdfFatura } from '../lib/gerarPdfFatura'
 import { ordenarParcelasCronologicamente, textoParcela } from '../lib/faturaOrdenacao'
 
 const ROTULO_STATUS = {
   aberta: 'ABERTA',
+  fechada: 'FECHADA',
   parcialmente_paga: 'PARCIAL',
   paga: 'PAGA',
 }
 
 const COR_STATUS = {
   aberta: '#fbbf24',
+  fechada: '#94a3b8',
   parcialmente_paga: '#42A5F5',
   paga: '#4ade80',
 }
@@ -266,7 +269,8 @@ export default function FaturaDetalhe() {
   const restante = Number(fatura?.valor_restante ?? 0)
   const jaPago = Number(fatura?.valor_pago ?? 0)
   const total = Number(fatura?.valor_total ?? 0)
-  const status = fatura?.status ?? 'aberta'
+  // Status de exibição: sem pagamento e passado o fechamento → FECHADA.
+  const status = fatura ? statusExibicaoFatura(fatura, cartao, hoje()) : 'aberta'
   const conta = cartao.contas
   const temPagamento = jaPago > 0
 

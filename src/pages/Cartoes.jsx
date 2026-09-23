@@ -5,20 +5,23 @@ import { useFaturas, proximaFaturaEmAberto } from '../hooks/useFaturas'
 import { useGastoMes } from '../hooks/useGastoMes'
 import { useFeriados } from '../hooks/useFeriados'
 import { vencimentoRealISO } from '../lib/diaUtil'
+import { statusExibicaoFatura } from '../lib/faturaPlanejamento'
 import { useContas } from '../hooks/useContas'
 import { useContaAtiva } from '../context/ContaAtivaContext'
 import ModalCompra from '../components/ModalCompra'
 import ModalFormulario from '../components/ModalFormulario'
-import { estilosComuns, formatarData, formatoReal } from '../lib/compartilhados'
+import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 
 const ROTULO_STATUS = {
   aberta: 'ABERTA',
+  fechada: 'FECHADA',
   parcialmente_paga: 'PARCIAL',
   paga: 'PAGA',
 }
 
 const COR_STATUS = {
   aberta: '#fbbf24',
+  fechada: '#94a3b8',
   parcialmente_paga: '#42A5F5',
   paga: '#4ade80',
 }
@@ -60,6 +63,8 @@ function CartaoCard({ cartao, aoLancar }) {
   const limite = Number(cartao.limite)
   const usado = limite - Number(limiteDisponivel ?? limite)
   const pctUsado = limite > 0 ? Math.min(100, (usado / limite) * 100) : 0
+  // Status de exibição: sem pagamento e passado o fechamento → FECHADA.
+  const statusFatura = fatura ? statusExibicaoFatura(fatura, cartao, hoje()) : null
 
   return (
     <div style={estilos.cartao}>
@@ -86,11 +91,11 @@ function CartaoCard({ cartao, aoLancar }) {
             <span
               style={{
                 ...estilos.statusPill,
-                color: COR_STATUS[fatura.status] ?? '#9ca3af',
-                borderColor: COR_STATUS[fatura.status] ?? '#374151',
+                color: COR_STATUS[statusFatura] ?? '#9ca3af',
+                borderColor: COR_STATUS[statusFatura] ?? '#374151',
               }}
             >
-              {ROTULO_STATUS[fatura.status] ?? fatura.status}
+              {ROTULO_STATUS[statusFatura] ?? fatura.status}
             </span>
           </div>
         )}

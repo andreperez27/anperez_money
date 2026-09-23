@@ -186,7 +186,12 @@ export const estilosItem = {
   badgeParcela: { padding: '0.15rem 0.5rem', borderRadius: '6px', background: '#1f2937', color: '#9ca3af', fontSize: '0.72rem', whiteSpace: 'nowrap' },
   // Item de FATURA automática (projeção dinâmica do cartão, não persistida) —
   // tom VIOLETA para distinguir de 'previsto' (azul) e de 'Disponível' (amarelo).
+  // Com a regra da fatura fechada (22/09/2026): aberta usa este badge com o
+  // rótulo "Fatura em Aberto"; fechada usa badgeFaturaFechada ("Fatura Fechada").
   badgeFatura: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(167, 139, 250, 0.15)', color: '#a78bfa', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Fatura FECHADA (mês fechado, vale o real): tom ARDÓSIA, distinto do violeta
+  // da aberta, do cinza do cancelado e dos demais badges.
+  badgeFaturaFechada: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
   // Fatura PROJETADA (mês futuro com/por previstos de destino cartão): tom
   // VERDE-LIMÃO, sem botão de pagar (só a fatura REAL paga).
   badgeProjecao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(163, 230, 53, 0.15)', color: '#a3e635', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
