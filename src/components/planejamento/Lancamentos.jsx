@@ -1386,7 +1386,7 @@ const estilos = {
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
-  pilhaModoAtiva: { color: '#42A5F5', borderColor: 'rgba(66, 165, 245, 0.45)' },
+  pilhaModoAtiva: { background: '#42A5F5', borderColor: '#42A5F5', color: '#0b0f19', fontWeight: 600 },
   radioTipo: { display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#e5e7eb', cursor: 'pointer', fontSize: '0.9rem' },
   camposLadoALado: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap' },
   rotuloCampo: { display: 'flex', flexDirection: 'column', gap: '0.25rem', color: '#9ca3af', fontSize: '0.8rem', flex: '1 1 130px' },

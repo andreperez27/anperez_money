@@ -24,6 +24,7 @@ import {
   montarObservacaoCondominioReal,
   parseValorObservacao,
 } from '../lib/serieValorVariavel.js'
+import { subtrairMes } from '../lib/consumoMensalCalc.js'
 import { calcularTotalCondominio, montarObservacaoCondominio } from '../lib/despesaRecorrenteCalc.js'
 
 // Domínio de Planejamentos (ETAPA 06/E3).
@@ -633,7 +634,9 @@ export function usePlanejamentos({ ano, semana } = {}) {
     const montarLinha = (tipo, dados) => {
       const valor = Number(dados?.valor)
       if (!Number.isFinite(valor) || valor < 0) return null
-      const linha = { mes: dataMes, tipo, valor }
+      // mes_consumo (mês do CONSUMO) vai na mesma escrita: o formulário opera
+      // no mês do boleto, e a defasagem leitura × cobrança é de 1 mês.
+      const linha = { mes: dataMes, mes_consumo: `${subtrairMes(mesIso)}-01`, tipo, valor }
       // Leituras opcionais (m³): só enviadas quando preenchidas — no upsert
       // com onConflict os campos ausentes preservam o valor existente.
       const atual = Number(dados?.leitura_atual)

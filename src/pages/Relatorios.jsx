@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { estilosComuns, hoje } from '../lib/compartilhados'
 import {
   definirPeriodo,
@@ -8,14 +8,17 @@ import {
 import SeletorPeriodoRelatorio from '../components/relatorios/SeletorPeriodoRelatorio'
 import AbasRelatorio from '../components/relatorios/AbasRelatorio'
 import RelatorioTemplate from '../components/relatorios/RelatorioTemplate'
+import AbaConsumos from '../components/relatorios/AbaConsumos'
 import AnalisePorCategoria from '../components/relatorios/AnalisePorCategoria'
 import ListaAnosAcordo from '../components/relatorios/ListaAnosAcordo'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
 import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
 import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
 import { useRelatorioPatrimonio } from '../hooks/useRelatorioPatrimonio'
+import { useRelatorioConsumos } from '../hooks/useRelatorioConsumos'
 import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
 import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
+import { gerarPdfConsumos, montarSecoesConsumos } from '../lib/gerarPdfConsumos'
 import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 
 const ABA_PADRAO = 'recebido-horas'
@@ -30,6 +33,20 @@ export default function Relatorios() {
   // Categoria selecionada na aba "Por categoria" (elevada para cá para o
   // exportar PDF conhecer o filtro ativo; persiste ao trocar de aba).
   const [selecaoCategoria, setSelecaoCategoria] = useState(TODAS_CATEGORIAS)
+  // Aba "Consumos": tipos e métricas elevados para cá (o Exportar PDF usa a
+  // mesma seleção da tela; vazio = todos). Persistem ao trocar de aba.
+  const [selecaoConsumos, setSelecaoConsumos] = useState([])
+  const [metricasConsumos, setMetricasConsumos] = useState(['valor'])
+  // Rótulos de valor nos pontos do gráfico (vazio = desligado, padrão).
+  const [rotulosConsumos, setRotulosConsumos] = useState([])
+  // Ano civil corrente (Jan–Dez): regra de período PRÓPRIA do PDF de
+  // Consumos, ignorando o seletor geral (mesmo padrão do Acordo).
+  const anoConsumos = useMemo(() => Number(hoje().slice(0, 4)), [])
+  const periodoAnoConsumos = useMemo(
+    () => ({ inicio: `${anoConsumos}-01-01`, fim: `${anoConsumos}-12-31` }),
+    [anoConsumos],
+  )
+  const consumosAno = useRelatorioConsumos(periodoAnoConsumos)
 
   // Relatório consolidado em PDF (template único semana/mês).
   const { gerar, carregando: gerandoPdf } = useRelatorioPdf()
@@ -46,6 +63,30 @@ export default function Relatorios() {
       }
       try {
         gerarPdfRelatorio({ acordo: acordo.dados })
+      } catch (e) {
+        setErroPdf(e.message)
+      }
+      return
+    }
+
+    // Aba "Consumos": sempre o ANO CIVIL corrente (Jan–Dez), ignorando o
+    // seletor geral. Tipos/métricas = os mesmos marcados na tela.
+    if (aba === 'consumos') {
+      try {
+        if (consumosAno.erro) throw new Error(consumosAno.erro)
+        // O hook já agrupa o ano inteiro (filtro = ano civil); o PDF só
+        // monta as seções dos tipos/métricas selecionados na tela.
+        const secoes = montarSecoesConsumos({
+          porTipoAno: consumosAno.porTipo,
+          tipos: selecaoConsumos,
+          metricas: metricasConsumos.length > 0 ? metricasConsumos : ['valor'],
+          ano: anoConsumos,
+        })
+        if (secoes.length === 0) {
+          setErroPdf('Ainda não há leituras de consumo neste ano para exportar.')
+          return
+        }
+        gerarPdfConsumos({ ano: anoConsumos, secoes, rotulos: rotulosConsumos })
       } catch (e) {
         setErroPdf(e.message)
       }
@@ -115,8 +156,18 @@ export default function Relatorios() {
   const faixaInvertida = Boolean(dataInicio && dataFim && dataInicio > dataFim)
 
   // Todas as abas ("Recebido & horas", "Acordo trabalhista",
-  // "Entradas x despesas", "Patrimônio" e "Por categoria") têm dados reais.
-  // Os hooks já devolvem as props no formato do RelatorioTemplate.
+  // "Entradas x despesas", "Patrimônio", "Por categoria" e "Consumos") têm
+  // dados reais. Os hooks já devolvem as props no formato do RelatorioTemplate.
+  // A aba Consumos não tem granularidade semanal: ao entrar nela vindo de
+  // Semana, o período volta para o Mês que contém a semana visível.
+  function aoTrocarAba(novaAba) {
+    if (novaAba === 'consumos' && tipo === 'semana') {
+      const referencia = periodo?.inicio ?? hoje()
+      setPeriodoBasico(definirPeriodo('mes', referencia))
+      setTipo('mes')
+    }
+    setAba(novaAba)
+  }
   const recebidoHoras = useRelatorioRecebidoHoras(periodo ?? undefined)
   const acordo = useRelatorioAcordo()
   const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
@@ -171,6 +222,10 @@ export default function Relatorios() {
             aoDeslocar={aoDeslocar}
             aoTrocarDataInicio={aoTrocarDataInicio}
             aoTrocarDataFim={aoTrocarDataFim}
+            // Consumos: leitura é mensal, sem pílula de Semana.
+            tipos={aba === 'consumos'
+              ? ['mes', 'trimestre', 'semestre', 'ano', 'personalizado']
+              : undefined}
           />
 
           {faixaInvertida && (
@@ -183,7 +238,7 @@ export default function Relatorios() {
       )}
 
       {/* Abas de tópico — não resetam o período selecionado. */}
-      <AbasRelatorio aba={aba} aoTrocarAba={setAba} />
+      <AbasRelatorio aba={aba} aoTrocarAba={aoTrocarAba} />
 
       {aba === 'recebido-horas' ? (
         recebidoHoras.erro ? (
@@ -229,6 +284,20 @@ export default function Relatorios() {
             linhas={patrimonio.linhas}
           />
         )
+      ) : aba === 'consumos' ? (
+        /* Consumos de água/gás por mes_referencia (mês do consumo, não do
+           boleto). Componente próprio com o padrão resumo → gráfico → lista;
+           o RelatorioTemplate compartilhado só faz barras (linha/sparkline
+           nele seriam risco de regressão nas outras abas). */
+        <AbaConsumos
+          periodo={periodo}
+          tiposSel={selecaoConsumos}
+          aoTrocarTipos={setSelecaoConsumos}
+          metricasSel={metricasConsumos}
+          aoTrocarMetricas={setMetricasConsumos}
+          rotulosSel={rotulosConsumos}
+          aoTrocarRotulos={setRotulosConsumos}
+        />
       ) : (
         /* Busca/análise por categoria — reusa a fonte única de categorização
            do relatório (relatorioPdf.js) e o período da página. A seleção fica

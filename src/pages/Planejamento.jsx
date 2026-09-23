@@ -571,5 +571,5 @@ const estilos = {
   toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '1rem' },
   toggleContainer: { display: 'flex', background: '#111827', border: '1px solid #374151', borderRadius: '9px', padding: '3px', gap: '2px' },
   toggleButton: { border: 'none', background: 'transparent', color: '#9ca3af', fontSize: '13px', fontWeight: '600', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', transition: 'background 0.12s ease, color 0.12s ease' },
-  toggleButtonAtivo: { background: '#42A5F5', color: '#0b0f19' },
+  toggleButtonAtivo: { background: '#42A5F5', color: '#0b0f19', fontWeight: 600 },
 }

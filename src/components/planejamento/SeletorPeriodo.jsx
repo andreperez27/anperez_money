@@ -106,7 +106,7 @@ const estilos = {
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
-  pilulaAtiva: { color: '#42A5F5', borderColor: 'rgba(66, 165, 245, 0.45)' },
+  pilulaAtiva: { background: '#42A5F5', borderColor: '#42A5F5', color: '#0b0f19', fontWeight: 600 },
   seletor: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' },
   seta: { width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #374151', background: '#111827', color: '#e5e7eb', fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer' },
   rotulo: { display: 'flex', flexDirection: 'column', minWidth: '150px', gap: '0.1rem' },

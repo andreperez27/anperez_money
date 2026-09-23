@@ -102,7 +102,9 @@ def main():
             print(f"  linha {r}: {mes} {tipo} já existe, pulada")
             continue
         novas.append({
+            # Import em lote: rótulo da planilha JÁ é o mês do consumo.
             "mes": f"{mes}-01",
+            "mes_consumo": f"{mes}-01",
             "tipo": tipo,
             "leitura_anterior": round(ant, 2),
             "leitura_atual": round(atual, 2),

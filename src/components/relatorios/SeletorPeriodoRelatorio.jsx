@@ -93,6 +93,9 @@ export default function SeletorPeriodoRelatorio({
   aoDeslocar,
   aoTrocarDataInicio,
   aoTrocarDataFim,
+  // Chamador pode restringir as pílulas (ex.: a aba Consumos esconde Semana,
+  // sem granularidade semanal para leitura). Default mantém todas.
+  tipos = TIPOS,
 }) {
   const rotulo = rotuloPeriodo(periodo, tipo)
   const ehPersonalizado = tipo === 'personalizado'
@@ -101,7 +104,7 @@ export default function SeletorPeriodoRelatorio({
     <div style={estilos.bloco}>
       {/* Pílulas de tipo */}
       <div style={estilos.pilulas}>
-        {TIPOS.map((t) => (
+        {tipos.map((t) => (
           <button
             key={t}
             type="button"
@@ -183,7 +186,7 @@ const estilos = {
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
-  pilulaAtiva: { color: '#42A5F5', borderColor: 'rgba(66, 165, 245, 0.45)' },
+  pilulaAtiva: { background: '#42A5F5', borderColor: '#42A5F5', color: '#0b0f19', fontWeight: 600 },
   seletor: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' },
   seta: {
     width: '36px',

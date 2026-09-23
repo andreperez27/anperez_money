@@ -32,7 +32,8 @@ const LARGURA = 210
 const MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 // m³ com até 2 casas ("124" → "124,00", "124,35" → "124,35").
-const formataM3 = new Intl.NumberFormat('pt-BR', {
+// Exportado para reúso no PDF de Consumos (mesmo formato).
+export const formataM3 = new Intl.NumberFormat('pt-BR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })

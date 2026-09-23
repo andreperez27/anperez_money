@@ -82,7 +82,7 @@ async function get(tabela, query) {
 
 const consumo = await get(
   'condominio_consumo_mensal',
-  'select=mes,tipo,valor,leitura_atual,leitura_anterior&order=mes.asc&order=tipo.asc&limit=500',
+  'select=mes,mes_consumo,tipo,valor,leitura_atual,leitura_anterior&order=mes.asc&order=tipo.asc&limit=500',
 )
 const ocorrencias = await get(
   'planejamentos',
@@ -92,7 +92,7 @@ const ocorrencias = await get(
 console.log(`\n== condominio_consumo_mensal: ${consumo.length} linha(s) ==`)
 for (const c of consumo) {
   console.log(
-    `  ${c.mes} ${c.tipo}: ${BRL(c.valor)} (atual=${c.leitura_atual ?? '—'} anterior=${c.leitura_anterior ?? '—'})`,
+    `  ${c.mes} consumo=${String(c.mes_consumo ?? '?').slice(0, 7)} ${c.tipo}: ${BRL(c.valor)} (atual=${c.leitura_atual ?? '—'} anterior=${c.leitura_anterior ?? '—'})`,
   )
 }
 
