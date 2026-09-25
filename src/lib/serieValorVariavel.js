@@ -98,6 +98,27 @@ export function parseValorObservacao(observacao, cod) {
 }
 
 // ----------------------------------------------------------------------------
+// Reconstrói as linhas da composição a partir do TEXTO da observação
+// (formato de montarObservacaoCondominio: "cod descricao [ref] R$ valor").
+// Usado para exportar o espelho do boleto de ocorrência PREVISTA com consumo
+// real (sem snapshot — que só nasce na realização). Linhas sem R$ (ex.: o
+// marcador 1055) são ignoradas; `ordem` segue a ordem gravada.
+// ----------------------------------------------------------------------------
+export function parseObservacaoCondominio(observacao) {
+  const itens = []
+  for (const raw of String(observacao ?? '').split('\n')) {
+    const l = raw.trim()
+    if (!l) continue
+    const m = l.match(/^(\S+)\s+(.+?)\s+R\$\s*([\d.,]+)$/)
+    if (!m) continue
+    const valor = Number(m[3].replace(/\./g, '').replace(',', '.'))
+    if (!Number.isFinite(valor)) continue
+    itens.push({ cod: m[1], descricao: m[2], valor, referencia: '', ordem: itens.length })
+  }
+  return itens
+}
+
+// ----------------------------------------------------------------------------
 // Identifica se uma linha pertence a uma SÉRIE de valor variável (projetada
 // pela regra de média). Devolve 'condominio' | 'energia' | null. Exige
 // serie_id (avulsas e séries fixas nunca entram na reprojeção automática).

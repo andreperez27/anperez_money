@@ -74,7 +74,7 @@ function linhasConsumo(itens, consumo) {
   return linhas
 }
 
-export function montarPdfCondominio({ ocorrencia, itens, consumo = [] }) {
+export function montarPdfCondominio({ ocorrencia, itens, consumo = [], fonte = 'realizado' }) {
   const doc = new jsPDF()
 
   const mesRef = String(ocorrencia.data_prevista || '').slice(0, 7)
@@ -188,7 +188,7 @@ export function montarPdfCondominio({ ocorrencia, itens, consumo = [] }) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.text(
-    `Comprovante emitido em ${formatarData(dataCivilHoje())} via Anperez — espelho do boleto (modelo congelado na realização)`,
+    `Comprovante emitido em ${formatarData(dataCivilHoje())} via Anperez — ${fonte === 'previsto' ? 'espelho do boleto com os valores reais informados (pré-realização, sujeito a mudança até realizar)' : 'espelho do boleto (modelo congelado na realização)'}`,
     MARGEM,
     287,
   )

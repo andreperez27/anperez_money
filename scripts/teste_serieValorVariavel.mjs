@@ -7,6 +7,7 @@ import {
   ehConsumoRealInformado,
   montarObservacaoCondominioReal,
   ehCondominioDoBoleto,
+  parseObservacaoCondominio,
   MARCADOR_CONSUMO_REAL,
 } from '../src/lib/serieValorVariavel.js'
 import { montarObservacaoCondominio } from '../src/lib/despesaRecorrenteCalc.js'
@@ -367,6 +368,25 @@ caso('condomínio: sem reaisPorMes mantém o comportamento antigo', () => {
     historicoAgua: [40],
   })
   assert.strictEqual(updates[0].valor, 140)
+})
+
+caso('parseObservacaoCondominio: recompõe a composição (pula o marcador 1055)', () => {
+  const obs = [
+    '1002 Cota Condominial R$ 840,82',
+    '15002 Manut. Pintura PC 9/24 R$ 170,00',
+    '1010 Consumo de Gás R$ 124,08',
+    '1052 Consumo de Água R$ 160,99',
+    MARCADOR_CONSUMO_REAL,
+    '',
+  ].join('\n')
+  const itens = parseObservacaoCondominio(obs)
+  assert.equal(itens.length, 4)
+  assert.deepStrictEqual(itens[0], { cod: '1002', descricao: 'Cota Condominial', valor: 840.82, referencia: '', ordem: 0 })
+  assert.deepStrictEqual(itens[1].descricao, 'Manut. Pintura PC 9/24')
+  assert.equal(itens[2].valor, 124.08)
+  assert.equal(itens[3].ordem, 3)
+  assert.deepStrictEqual(parseObservacaoCondominio(null), [])
+  assert.deepStrictEqual(parseObservacaoCondominio('1055 Consumo real informado'), [])
 })
 
 console.log(`\n${ok} testes passaram, ${falhou} falharam.`)

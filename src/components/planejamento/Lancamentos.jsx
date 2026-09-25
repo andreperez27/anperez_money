@@ -7,7 +7,7 @@ import SeletorCategoria from '../SeletorCategoria'
 import EditarPlanejamentoForm from '../EditarPlanejamentoForm'
 import EditarSerieForm from '../EditarSerieForm'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compartilhados'
-import { identificarRegraValorVariavel, ehCondominioDoBoleto } from '../../lib/serieValorVariavel'
+import { identificarRegraValorVariavel, ehCondominioDoBoleto, parseObservacaoCondominio } from '../../lib/serieValorVariavel'
 import { supabase } from '../../lib/supabaseClient'
 import { gerarPdfCondominio } from '../../lib/gerarPdfCondominio'
 import { ehValorManualPonto } from '../../lib/reconciliacaoPonto'
@@ -173,11 +173,22 @@ export default function Lancamentos({
       ])
       if (errSnap) throw errSnap
       if (errConsumo) throw errConsumo
-      if (!snap || snap.length === 0) {
-        setErroAcao('Este lançamento não tem comprovante: sem snapshot gravado na realização.')
+      if (snap && snap.length > 0) {
+        gerarPdfCondominio({ ocorrencia: item, itens: snap, consumo: consumo || [] })
         return
       }
-      gerarPdfCondominio({ ocorrencia: item, itens: snap, consumo: consumo || [] })
+      // Sem snapshot (ocorrência PREVISTA com consumo real informado): a
+      // composição sai da própria observação (detalhamento com os reais).
+      if (item.estado === 'previsto' && ehConsumoRealInformado(item)) {
+        const itens = parseObservacaoCondominio(item.observacao)
+        if (itens.length === 0) {
+          setErroAcao('Este lançamento não tem composição na observação para o comprovante.')
+          return
+        }
+        gerarPdfCondominio({ ocorrencia: item, itens, consumo: consumo || [], fonte: 'previsto' })
+        return
+      }
+      setErroAcao('Este lançamento não tem comprovante: sem snapshot gravado na realização.')
     } catch (e) {
       setErroAcao(`Não foi possível gerar o comprovante: ${e.message}`)
     } finally {
@@ -1105,6 +1116,11 @@ export default function Lancamentos({
             // sem série). O botão só aparece se o snapshot de fato existir.
             const temSnapshotPdf =
               item.estado === 'realizado' && ehCondominioDoBoleto(item) && idsComSnapshot.includes(item.id)
+            // Previsto COM consumo real informado (água + gás): exporta o
+            // espelho com os reais, sem esperar a realização.
+            const temConsumoPdf =
+              item.estado === 'previsto' && ehCondominioDoBoleto(item) && ehConsumoRealInformado(item)
+            const mostraExportarPdf = temSnapshotPdf || temConsumoPdf
             const ehSerie = !!item.serie_id
             // Recorrência é despesa fixa mensal (não compra parcelada): além de
             // não exibir "1/24", não carrega a tag de mês na descrição.
@@ -1225,8 +1241,8 @@ export default function Lancamentos({
                             {ehCondominioPrevisto && (
                               <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
                             )}
-                            {temSnapshotPdf && (
-                              <button type="button" onClick={() => aoExportarPdf(item)} title="Exportar o comprovante do boleto (espelho do modelo congelado na realização)" style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
+                            {mostraExportarPdf && (
+                              <button type="button" onClick={() => aoExportarPdf(item)} title={temSnapshotPdf ? 'Exportar o comprovante do boleto (espelho do modelo congelado na realização)' : 'Exportar o espelho do boleto com os valores reais informados (pré-realização)'} style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
                             )}
                             {item.estado !== 'cancelado' && (
                               <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
@@ -1338,8 +1354,8 @@ export default function Lancamentos({
                           {ehCondominioPrevisto && (
                             <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
                           )}
-                          {temSnapshotPdf && (
-                            <button type="button" onClick={() => aoExportarPdf(item)} title="Exportar o comprovante do boleto (espelho do modelo congelado na realização)" style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
+                          {mostraExportarPdf && (
+                            <button type="button" onClick={() => aoExportarPdf(item)} title={temSnapshotPdf ? 'Exportar o comprovante do boleto (espelho do modelo congelado na realização)' : 'Exportar o espelho do boleto com os valores reais informados (pré-realização)'} style={estilosItem.botaoAcaoPdf}>{exportandoPdfIds.includes(item.id) ? 'Exportando…' : 'Exportar PDF'}</button>
                           )}
                           {item.estado !== 'cancelado' && (
                             <button type="button" onClick={() => aoAbrirEditar(item)} title="Editar planejamento" style={estilosItem.botaoAcaoNeutro}>Editar</button>
