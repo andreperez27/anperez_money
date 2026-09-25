@@ -338,6 +338,10 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       // Valor PREVISTO da linha (para a proporção do parcial: quando só uma
       // parte entrou, o extra da semana é rateado pela fração recebida).
       valorPrevisto: arre2(Number(p.valor)),
+      // Pendência herdada de atraso (migration 38): é o RESTO de um previsto
+      // já contado na origem — entra no rateio do extra, mas NÃO no
+      // planejado da semana (senão o previsto conta duas vezes).
+      ehPendente: !!p.origem_atraso_id,
       valorSemanal: p.valor_semanal === null || p.valor_semanal === undefined ? null : Number(p.valor_semanal),
       valorExtraHistorico:
         p.valor_extra_historico === null || p.valor_extra_historico === undefined
@@ -421,8 +425,24 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
     // previsto 2400 com extra 750 e só 1200 entrados → 750 × 50% = 375.
     // Sem divergência (tudo integral) a fração é 1 e a fórmula fica idêntica
     // à anterior.
-    const planejado = grupo.reduce((a, g) => a + (Number(g.valorPrevisto) || 0), 0)
+    // Planejado da semana SEM as pendências (o previsto delas já está
+    // contado na origem — somar de novo inflaria a base e o extra).
+    const planejadoSemPendentes = grupo.reduce(
+      (a, g) => a + (!g.ehPendente ? Number(g.valorPrevisto) || 0 : 0),
+      0,
+    )
+    const planejado = planejadoSemPendentes > 0
+      ? planejadoSemPendentes
+      : grupo.reduce((a, g) => a + (Number(g.valorPrevisto) || 0), 0)
     const fracaoRecebida = planejado > 0 ? soma / planejado : 1
+    // Fração de CADA linha para o "referente a N% do período": pendente mede
+    // contra o planejado da semana (a outra metade); as demais, contra o
+    // próprio previsto (comportamento anterior, intacto).
+    for (const g of grupo) {
+      g.fracao = g.ehPendente && planejadoSemPendentes > 0
+        ? g.valor / planejadoSemPendentes
+        : (Number(g.valorPrevisto) > 0 ? g.valor / Number(g.valorPrevisto) : 1)
+    }
     const extras = arre2(Math.max(0, soma - baseSemana * fracaoRecebida))
     if (!(extras > 0)) continue
 
@@ -490,6 +510,10 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       valorHorasExtras: arre2(it.valorHorasExtras),
       referente: it.referente,
       descricao: it.descricao,
+      // Fração recebida da semana (0–1) quando calculada no rateio; o hook
+      // usa para o "referente a N% do período" (senão, cai na regra antiga
+      // valor-vs-próprio-previsto).
+      fracao: Number.isFinite(Number(it.fracao)) ? Number(it.fracao) : null,
     }))
     .sort((a, b) => {
       if (a.data !== b.data) return a.data < b.data ? -1 : 1

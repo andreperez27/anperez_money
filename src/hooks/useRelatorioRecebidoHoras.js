@@ -214,9 +214,12 @@ export function useRelatorioRecebidoHoras(periodo) {
               // Parcial recebido (19/09/2026, molde da planilha "50% do
               // período"): quando o valor que entrou difere do previsto, a
               // linha mostra a fração — ex.: "referente a 50% do período".
+              // Pendência de atraso (23/09/2026): a fração vem da lib (parte
+              // contra o planejado da semana); senão, valor-vs-próprio-previsto.
               const previsto = Number(it.valorPrevisto)
-              const fracao =
-                previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100
+              const fracao = Number.isFinite(Number(it.fracao))
+                ? Math.round(Number(it.fracao) * 100)
+                : (previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100)
               const prefixo = fracao !== 100 ? `referente a ${fracao}% do período de` : 'referente ao período de'
               referente = [
                 { texto: `${prefixo} ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}` },

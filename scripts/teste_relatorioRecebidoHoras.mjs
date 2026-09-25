@@ -224,6 +224,7 @@ caso('misto: entradas e valor de extras somam lado a lado', () => {
       valorHorasExtras: 140,
       referente: '2026-07-06',
       descricao: 'entrada 2026-07-07',
+      fracao: 1,
     },
     {
       data: '2026-07-14',
@@ -233,6 +234,7 @@ caso('misto: entradas e valor de extras somam lado a lado', () => {
       valorHorasExtras: 40,
       referente: '2026-07-13',
       descricao: 'entrada 2026-07-14',
+      fracao: 1,
     },
   ])
 })
@@ -559,6 +561,7 @@ caso('porSemana usa a semana em que o dinheiro ENTROU; recebimentos separam linh
       valorHorasExtras: 400,
       referente: '2026-08-17',
       descricao: 'entrada 2026-08-26',
+      fracao: 1,
     },
     {
       data: '2026-08-26',
@@ -568,6 +571,7 @@ caso('porSemana usa a semana em que o dinheiro ENTROU; recebimentos separam linh
       valorHorasExtras: 0,
       referente: null,
       descricao: 'entrada 2026-08-26',
+      fracao: null,
     },
   ])
 })
@@ -588,6 +592,7 @@ caso('referente do exemplo do André: 06/08 → ref 27/07 a 02/08 com extras 400
     valorHorasExtras: 400,
     referente: '2026-07-27',
     descricao: 'entrada 2026-08-06',
+    fracao: 1,
   })
 })
 
@@ -612,6 +617,7 @@ caso('semana de trabalho inválida não derruba (referente null, bucket pelo rec
       valorHorasExtras: 0,
       referente: null,
       descricao: 'entrada 2026-08-26',
+      fracao: null,
     },
   ])
 })
@@ -1054,6 +1060,7 @@ caso('data real pode mover o lançamento para outra semana civil (domingo → se
     valorHorasExtras: 0,
     referente: '2026-08-24',
     descricao: 'entrada 2026-09-06',
+    fracao: 1,
   })
 
   const comMapa = calcularRecebidoHoras({
@@ -1220,6 +1227,86 @@ caso('parcial não quebra o rateio quando há dois pagamentos na mesma semana', 
   // Rateio ∝ recebido: 1650/2050 e 400/2050 de 669,39.
   assert.equal(r.recebimentos[0].valorHorasExtras, 538.78)
   assert.equal(r.recebimentos[1].valorHorasExtras, 130.61)
+})
+
+// ============================================================================
+// Pendência de atraso no relatório (23/09/2026): a pendente (origem_atraso_id)
+// é o RESTO de um previsto — entra no rateio do extra da semana, mas NÃO no
+// planejado (senão o previsto conta duas vezes e a origem muda de valor).
+// ============================================================================
+caso('pendente soma no rateio sem inflar o planejado: 1200+1200 → 375+375', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Semana 37 (fixo 1650): origem prevista 2400 com 1200 entrados em 18/09 +
+  // pendente de 1200 entrada em 24/09. Total 2400, extra cheio 750 (375 cada).
+  const plan = [
+    entrada('2026-09-16', 2400, {
+      lancamento_id: 3001,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+    entrada('2026-09-23', 1200, {
+      lancamento_id: 3002,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000001',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 3001: '2026-09-18', 3002: '2026-09-24' },
+    valorRealPorLancamento: { 3001: 1200, 3002: 1200 },
+  })
+  assert.equal(r.totalRecebido, 2400)
+  assert.equal(r.totalValorHorasExtras, 750)
+  assert.deepEqual(r.recebimentos.map((i) => i.valorHorasExtras), [375, 375])
+  // Fração de cada linha contra o planejado da semana (50% cada).
+  assert.deepStrictEqual(r.recebimentos.map((i) => i.fracao), [0.5, 0.5])
+})
+
+caso('origem parcial sozinha não muda (375, sem regressão da pendente futura)', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  const plan = [
+    entrada('2026-09-16', 2400, {
+      lancamento_id: 3003,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 3003: '2026-09-18' },
+    valorRealPorLancamento: { 3003: 1200 },
+  })
+  assert.equal(r.totalValorHorasExtras, 375)
+  assert.equal(r.recebimentos[0].valorHorasExtras, 375)
+  assert.equal(r.recebimentos[0].fracao, 0.5)
+})
+
+caso('pendente sozinha (origem fora do período): sem crash, fração integral', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Só a pendente cai em setembro (origem em agosto, fora da faixa): sem
+  // planejado da semana no grupo, a fração cai na regra antiga (integral).
+  const plan = [
+    entrada('2026-09-02', 1200, {
+      lancamento_id: 3004,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000002',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 3004: '2026-09-02' },
+    valorRealPorLancamento: { 3004: 1200 },
+  })
+  assert.equal(r.totalRecebido, 1200)
+  assert.equal(r.recebimentos[0].fracao, 1)
 })
 
 console.log(`\n${passou} testes passaram, ${falhou} falharam.`)
