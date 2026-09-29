@@ -228,6 +228,18 @@ export function selecionarSerieDoRelatorio(dados, periodo) {
     : dados.porMes
 }
 
+// % EXPLÍCITA na nota humana da pendência ("Referente a 50% da semana 37",
+// "Referente à 50% da semana 38" — com ou sem crase): fração assumida pelo
+// usuário para aquela parte. Null se ausente/inválida. Vale SOMENTE quando
+// não há origem no grupo para dar a régua (com origem, manda a regra do
+// grupo — a nota é só texto).
+function pctDaNota(nota) {
+  const m = String(nota ?? '').match(/(\d{1,3})\s*%/)
+  if (!m) return null
+  const pct = Number(m[1]) / 100
+  return pct > 0 && pct <= 1 ? pct : null
+}
+
 // RATEIO PROPORCIONAL: divide `total` (centavos de extras) entre os valores
 // das parcelas na mesma proporção do valor de cada uma. Cada parte é
 // arredondada a 2 casas e a diferença residual da soma cai na última (a soma
@@ -342,6 +354,7 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       // já contado na origem — entra no rateio do extra, mas NÃO no
       // planejado da semana (senão o previsto conta duas vezes).
       ehPendente: !!p.origem_atraso_id,
+      nota_pendencia: p.nota_pendencia ?? null,
       valorSemanal: p.valor_semanal === null || p.valor_semanal === undefined ? null : Number(p.valor_semanal),
       valorExtraHistorico:
         p.valor_extra_historico === null || p.valor_extra_historico === undefined
@@ -431,6 +444,19 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
       (a, g) => a + (!g.ehPendente ? Number(g.valorPrevisto) || 0 : 0),
       0,
     )
+    // Grupo SÓ de pendências (origem fora do período ou migrada): cada uma
+    // vale a % explícita da sua nota; sem nota, integral sem extra além do
+    // fixo. Com origem no grupo, manda a regra do grupo (inalterada).
+    if (grupo.length > 0 && grupo.every((g) => g.ehPendente)) {
+      for (const g of grupo) {
+        const pct = pctDaNota(g.nota_pendencia)
+        g.fracao = pct ?? (Number(g.valorPrevisto) > 0 ? g.valor / Number(g.valorPrevisto) : 1)
+        const fatia = arre2(Math.max(0, g.valor - baseSemana * (pct ?? 1)))
+        g.valorHorasExtras = arre2(g.valorHorasExtras + fatia)
+        totalValorHorasExtras = arre2(totalValorHorasExtras + fatia)
+      }
+      continue
+    }
     const planejado = planejadoSemPendentes > 0
       ? planejadoSemPendentes
       : grupo.reduce((a, g) => a + (Number(g.valorPrevisto) || 0), 0)

@@ -1286,6 +1286,81 @@ caso('origem parcial sozinha não muda (375, sem regressão da pendente futura)'
   assert.equal(r.recebimentos[0].fracao, 0.5)
 })
 
+caso('pendente sozinha com nota 50%: fração e extra pela nota (1050 → 225)', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  // Semana 38 (fixo 1650): só a pendente cai no período (origem migrada,
+  // fora do relatório). Nota humana assume 50% → 1050 − 1650×50% = 225.
+  const plan = [
+    entrada('2026-09-28', 2050, {
+      lancamento_id: 4001,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 38,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000003',
+      nota_pendencia: 'Referente à 50% da semana 38',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 4001: '2026-09-28' },
+    valorRealPorLancamento: { 4001: 1050 },
+  })
+  assert.equal(r.totalRecebido, 1050)
+  assert.equal(r.totalValorHorasExtras, 225)
+  assert.equal(r.recebimentos[0].valorHorasExtras, 225)
+  assert.equal(r.recebimentos[0].fracao, 0.5)
+})
+
+caso('pendente sozinha sem nota: fração contra o próprio previsto, sem extra além do fixo', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  const plan = [
+    entrada('2026-09-28', 2050, {
+      lancamento_id: 4002,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 38,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000004',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 4002: '2026-09-28' },
+    valorRealPorLancamento: { 4002: 1050 },
+  })
+  assert.equal(r.recebimentos[0].fracao, 1050 / 2050)
+  assert.equal(r.totalValorHorasExtras, 0)
+})
+
+caso('origem + pendente com nota: vale a regra do grupo, não a nota', () => {
+  const periodo = definirPeriodo('mes', '2026-09-15')
+  const plan = [
+    entrada('2026-09-16', 2400, {
+      lancamento_id: 4003,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+    }),
+    entrada('2026-09-23', 1200, {
+      lancamento_id: 4004,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 37,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000005',
+      nota_pendencia: 'Referente a 50% da semana 37',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 4003: '2026-09-18', 4004: '2026-09-24' },
+    valorRealPorLancamento: { 4003: 1200, 4004: 1200 },
+  })
+  assert.equal(r.totalValorHorasExtras, 750)
+  assert.deepStrictEqual(r.recebimentos.map((i) => i.valorHorasExtras), [375, 375])
+  assert.deepStrictEqual(r.recebimentos.map((i) => i.fracao), [0.5, 0.5])
+})
+
 caso('pendente sozinha (origem fora do período): sem crash, fração integral', () => {
   const periodo = definirPeriodo('mes', '2026-09-15')
   // Só a pendente cai em setembro (origem em agosto, fora da faixa): sem

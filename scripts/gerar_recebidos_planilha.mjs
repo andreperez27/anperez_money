@@ -157,8 +157,12 @@ const rotuloAnoCurto = (dataISO) => {
 function descricaoPadrao(it, semanaIsoFn) {
   if (!it.referente) return String(it.descricao ?? '').trim()
   const ref = semanaIsoFn(it.referente)
+  // Pendência de atraso (23/09/2026): a fração vem da lib (parte contra o
+  // planejado da semana); senão, valor-vs-próprio-previsto (regra antiga).
   const previsto = Number(it.valorPrevisto)
-  const fracao = previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100
+  const fracao = Number.isFinite(Number(it.fracao))
+    ? Math.round(Number(it.fracao) * 100)
+    : (previsto > 0 ? Math.round((Number(it.valor) / previsto) * 100) : 100)
   const prefixo = fracao !== 100 ? `a ${fracao}% do período` : 'ao período'
   return `Pagamento referente ${prefixo} de ${rotuloAnoCurto(ref.inicio)} a ${rotuloAnoCurto(ref.fim)}`
 }
@@ -201,7 +205,7 @@ async function main() {
   const { status: stPlan, corpo: planores } = await rest(
     construtor('planejamentos',
       'id,lancamento_id,data_prevista,valor,valor_semanal,valor_extra_historico,descricao,' +
-      'tipo_op,estado,origem,ano_semana_trabalho,semana_trabalho') +
+      'tipo_op,estado,origem,ano_semana_trabalho,semana_trabalho,origem_atraso_id,nota_pendencia') +
       `&data_prevista=gte.${inicioSql}&tipo_op=eq.Entrada&estado=eq.realizado&order=data_prevista`,
     apikey, token,
   )
