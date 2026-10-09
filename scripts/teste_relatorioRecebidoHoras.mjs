@@ -1312,6 +1312,32 @@ caso('pendente sozinha com nota 50%: fração e extra pela nota (1050 → 225)',
   assert.equal(r.recebimentos[0].fracao, 0.5)
 })
 
+caso('pendente com nota vence o próprio previsto (1000→1050 com nota 50% = 225)', () => {
+  const periodo = definirPeriodo('mes', '2026-10-15')
+  // Resto da semana 38 realizado a maior (previsto 1000, entrados 1050):
+  // a nota humana manda 50%, não os 105% da conta própria.
+  const plan = [
+    entrada('2026-10-05', 1000, {
+      lancamento_id: 4005,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 38,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000006',
+      nota_pendencia: 'Referente a 50% da semana 38',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 4005: '2026-10-09' },
+    valorRealPorLancamento: { 4005: 1050 },
+  })
+  assert.equal(r.totalRecebido, 1050)
+  assert.equal(r.totalValorHorasExtras, 225)
+  assert.equal(r.recebimentos[0].valorHorasExtras, 225)
+  assert.equal(r.recebimentos[0].fracao, 0.5)
+})
+
 caso('pendente sozinha sem nota: fração contra o próprio previsto, sem extra além do fixo', () => {
   const periodo = definirPeriodo('mes', '2026-09-15')
   const plan = [
