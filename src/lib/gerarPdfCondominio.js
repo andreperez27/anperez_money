@@ -200,13 +200,16 @@ export function montarPdfCondominio({ ocorrencia, itens, consumo = [], fonte = '
 // para os scripts/testes poderem renderizar o A4 em Node sem o navegador
 // (doc.output('arraybuffer') em vez de doc.save, que exige DOM).
 export function gerarPdfCondominio(params) {
-  const doc = montarPdfCondominio(params)
-  const mesRef = String(params.ocorrencia.data_prevista || '').slice(0, 7)
+  const { previa = false, ...resto } = params ?? {}
+  const doc = montarPdfCondominio(resto)
+  const mesRef = String(resto.ocorrencia.data_prevista || '').slice(0, 7)
   const temMes = /^\d{4}-\d{2}$/.test(mesRef)
   const mesNum = temMes ? Number(mesRef.slice(5, 7)) : null
   const ano = temMes ? Number(mesRef.slice(0, 4)) : null
   const mesArquivo = temMes ? String(mesNum).padStart(2, '0') : '00'
-  doc.save(`condominio-${mesArquivo}-${ano}.pdf`)
+  const nomeArquivo = `condominio-${mesArquivo}-${ano}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }
 
 // Data civil LOCAL hoje ('YYYY-MM-DD') — mesmo cuidado das telas (sem UTC).

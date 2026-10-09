@@ -8,6 +8,7 @@ import EditarCompraForm from '../components/EditarCompraForm'
 import { estilosComuns, formatarData, formatoReal, hoje } from '../lib/compartilhados'
 import { vencimentoRealISO } from '../lib/diaUtil'
 import { statusExibicaoFatura } from '../lib/faturaPlanejamento'
+import { abrirGuiaPrevia, entregarPdf } from '../lib/previaPdf'
 import { useFeriados } from '../hooks/useFeriados'
 import { gerarPdfFatura } from '../lib/gerarPdfFatura'
 import { ordenarParcelasCronologicamente, textoParcela } from '../lib/faturaOrdenacao'
@@ -523,13 +524,16 @@ export default function FaturaDetalhe() {
               <button
                 type="button"
                 onClick={() => {
+                  const abaPrevia = abrirGuiaPrevia()
                   try {
-                    gerarPdfFatura({ cartao, fatura, itens, limiteDisponivel, feriados })
+                    const { doc, nomeArquivo } = gerarPdfFatura({ cartao, fatura, itens, limiteDisponivel, feriados, previa: true })
+                    entregarPdf(doc, nomeArquivo, abaPrevia)
                   } catch (e) {
+                    abaPrevia?.close()
                     setMensagem({ tipo: 'erro', texto: e.message })
                   }
                 }}
-                title="Exportar a fatura em PDF"
+                title="Visualizar a fatura em PDF antes de baixar"
                 style={estilos.botaoPdf}
               >
                 Exportar PDF

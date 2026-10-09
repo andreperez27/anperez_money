@@ -40,12 +40,31 @@ export function useFaturasPlanejamento() {
       return []
     }
     const ids = cartoes.map((c) => c.id)
-    const { data, error } = await supabase
-      .from('v_faturas')
-      .select('*')
-      .in('cartao_id', ids)
-      .order('mes_fatura', { ascending: false })
+    const [{ data, error }, { data: pagamentos, error: erroPag }] = await Promise.all([
+      supabase
+        .from('v_faturas')
+        .select('*')
+        .in('cartao_id', ids)
+        .order('mes_fatura', { ascending: false }),
+      // Último pagamento por (cartão, mês): a tag "Paga em DD/MM" da fatura
+      // paga no Planejamento (23/09/2026). Tabela pequena, sem filtro de mês.
+      supabase
+        .from('fatura_pagamentos')
+        .select('cartao_id,mes_fatura,data_pagamento')
+        .in('cartao_id', ids)
+        .order('data_pagamento', { ascending: false })
+        .limit(2000),
+    ])
     if (error) throw new Error(error.message)
+    if (erroPag) throw new Error(erroPag.message)
+
+    const ultimoPagPorChave = new Map()
+    for (const p of pagamentos ?? []) {
+      const chave = `${p.cartao_id}|${p.mes_fatura}`
+      if (!ultimoPagPorChave.has(chave) && p.data_pagamento) {
+        ultimoPagPorChave.set(chave, String(p.data_pagamento).slice(0, 10))
+      }
+    }
 
     const cartaoPorId = new Map(cartoes.map((c) => [c.id, c]))
     return (data || [])
@@ -54,6 +73,9 @@ export function useFaturasPlanejamento() {
         cartao: cartaoPorId.get(f.cartao_id),
         mes: f.mes_fatura,
         valor_restante: f.valor_restante,
+        valor_total: f.valor_total,
+        valor_pago: f.valor_pago,
+        data_pagamento: ultimoPagPorChave.get(`${f.cartao_id}|${f.mes_fatura}`) ?? null,
       }))
   }, [cartoes])
 

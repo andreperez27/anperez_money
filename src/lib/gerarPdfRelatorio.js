@@ -87,7 +87,9 @@ function rotuloCategoria(categoria) {
 // PDF de CATEGORIA ISOLADA: lista os lançamentos da categoria no período (mesmo
 // recorte da aba "Por categoria": analisarCategoria) + o total. O cabeçalho já
 // foi impresso pelo chamador; aqui só o bloco, o rodapé e o salvamento.
-function gerarPdfCategoria(doc, { periodo, blocos, categoria }) {
+// Com previa=true, devolve { doc, nomeArquivo } sem baixar (a página abre a
+// pré-visualização numa nova guia).
+function gerarPdfCategoria(doc, { periodo, blocos, categoria, previa = false }) {
   const info = blocos?.blocoCategoria
   if (!info) {
     throw new Error('Export por categoria exige o bloco blocoCategoria (gerado pelo hook).')
@@ -137,14 +139,17 @@ function gerarPdfCategoria(doc, { periodo, blocos, categoria }) {
   )
 
   rodape(doc)
-  doc.save(`relatorio-${periodo.tipo}-${rotuloCategoria(categoria).toLowerCase().replace(/\s+/g, '-')}-${periodo.inicio}-${periodo.fim}.pdf`)
+  const nomeArquivo = `relatorio-${periodo.tipo}-${rotuloCategoria(categoria).toLowerCase().replace(/\s+/g, '-')}-${periodo.inicio}-${periodo.fim}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }
 
 // PDF do ACORDO TRABALHISTA (fato fechado — 2021 a 2025): consolidado do
 // total do acordo, do início ao fim, SEM depender do período do seletor.
 // Recebe os dados crus do hook useRelatorioAcordo (totalRecebido + depositos
 // + inicio/fim). O cabeçalho já foi impresso pelo chamador.
-function gerarPdfAcordo(doc, { acordo }) {
+// Com previa=true, devolve { doc, nomeArquivo } sem baixar.
+function gerarPdfAcordo(doc, { acordo, previa = false }) {
   let y = 54
   y = secao(doc, 'Total do acordo trabalhista', y)
 
@@ -194,7 +199,9 @@ function gerarPdfAcordo(doc, { acordo }) {
 
   rodape(doc)
   const faixa = acordo.inicio && acordo.fim ? `-${acordo.inicio}-${acordo.fim}` : ''
-  doc.save(`acordo-trabalhista${faixa}.pdf`)
+  const nomeArquivo = `acordo-trabalhista${faixa}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }
 
 // Rodapé com números de página.
@@ -210,7 +217,7 @@ function rodape(doc) {
   }
 }
 
-export function gerarPdfRelatorio({ periodo, blocos, categoria = TODAS_CATEGORIAS, acordo }) {
+export function gerarPdfRelatorio({ periodo, blocos, categoria = TODAS_CATEGORIAS, acordo, previa = false }) {
   const casoAcordo = Boolean(acordo)
 
   if (!casoAcordo && (!periodo || !blocos)) {
@@ -267,12 +274,12 @@ export function gerarPdfRelatorio({ periodo, blocos, categoria = TODAS_CATEGORIA
 
   // --- Caso: acordo trabalhista → bloco único (independente de período) ------
   if (casoAcordo) {
-    return gerarPdfAcordo(doc, { acordo })
+    return gerarPdfAcordo(doc, { acordo, previa })
   }
 
   // --- Caso: categoria isolada → bloco único ----------------------------------
   if (casoCategoria) {
-    return gerarPdfCategoria(doc, { periodo, blocos, categoria })
+    return gerarPdfCategoria(doc, { periodo, blocos, categoria, previa })
   }
 
   let y = 54
@@ -418,5 +425,7 @@ export function gerarPdfRelatorio({ periodo, blocos, categoria = TODAS_CATEGORIA
   // --- Rodapé com números de página ------------------------------------------
   rodape(doc)
 
-  doc.save(`relatorio-${periodo.tipo}-${periodo.inicio}-${periodo.fim}.pdf`)
+  const nomeArquivo = `relatorio-${periodo.tipo}-${periodo.inicio}-${periodo.fim}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }

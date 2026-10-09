@@ -262,11 +262,14 @@ export function montarPdfFatura({
 }
 
 export function gerarPdfFatura(params) {
-  const doc = montarPdfFatura(params)
-  const mes = String(params.fatura?.mes_fatura || 'fatura')
-  const nome = String(params.cartao?.nome || 'cartao').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'cartao'
+  const { previa = false, ...resto } = params ?? {}
+  const doc = montarPdfFatura(resto)
+  const mes = String(resto.fatura?.mes_fatura || 'fatura')
+  const nome = String(resto.cartao?.nome || 'cartao').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'cartao'
   const suf = mes.includes('-') ? `${mes.slice(0, 4)}-${mes.slice(5, 7)}` : mes
-  doc.save(`fatura-${nome}-${suf}.pdf`)
+  const nomeArquivo = `fatura-${nome}-${suf}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }
 
 // Reexporta helpers úteis (teste / decisão de status na UI, sem duplicar lógica)

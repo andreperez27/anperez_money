@@ -10,6 +10,7 @@ import { estilosComuns, formatoReal, formatarData, hoje } from '../../lib/compar
 import { identificarRegraValorVariavel, ehCondominioDoBoleto, parseObservacaoCondominio } from '../../lib/serieValorVariavel'
 import { supabase } from '../../lib/supabaseClient'
 import { gerarPdfCondominio } from '../../lib/gerarPdfCondominio'
+import { abrirGuiaPrevia, entregarPdf } from '../../lib/previaPdf'
 import { ehValorManualPonto } from '../../lib/reconciliacaoPonto'
 import GeradorRecorrenciaMensal from './GeradorRecorrenciaMensal'
 import GeradorCondominio from './GeradorCondominio'
@@ -159,6 +160,8 @@ export default function Lancamentos({
 
   async function aoExportarPdf(item) {
     if (exportandoPdfIds.includes(item.id)) return
+    // Guia da pré-visualização aberta no clique (antes de qualquer await).
+    const abaPrevia = abrirGuiaPrevia()
     setExportandoPdfIds((atual) => [...atual, item.id])
     setErroAcao('')
     try {
@@ -174,7 +177,8 @@ export default function Lancamentos({
       if (errSnap) throw errSnap
       if (errConsumo) throw errConsumo
       if (snap && snap.length > 0) {
-        gerarPdfCondominio({ ocorrencia: item, itens: snap, consumo: consumo || [] })
+        const { doc, nomeArquivo } = gerarPdfCondominio({ ocorrencia: item, itens: snap, consumo: consumo || [], previa: true })
+        entregarPdf(doc, nomeArquivo, abaPrevia)
         return
       }
       // Sem snapshot (ocorrência PREVISTA com consumo real informado): a
@@ -182,14 +186,18 @@ export default function Lancamentos({
       if (item.estado === 'previsto' && ehConsumoRealInformado(item)) {
         const itens = parseObservacaoCondominio(item.observacao)
         if (itens.length === 0) {
+          abaPrevia?.close()
           setErroAcao('Este lançamento não tem composição na observação para o comprovante.')
           return
         }
-        gerarPdfCondominio({ ocorrencia: item, itens, consumo: consumo || [], fonte: 'previsto' })
+        const { doc, nomeArquivo } = gerarPdfCondominio({ ocorrencia: item, itens, consumo: consumo || [], fonte: 'previsto', previa: true })
+        entregarPdf(doc, nomeArquivo, abaPrevia)
         return
       }
+      abaPrevia?.close()
       setErroAcao('Este lançamento não tem comprovante: sem snapshot gravado na realização.')
     } catch (e) {
+      abaPrevia?.close()
       setErroAcao(`Não foi possível gerar o comprovante: ${e.message}`)
     } finally {
       setExportandoPdfIds((atual) => atual.filter((id) => id !== item.id))
@@ -1128,6 +1136,10 @@ export default function Lancamentos({
             const ehFatura = item.fatura === true
             const ehFaturaReal = ehFatura && item.tipo === 'real'
             const ehFaturaProjetada = ehFatura && item.tipo === 'projetada'
+            const ehFaturaPaga = ehFatura && item.tipo === 'paga'
+            const dataPagamentoFatura = item.data_pagamento
+              ? formatarData(String(item.data_pagamento).slice(0, 10))
+              : null
             const ehFerias = item.ferias === true
             const destinoCartao =
               item.estado === 'previsto' &&
@@ -1169,6 +1181,14 @@ export default function Lancamentos({
                         )}
                         {ehFaturaProjetada && (
                           <span style={estilosItem.badgeProjecao}>Projeção</span>
+                        )}
+                        {ehFaturaPaga && (
+                          <span style={estilosItem.badgeFaturaPaga}>Fatura Paga</span>
+                        )}
+                        {ehFaturaPaga && dataPagamentoFatura && (
+                          <span style={estilosItem.badgeFaturaPagaData} title="Data em que a fatura foi paga (pode ser anterior ao vencimento)">
+                            Paga em {dataPagamentoFatura}
+                          </span>
                         )}
                         {ehFerias && (
                           <span style={estilosItem.badgeFerias}>Férias</span>
@@ -1230,6 +1250,8 @@ export default function Lancamentos({
                           <button type="button" onClick={() => aoEfetivarFatura(item)} title="Pagar a fatura em aberto do cartão (valor real)" style={estilosItem.botaoAcaoFatura}>Pagar fatura</button>
                         ) : ehFaturaProjetada ? (
                           <span style={estilosItem.botaoAcaoNeutro}>Projeção</span>
+                        ) : ehFaturaPaga ? (
+                          <span style={estilosItem.botaoAcaoNeutro}>Fatura paga{dataPagamentoFatura ? ` em ${dataPagamentoFatura}` : ''}</span>
                         ) : (
                           <>
                             {item.estado === 'previsto' && (
@@ -1297,6 +1319,14 @@ export default function Lancamentos({
                       {ehFaturaProjetada && (
                         <span style={{ ...estilosItem.badgeProjecao, marginLeft: '0.5rem' }}>Projeção</span>
                       )}
+                      {ehFaturaPaga && (
+                        <span style={{ ...estilosItem.badgeFaturaPaga, marginLeft: '0.5rem' }}>Fatura Paga</span>
+                      )}
+                      {ehFaturaPaga && dataPagamentoFatura && (
+                        <span style={{ ...estilosItem.badgeFaturaPagaData, marginLeft: '0.5rem' }} title="Data em que a fatura foi paga (pode ser anterior ao vencimento)">
+                          Paga em {dataPagamentoFatura}
+                        </span>
+                      )}
                       {ehFerias && (
                         <span style={{ ...estilosItem.badgeFerias, marginLeft: '0.5rem' }}>Férias</span>
                       )}
@@ -1343,6 +1373,8 @@ export default function Lancamentos({
                         <button type="button" onClick={() => aoEfetivarFatura(item)} title="Pagar a fatura em aberto do cartão (valor real)" style={estilosItem.botaoAcaoFatura}>Pagar fatura</button>
                       ) : ehFaturaProjetada ? (
                         <span style={estilosItem.botaoAcaoNeutro}>Projeção</span>
+                      ) : ehFaturaPaga ? (
+                        <span style={estilosItem.botaoAcaoNeutro}>Fatura paga{dataPagamentoFatura ? ` em ${dataPagamentoFatura}` : ''}</span>
                       ) : (
                         <>
                           {item.estado === 'previsto' && (

@@ -89,7 +89,42 @@ export function statusExibicaoFatura(fatura, cartao, hojeISO) {
 export function montarItemFatura({ cartao, mes, faturaReal, valorPrevisto, feriados = [], hojeISO }) {
   if (!cartao || !mes) return null
   const valorReal = faturaReal ? Number(faturaReal.valor_restante) : 0
+  const valorPago = faturaReal ? Number(faturaReal.valor_pago) : 0
   const fechada = faturaFechada(mes, cartao.dia_fechamento, hojeISO || hoje())
+
+  // FATURA PAGA (23/09/2026, controle de despesa paga): fica no Planejamento
+  // como registro (estado realizado), no vencimento (semana programada), com
+  // a data do pagamento — em vez de sumir da projeção. Previstos pendurados
+  // não somam (nada mais entra em fatura paga). Sem valor pago, sem item.
+  if (!(valorReal > 0) && valorPago > 0) {
+    return {
+      id: `fatura:${cartao.id}:${mes}`,
+      fatura: true,
+      tipo: 'paga',
+      fatura_fechada: true,
+      fatura_cartao_id: cartao.id,
+      fatura_nome: cartao.nome || 'cartão',
+      fatura_mes: mes,
+      valor_real: 0,
+      valor_pago: valorPago,
+      valor_previsto: 0,
+      data_pagamento: faturaReal?.data_pagamento ?? null,
+      tipo_op: 'Saida',
+      descricao: `Fatura cartão ${cartao.nome || 'cartão'}`,
+      valor: valorPago,
+      data_prevista: vencimentoRealISO(mes, cartao.dia_vencimento, feriados),
+      estado: 'realizado',
+      origem: 'fatura',
+      destino_padrao: 'cartao',
+      cartao_padrao_id: cartao.id,
+      serie_id: null,
+      parcela_numero: null,
+      total_parcelas: null,
+      observacao: null,
+      criado_em: new Date().toISOString(),
+    }
+  }
+
   const previsto = fechada ? 0 : (Number(valorPrevisto) || 0)
   const valor = valorReal + previsto
   if (!(valor > 0)) return null

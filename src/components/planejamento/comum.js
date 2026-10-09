@@ -192,6 +192,11 @@ export const estilosItem = {
   // Fatura FECHADA (mês fechado, vale o real): tom ARDÓSIA, distinto do violeta
   // da aberta, do cinza do cancelado e dos demais badges.
   badgeFaturaFechada: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Fatura PAGA (registro permanente no Planejamento, 23/09/2026): tom VERDE
+  // igual ao realizado; a data do pagamento vai na tag ao lado.
+  badgeFaturaPaga: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(74, 222, 128, 0.15)', color: '#4ade80', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },
+  // Tag com a data do pagamento ("Paga em 20/09") — tom neutro, só informa.
+  badgeFaturaPagaData: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: '#1f2937', color: '#9ca3af', fontSize: '0.7rem', whiteSpace: 'nowrap' },
   // Fatura PROJETADA (mês futuro com/por previstos de destino cartão): tom
   // VERDE-LIMÃO, sem botão de pagar (só a fatura REAL paga).
   badgeProjecao: { padding: '0.15rem 0.5rem', borderRadius: '999px', background: 'rgba(163, 230, 53, 0.15)', color: '#a3e635', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' },

@@ -533,5 +533,75 @@ verificar('P17 — status de exibição: paga/parcial preservam; sem pagamento v
   assert.equal(statusExibicaoFatura(null, cartao, '2026-09-22'), null)
 })
 
+verificar('P18 — fatura PAGA fica no Planejamento como realizado (não some)', () => {
+  // Setembro PF paga antecipadamente em 20/09: valor 984,99, sem previstos.
+  const cartaoPF = { id: 'cartao-PF', nome: 'NU PF', dia_fechamento: 16, dia_vencimento: 24 }
+  const { itensVisiveis, itensParaSomatorio } = montarProjecao({
+    itensBase: [],
+    cartoes: [cartaoPF],
+    faturasReais: [{ cartao: cartaoPF, mes: '2026-09', valor_restante: 0, valor_total: 984.99, valor_pago: 984.99, data_pagamento: '2026-09-20' }],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+    hojeISO: '2026-09-22',
+  })
+  const fatura = itensVisiveis.find((i) => i.fatura === true)
+  assert.ok(fatura, 'fatura paga deve continuar visível')
+  assert.equal(fatura.tipo, 'paga')
+  assert.equal(fatura.estado, 'realizado')
+  assert.equal(fatura.valor, 984.99)
+  assert.equal(fatura.valor_previsto, 0)
+  assert.equal(fatura.fatura_fechada, true)
+  assert.equal(fatura.data_pagamento, '2026-09-20')
+  // Vencimento (semana programada) + conta no somatório como despesa paga.
+  assert.equal(fatura.data_prevista, '2026-09-24')
+  assert.ok(itensParaSomatorio.some((i) => i.id === fatura.id))
+  assert.equal(calcularResumoPlanejamentos(itensParaSomatorio).totais.saidas, 984.99)
+})
+
+verificar('P19 — paga ignora previstos pendurados e não oferece pagar de novo', () => {
+  const cartaoPF = { id: 'cartao-PF', nome: 'NU PF', dia_fechamento: 16, dia_vencimento: 24 }
+  const avulsa = {
+    id: 'seguro-avulsa', estado: 'previsto', destino_padrao: 'cartao',
+    cartao_padrao_id: 'cartao-PF', data_prevista: '2026-09-02', valor: 141.15, tipo_op: 'Saida',
+  }
+  const { itensVisiveis } = montarProjecao({
+    itensBase: [avulsa],
+    cartoes: [cartaoPF],
+    faturasReais: [{ cartao: cartaoPF, mes: '2026-09', valor_restante: 0, valor_total: 984.99, valor_pago: 984.99, data_pagamento: '2026-09-20' }],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+    hojeISO: '2026-09-22',
+  })
+  const fatura = itensVisiveis.find((i) => i.fatura === true)
+  assert.equal(fatura.tipo, 'paga')
+  assert.equal(fatura.valor, 984.99)
+  // A avulsa segue visível como linha própria (para migrar/cancelar).
+  assert.ok(itensVisiveis.some((i) => i.id === 'seguro-avulsa'))
+})
+
+verificar('P20 — paga fora da faixa não aparece; sem pagamento não vira paga', () => {
+  const cartaoPF = { id: 'cartao-PF', nome: 'NU PF', dia_fechamento: 16, dia_vencimento: 24 }
+  const paga = { cartao: cartaoPF, mes: '2026-08', valor_restante: 0, valor_total: 100, valor_pago: 100, data_pagamento: '2026-08-20' }
+  const fora = montarProjecao({
+    itensBase: [],
+    cartoes: [cartaoPF],
+    faturasReais: [paga],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+    hojeISO: '2026-09-22',
+  })
+  assert.equal(fora.itensVisiveis.filter((i) => i.fatura === true).length, 0)
+  // Sem valor pago, mês fechado sem real não gera item (regra P13 intacta).
+  const semPago = montarProjecao({
+    itensBase: [],
+    cartoes: [cartaoPF],
+    faturasReais: [{ cartao: cartaoPF, mes: '2026-09', valor_restante: 0, valor_total: 0, valor_pago: 0 }],
+    inicioISO: '2026-09-01',
+    fimISO: '2026-09-30',
+    hojeISO: '2026-09-22',
+  })
+  assert.equal(semPago.itensVisiveis.filter((i) => i.fatura === true).length, 0)
+})
+
 console.log(`\n${ok} ok, ${falhou} falharam`)
 process.exit(falhou === 0 ? 0 : 1)

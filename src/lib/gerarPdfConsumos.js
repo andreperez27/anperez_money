@@ -276,6 +276,9 @@ export function montarPdfConsumos({ ano, secoes, rotulos = [] }) {
 }
 
 export function gerarPdfConsumos(params) {
-  const doc = montarPdfConsumos(params)
-  doc.save(`consumos-${params.ano}.pdf`)
+  const { previa = false, ...resto } = params ?? {}
+  const doc = montarPdfConsumos(resto)
+  const nomeArquivo = `consumos-${resto.ano}.pdf`
+  if (previa) return { doc, nomeArquivo }
+  doc.save(nomeArquivo)
 }

@@ -19,6 +19,7 @@ import { useRelatorioConsumos } from '../hooks/useRelatorioConsumos'
 import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
 import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
 import { gerarPdfConsumos, montarSecoesConsumos } from '../lib/gerarPdfConsumos'
+import { abrirGuiaPrevia, entregarPdf } from '../lib/previaPdf'
 import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 
 const ABA_PADRAO = 'recebido-horas'
@@ -61,9 +62,12 @@ export default function Relatorios() {
         setErroPdf('Ainda não há dados do acordo trabalhista para exportar.')
         return
       }
+      const abaPrevia = abrirGuiaPrevia()
       try {
-        gerarPdfRelatorio({ acordo: acordo.dados })
+        const { doc, nomeArquivo } = gerarPdfRelatorio({ acordo: acordo.dados, previa: true })
+        entregarPdf(doc, nomeArquivo, abaPrevia)
       } catch (e) {
+        abaPrevia?.close()
         setErroPdf(e.message)
       }
       return
@@ -72,6 +76,7 @@ export default function Relatorios() {
     // Aba "Consumos": sempre o ANO CIVIL corrente (Jan–Dez), ignorando o
     // seletor geral. Tipos/métricas = os mesmos marcados na tela.
     if (aba === 'consumos') {
+      const abaPrevia = abrirGuiaPrevia()
       try {
         if (consumosAno.erro) throw new Error(consumosAno.erro)
         // O hook já agrupa o ano inteiro (filtro = ano civil); o PDF só
@@ -83,11 +88,14 @@ export default function Relatorios() {
           ano: anoConsumos,
         })
         if (secoes.length === 0) {
+          abaPrevia?.close()
           setErroPdf('Ainda não há leituras de consumo neste ano para exportar.')
           return
         }
-        gerarPdfConsumos({ ano: anoConsumos, secoes, rotulos: rotulosConsumos })
+        const { doc, nomeArquivo } = gerarPdfConsumos({ ano: anoConsumos, secoes, rotulos: rotulosConsumos, previa: true })
+        entregarPdf(doc, nomeArquivo, abaPrevia)
       } catch (e) {
+        abaPrevia?.close()
         setErroPdf(e.message)
       }
       return
@@ -97,6 +105,7 @@ export default function Relatorios() {
       setErroPdf('Defina um período válido antes de exportar o PDF.')
       return
     }
+    const abaPrevia = abrirGuiaPrevia()
     setErroPdf('')
     try {
       // Contexto de visualização no momento do clique: o filtro de categoria
@@ -104,8 +113,10 @@ export default function Relatorios() {
       // demais abas o export segue sendo o relatório consolidado completo.
       const categoria = aba === 'por-categoria' ? selecaoCategoria : TODAS_CATEGORIAS
       const blocos = await gerar(periodo, categoria)
-      gerarPdfRelatorio({ periodo, blocos, categoria })
+      const { doc, nomeArquivo } = gerarPdfRelatorio({ periodo, blocos, categoria, previa: true })
+      entregarPdf(doc, nomeArquivo, abaPrevia)
     } catch (e) {
+      abaPrevia?.close()
       setErroPdf(e.message)
     }
   }
@@ -187,7 +198,7 @@ export default function Relatorios() {
           type="button"
           onClick={aoExportarPdf}
           disabled={gerandoPdf}
-          title="Exportar relatório em PDF"
+          title="Visualizar o relatório em PDF antes de baixar"
           style={{ ...estilos.botaoPdf, ...(gerandoPdf ? estilos.botaoPdfCarregando : {}) }}
         >
           <svg
