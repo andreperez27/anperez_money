@@ -2,13 +2,27 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import {
   VALORES_PADRAO_PONTO,
+  TEMPOS_CARGA_PADRAO,
   QUOTA_FERIAS_ANUAL,
+  DESTINOS_VALIDOS,
   validarDataISO,
   calcularLancamento,
+  calcularFalta,
+  datasFaltaPeriodo,
+  minutosCargaDia,
+  minutosCargaDiaUtil,
   fecharPeriodo,
   cargaEsperadaHoras,
   diasIntervaloNoAno,
   saldoFeriasNoAno,
+  creditosBancoMinutos,
+  debitosBancoMinutos,
+  saldoBancoMinutos,
+  direitoFolgaDias,
+  statusFaltasFIFO,
+  formatarDuracaoHMin,
+  horaEmMinutos,
+  minutosEmHora,
 } from '../lib/pontoCalc'
 
 // Domínio do Ponto Inteligente (ETAPA 07/08).
@@ -33,11 +47,20 @@ import {
 function configParaCalculo(linhas = []) {
   const mapa = {}
   for (const l of linhas) mapa[l.chave] = Number(l.valor)
+  // Tempos da carga em minutos (migration 41); fallback deriva da constante
+  // existente (nenhum literal novo de horário aqui).
+  const tempos = {
+    utilEntrada: mapa.CARGA_UTIL_ENTRADA ?? TEMPOS_CARGA_PADRAO.utilEntrada,
+    utilSaida: mapa.CARGA_UTIL_SAIDA ?? TEMPOS_CARGA_PADRAO.utilSaida,
+    sabadoEntrada: mapa.CARGA_SABADO_ENTRADA ?? TEMPOS_CARGA_PADRAO.sabadoEntrada,
+    sabadoSaida: mapa.CARGA_SABADO_SAIDA ?? TEMPOS_CARGA_PADRAO.sabadoSaida,
+  }
   return {
     fixoSemana: mapa.VALOR_FIXO_SEMANA ?? VALORES_PADRAO_PONTO.fixoSemana,
     heHora: mapa.VALOR_HE_NORMAL ?? VALORES_PADRAO_PONTO.heHora,
     domferAte4: mapa.VALOR_DOMINGO_ATE4 ?? VALORES_PADRAO_PONTO.domferAte4,
     domferAte6: mapa.VALOR_DOMINGO_ATE6 ?? VALORES_PADRAO_PONTO.domferAte6,
+    temposCarga: tempos,
   }
 }
 
@@ -154,8 +177,11 @@ export function usePonto({ inicioISO, fimISO } = {}) {
   // data + feriados + config VIGENTES, e o resultado é congelado no INSERT.
   // A classificação por data define o tipo — a lib nunca contradiz a regra
   // (ex.: feriado vira 'domfer', nunca 'he').
-  async function criarExcecaoTrabalho({ dataISO, entrada, saida, obs }) {
+  async function criarExcecaoTrabalho({ dataISO, entrada, saida, destino = 'pagamento', obs }) {
     validarDataISO(dataISO)
+    if (destino !== 'pagamento' && destino !== 'banco') {
+      throw new Error(`Destino inválido ("${destino}"): hora extra vai para pagamento ou banco de horas.`)
+    }
     const calc = calcularLancamento(dataISO, { entrada, saida }, { feriados, config })
 
     const payload = {
@@ -166,9 +192,10 @@ export function usePonto({ inicioISO, fimISO } = {}) {
       horas: calc.horas,
       he: calc.he,
       domfer_qtd: calc.domferQtd,
-      valor_he: calc.valorHe,
-      valor_domfer: calc.valorDomfer,
+      valor_he: destino === 'banco' ? 0 : calc.valorHe,
+      valor_domfer: destino === 'banco' ? 0 : calc.valorDomfer,
       valor_fixo: config.fixoSemana,
+      destino,
     }
     if (obs !== undefined && obs !== null && obs !== '') payload.obs = obs
 
@@ -176,6 +203,72 @@ export function usePonto({ inicioISO, fimISO } = {}) {
     if (error) throw new Error(error.message)
 
     await atualizar()
+  }
+
+  // --- Faltas (tipo 'falta', FASE 2) --------------------------------------
+  // Gera UM registro por data (período pula domingo/feriado em silêncio).
+  // Aborta tudo sem gravar nada se algum dia cair em férias ou já tiver
+  // lançamento (UNIQUE user/data — um dia, uma linha), listando as datas.
+  async function criarFalta({ inicioISO, fimISO = null, integral = true, minutos = null, destino = 'pagamento', motivo = '' } = {}) {
+    validarDataISO(inicioISO)
+    if (fimISO !== null && fimISO !== undefined && fimISO !== '') validarDataISO(fimISO)
+    if (!DESTINOS_VALIDOS.includes(destino)) {
+      throw new Error(`Destino inválido ("${destino}"): use pagamento, banco de horas ou abonada.`)
+    }
+    const { datas, emFerias } = datasFaltaPeriodo(inicioISO, fimISO || inicioISO, { feriados, ferias })
+    if (emFerias.length > 0) {
+      throw new Error(`Dia(s) em férias não recebem falta: ${emFerias.join(', ')}.`)
+    }
+    if (datas.length === 0) {
+      throw new Error('Nenhum dia útil no período (só domingo/feriado).')
+    }
+    // Conflito com lançamento existente (qualquer tipo na mesma data).
+    const { data: existentes, error: erroBusca } = await supabase
+      .from('ponto_excecoes')
+      .select('data')
+      .gte('data', datas[0])
+      .lte('data', datas[datas.length - 1])
+    if (erroBusca) throw new Error(erroBusca.message)
+    const ocupadas = new Set((existentes ?? []).map((l) => String(l.data).slice(0, 10)))
+    const conflito = datas.filter((d) => ocupadas.has(d))
+    if (conflito.length > 0) {
+      throw new Error(`Dia(s) já com lançamento, sem gravar nada: ${conflito.join(', ')}.`)
+    }
+    const motivoTexto = String(motivo ?? '').trim()
+    const linhas = datas.map((data) => {
+      const calc = calcularFalta(
+        data,
+        {
+          integral,
+          minutos,
+          destino,
+          fixoSemana: config.fixoSemana,
+          tempos: config.temposCarga,
+          feriados,
+          ferias,
+        },
+      )
+      return {
+        data,
+        tipo: 'falta',
+        horas: 0,
+        he: 0,
+        domfer_qtd: 0,
+        valor_he: 0,
+        valor_domfer: 0,
+        valor_fixo: config.fixoSemana,
+        destino,
+        minutos_falta: calc.minutos,
+        valor_desconto: calc.valor_desconto,
+        ...(motivoTexto !== '' ? { obs: motivoTexto } : {}),
+      }
+    })
+
+    const { error } = await supabase.from('ponto_excecoes').insert(linhas)
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+    return datas
   }
 
   // Férias por INTERVALO (data início/fim; dia único = início igual a fim).
@@ -226,7 +319,9 @@ export function usePonto({ inicioISO, fimISO } = {}) {
   }
 
   // Editar: recalcula tudo se data/horário mudarem; obs é texto livre.
-  async function editarExcecao(id, { dataISO, entrada, saida, obs } = {}) {
+  // Falta edita destino + motivo (sem data/minutos — errado = excluir e
+  // relançar). HE respeita o destino gravado: banco mantém valor_he zerado.
+  async function editarExcecao(id, { dataISO, entrada, saida, destino, obs } = {}) {
     if (dataISO !== undefined) validarDataISO(dataISO)
     const { data: atual, error: erroLeitura } = await supabase
       .from('ponto_excecoes')
@@ -242,6 +337,28 @@ export function usePonto({ inicioISO, fimISO } = {}) {
     if (tipoFinal === 'ferias') {
       if (dataISO !== undefined) payload.data = dataISO
       if (obs !== undefined) payload.obs = obs === '' ? null : obs
+    } else if (tipoFinal === 'falta') {
+      // Falta: edita destino + motivo. Data/minutos NÃO mudam aqui (errado =
+      // excluir e relançar, mesmo padrão das transferências do app).
+      if (destino !== undefined) {
+        if (!DESTINOS_VALIDOS.includes(destino)) {
+          throw new Error(`Destino inválido ("${destino}"): use pagamento, banco de horas ou abonada.`)
+        }
+        payload.destino = destino
+        // Recalcula SÓ o desconto com o fixo vigente: pagamento usa a regra
+        // (integral = fixo/6, parcial proporcional); banco/abonada zeram.
+        if (destino === 'pagamento') {
+          const carga = minutosCargaDia(atual.data, config.temposCarga)
+          const min = Number(atual.minutos_falta) || 0
+          const integral = min >= carga && carga > 0
+          payload.valor_desconto = integral
+            ? Math.round((config.fixoSemana / 6) * 100) / 100
+            : Math.round(((min / carga) * (config.fixoSemana / 6)) * 100) / 100
+        } else {
+          payload.valor_desconto = 0
+        }
+      }
+      if (obs !== undefined) payload.obs = obs === '' ? null : obs
     } else {
       const novaData = dataISO ?? atual.data
       const novaEntrada = entrada ?? atual.entrada
@@ -255,11 +372,18 @@ export function usePonto({ inicioISO, fimISO } = {}) {
       if (entrada !== undefined) payload.entrada = entrada
       if (saida !== undefined) payload.saida = saida
       if (calc.tipo !== tipoFinal) payload.tipo = calc.tipo
+      const destinoFinal = destino !== undefined ? destino : atual.destino
+      if (destino !== undefined) {
+        if (destino !== 'pagamento' && destino !== 'banco') {
+          throw new Error(`Destino inválido ("${destino}"): hora extra vai para pagamento ou banco de horas.`)
+        }
+        payload.destino = destino
+      }
       payload.horas = calc.horas
       payload.he = calc.he
       payload.domfer_qtd = calc.domferQtd
-      payload.valor_he = calc.valorHe
-      payload.valor_domfer = calc.valorDomfer
+      payload.valor_he = destinoFinal === 'banco' ? 0 : calc.valorHe
+      payload.valor_domfer = destinoFinal === 'banco' ? 0 : calc.valorDomfer
       payload.valor_fixo = config.fixoSemana
       if (obs !== undefined) payload.obs = obs === '' ? null : obs
     }
@@ -318,8 +442,8 @@ export function usePonto({ inicioISO, fimISO } = {}) {
     [excecoes, alvo, ferias],
   )
   const cargaEsperada = useMemo(
-    () => (alvo ? cargaEsperadaHoras(alvo.inicioISO, alvo.fimISO, feriados, ferias) : 0),
-    [alvo, feriados, ferias],
+    () => (alvo ? cargaEsperadaHoras(alvo.inicioISO, alvo.fimISO, feriados, ferias, excecoes) : 0),
+    [alvo, feriados, ferias, excecoes],
   )
   // Saldo de horas do período: lançadas (exceções) contra o esperado.
   // Negativo = trabalhou menos que o padrão; positivo = hora a mais.
@@ -344,6 +468,7 @@ export function usePonto({ inicioISO, fimISO } = {}) {
     atualizar,
     carregarPeriodo,
     criarExcecaoTrabalho,
+    criarFalta,
     criarFerias,
     excluirFerias,
     saldoFerias,
@@ -352,4 +477,82 @@ export function usePonto({ inicioISO, fimISO } = {}) {
     criarFeriado,
     excluirFeriado,
   }
+}
+
+// ============================================================================
+// BANCO DE HORAS — visão all-time por usuário (fora da janela semanal)
+// ============================================================================
+// Saldo/FIFO/listas precisam de TODAS as linhas (o Ponto navega por semana,
+// mas o banco não tem janela). Recebe os tempos da carga (config do usePonto)
+// para o "direito a folga".
+export function useBancoHoras(temposCarga) {
+  const [linhas, setLinhas] = useState([])
+  const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState(null)
+
+  const recarregar = async () => {
+    setCarregando(true)
+    setErro(null)
+    try {
+      const { data, error } = await supabase
+        .from('ponto_excecoes')
+        .select('id,data,tipo,he,horas,destino,minutos_falta,valor_desconto,obs')
+        .order('data')
+      if (error) throw new Error(error.message)
+      setLinhas(data ?? [])
+    } catch (e) {
+      setErro(e.message)
+      setLinhas([])
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  useEffect(() => {
+    let ativo = true
+    setCarregando(true)
+    supabase
+      .from('ponto_excecoes')
+      .select('id,data,tipo,he,horas,destino,minutos_falta,valor_desconto,obs')
+      .order('data')
+      .then(({ data, error }) => {
+        if (!ativo) return
+        if (error) {
+          setErro(error.message)
+          setLinhas([])
+        } else {
+          setLinhas(data ?? [])
+        }
+      })
+      .catch((e) => {
+        if (ativo) {
+          setErro(e.message)
+          setLinhas([])
+        }
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [])
+
+  const calculado = useMemo(() => {
+    const creditos = creditosBancoMinutos(linhas)
+    const debitos = debitosBancoMinutos(linhas)
+    const saldo = creditos - debitos
+    const cargaDiaUtil = minutosCargaDiaUtil(temposCarga ?? TEMPOS_CARGA_PADRAO)
+    const faltasBanco = (linhas ?? []).filter((l) => l && l.tipo === 'falta' && l.destino === 'banco')
+    return {
+      creditosMin: creditos,
+      debitosMin: debitos,
+      saldoMin: saldo,
+      folgaDias: direitoFolgaDias(saldo, cargaDiaUtil),
+      faltasStatus: statusFaltasFIFO(faltasBanco, creditos),
+      lancamentos: linhas ?? [],
+    }
+  }, [linhas, temposCarga])
+
+  return { carregando, erro, recarregar, ...calculado }
 }

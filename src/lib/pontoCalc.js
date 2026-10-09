@@ -324,14 +324,28 @@ export function diasDoPeriodo(inicioISO, fimISO) {
 // útil (seg–sáb NÃO feriado E NÃO em férias). Domingos e feriados não somam —
 // trabalhar neles é exceção domfer, não carga; dias em férias também não somam
 // (o intervalo de férias conta como carga cumprida, decisão de 01/09/2026).
-export function cargaEsperadaHoras(inicioISO, fimISO, feriados = [], ferias = []) {
+// Falta (resposta 3): dia com falta sai da esperada como o feriado — dia
+// inteiro zera o dia, parcial abate só os minutos faltados.
+export function cargaEsperadaHoras(inicioISO, fimISO, feriados = [], ferias = [], faltas = []) {
   const emFerias = (data) =>
     ferias.some((f) => f.data_inicio <= data && data <= f.data_fim)
-  return diasDoPeriodo(inicioISO, fimISO).reduce(
-    (acc, data) =>
-      classificarDia(data, feriados) === 'he' && !emFerias(data) ? acc + baseDoDia(data) : acc,
-    0,
-  )
+  const minFalta = mapaMinutosFalta(faltas, inicioISO, fimISO)
+  return diasDoPeriodo(inicioISO, fimISO).reduce((acc, data) => {
+    if (classificarDia(data, feriados) !== 'he' || emFerias(data)) return acc
+    return acc + Math.max(0, baseDoDia(data) - (minFalta.get(data) ?? 0) / 60)
+  }, 0)
+}
+
+// Mapa data → minutos faltados (só tipo falta, dentro da janela). Interno.
+function mapaMinutosFalta(faltas = [], inicioISO, fimISO) {
+  const mapa = new Map()
+  for (const f of faltas ?? []) {
+    if (!f || f.tipo !== 'falta') continue
+    const data = String(f.data)
+    if ((inicioISO && data < inicioISO) || (fimISO && data > fimISO)) continue
+    mapa.set(data, (mapa.get(data) ?? 0) + (Number(f.minutos_falta) || 0))
+  }
+  return mapa
 }
 
 // ---------------------------------------------------------------------------
@@ -359,15 +373,19 @@ export function descontoFeriadosDoFixo(fixoSemana, feriados = [], inicioISO, fim
 }
 
 // "Previsto a receber" da semana (MESMO cálculo do card do Ponto e do valor
-// reconciliado no Planejamento): fixo já com o desconto de feriados + HE +
-// diárias dom/fer. Consumida por Ponto.jsx e reconciliação para nunca divergir.
-export function previstoAReceberDaSemana({ fixoSemana = 0, resumo = {}, feriados = [], inicioISO, fimISO } = {}) {
+// reconciliado no Planejamento): fixo já com o desconto de feriados E de
+// faltas (pagamento) + HE + diárias dom/fer. Piso zero no fixo (feriado +
+// falta nunca deixam negativo). Consumida por Ponto.jsx e reconciliação
+// (via valorFechadoDaSemana, que repassa as exceções) para nunca divergir.
+export function previstoAReceberDaSemana({ fixoSemana = 0, resumo = {}, feriados = [], inicioISO, fimISO, faltas = [] } = {}) {
   const fixo = Number(fixoSemana) || 0
   const desconto = descontoFeriadosDoFixo(fixo, feriados, inicioISO, fimISO)
-  const valor = fixo - desconto + Number(resumo.valorHe || 0) + Number(resumo.valorDomfer || 0)
+  const descontoFaltas = descontoFaltasDoFixo(faltas, inicioISO, fimISO)
+  const valor = Math.max(0, fixo - desconto - descontoFaltas) + Number(resumo.valorHe || 0) + Number(resumo.valorDomfer || 0)
   return {
     valor: Math.round(valor * 100) / 100,
     desconto,
+    descontoFaltas,
   }
 }
 
@@ -404,7 +422,9 @@ function diaJaCumprido(dataISO, agora, feriados = [], ferias = []) {
 
 // Carga cumprida parcial até hoje (inclusive hoje só se já cumpriu).
 // Reaproveita diasDoPeriodo, baseDoDia, classificarDia sem duplicar regra.
-function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], agora = new Date() } = {}) {
+// Falta abate a base como na esperada (dia inteiro zera, parcial reduz) —
+// dia com falta não vira restante (não é pendência, já foi resolvido).
+function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], faltas = [], agora = new Date() } = {}) {
   if (String(hojeISO) < String(inicioISO)) return 0
   let dias
   try {
@@ -412,19 +432,21 @@ function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], 
   } catch {
     return 0
   }
+  const minFalta = mapaMinutosFalta(faltas, inicioISO, hojeISO)
+  const baseDoDiaComFalta = (d) => Math.max(0, baseDoDia(d) - (minFalta.get(d) ?? 0) / 60)
   let cumpridaBase = 0
   for (const d of dias) {
     // Dias antes de hoje sempre contam (se tiverem carga)
     if (d < hojeISO) {
       if (classificarDia(d, feriados) === 'he' && !ferias.some((f) => f.data_inicio <= d && d <= f.data_fim)) {
-        cumpridaBase += baseDoDia(d)
+        cumpridaBase += baseDoDiaComFalta(d)
       }
       continue
     }
     // d === hojeISO — só conta se já cumpriu
     if (d === hojeISO && diaJaCumprido(d, agora, feriados, ferias)) {
       if (classificarDia(d, feriados) === 'he' && !ferias.some((f) => f.data_inicio <= d && d <= f.data_fim)) {
-        cumpridaBase += baseDoDia(d)
+        cumpridaBase += baseDoDiaComFalta(d)
       }
     }
   }
@@ -433,8 +455,8 @@ function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], 
 
 // Para uso na Home: devolve as três visões já com regra de feriado/férias
 // e sem duplicar lógica de he/domfer (usa fecharPeriodo).
-export function visoesPontoHome({ excecoes = [], inicioISO, fimISO, hojeISO, feriados = [], ferias = [], agora = new Date() } = {}) {
-  const totalEsperada = cargaEsperadaHoras(inicioISO, fimISO, feriados, ferias)
+export function visoesPontoHome({ excecoes = [], inicioISO, fimISO, hojeISO, feriados = [], ferias = [], faltas = [], agora = new Date() } = {}) {
+  const totalEsperada = cargaEsperadaHoras(inicioISO, fimISO, feriados, ferias, faltas)
   const resumoTotal = fecharPeriodo(excecoes, { inicioISO, fimISO }, ferias)
   const fechada = semanaFechadaParaHome(fimISO, hojeISO)
   // Para semana fechada, tudo já era para ter sido cumprido
@@ -444,7 +466,7 @@ export function visoesPontoHome({ excecoes = [], inicioISO, fimISO, hojeISO, fer
     ? 0
     : fechada
       ? totalEsperada
-      : cargaCumpridaParcial({ inicioISO, hojeISO: limiteAteHoje, feriados, ferias, agora })
+      : cargaCumpridaParcial({ inicioISO, hojeISO: limiteAteHoje, feriados, ferias, faltas, agora })
   const resumoAteHoje = fecharPeriodo(
     excecoes.filter((e) => String(e.data) <= String(limiteAteHoje)),
     { inicioISO, fimISO: limiteAteHoje },
@@ -459,12 +481,208 @@ export function visoesPontoHome({ excecoes = [], inicioISO, fimISO, hojeISO, fer
 }
 
 // ---------------------------------------------------------------------------
+// FALTAS + BANCO DE HORAS (FASE 2 — 23/09/2026)
+// ---------------------------------------------------------------------------
+// Todo desvio da carga padrão tem DESTINO (coluna `destino`):
+//   HE: 'pagamento' (vira dinheiro, comportamento de sempre) | 'banco'
+//       (vira crédito em minutos, sem virar dinheiro);
+//   falta: 'pagamento' (desconta do fixo) | 'banco' (debita minutos) |
+//       'abonada' (só registra, sem efeito financeiro nem no banco).
+// Dom/fer trabalhado fica sempre pagamento (sem destino banco).
+//
+// Tempos da carga em MINUTOS desde 00:00 (chaves CARGA_* da ponto_config,
+// migration 41). O fallback espelha os seeds (derivado da constante
+// CARGA_PADRAO — nenhum literal novo de horário aqui).
+// ---------------------------------------------------------------------------
+export const TEMPOS_CARGA_PADRAO = {
+  utilEntrada: 20 * 60 + 30,
+  utilSaida: 3 * 60,
+  sabadoEntrada: 20 * 60 + 30,
+  sabadoSaida: 2 * 60,
+}
+
+export const DESTINOS_VALIDOS = ['pagamento', 'banco', 'abonada']
+
+// Minutos da carga de um dia (dia útil / sábado pela config; domingo = 0).
+// Mesma regra de cruzar a meia-noite de duracaoTurno (saida <= entrada → +1 dia).
+export function minutosCargaDia(dataISO, tempos = TEMPOS_CARGA_PADRAO) {
+  const d = diaSemanaIso(dataISO)
+  if (d === 6) return 0
+  const sab = d === 5
+  const e = Number(sab ? tempos.sabadoEntrada : tempos.utilEntrada)
+  const s = Number(sab ? tempos.sabadoSaida : tempos.utilSaida)
+  if (!Number.isFinite(e) || !Number.isFinite(s)) {
+    throw new Error('Tempos de carga inválidos na config (esperados minutos desde 00:00).')
+  }
+  return s <= e ? s + 1440 - e : s - e
+}
+
+// Minutos da carga de UM DIA ÚTIL (seg–sex) — base do "direito a folga".
+export function minutosCargaDiaUtil(tempos = TEMPOS_CARGA_PADRAO) {
+  const e = Number(tempos.utilEntrada)
+  const s = Number(tempos.utilSaida)
+  return s <= e ? s + 1440 - e : s - e
+}
+
+// "2h05" (saldo do banco é em minutos — decimal arredondaria). Negativo com
+// sinal na frente ("-1h30"); minutos sempre com 2 dígitos.
+export function formatarDuracaoHMin(minutos) {
+  const m = Math.round(Number(minutos))
+  if (!Number.isFinite(m)) return '—'
+  const sinal = m < 0 ? '-' : ''
+  const abs = Math.abs(m)
+  return `${sinal}${Math.floor(abs / 60)}h${String(abs % 60).padStart(2, '0')}`
+}
+
+// Minutos FALTANTES de um turno em dia útil (saída antecipada / entrada
+// tardia sem compensar na saída): base − trabalhados, quando 0 <
+// trabalhados < base. Null quando não há sobra (padrão, compensação, HE a
+// mais) ou fora de dia útil com carga (dom/fer). Puro; o modal oferece
+// lançar como falta parcial (opção A — uma linha de falta, sem he).
+export function faltanteDoTurno(dataISO, { entrada, saida }, { feriados = [] } = {}) {
+  validarDataISO(dataISO)
+  if (classificarDia(dataISO, feriados) !== 'he') return null
+  const base = baseDoDia(dataISO)
+  const trabalhados = duracaoTurno(entrada, saida)
+  const faltaHoras = Math.round((base - trabalhados) * 100) / 100
+  if (!(faltaHoras > 0) || !(trabalhados > 0)) return null
+  return { minutos: Math.round(faltaHoras * 60) }
+}
+
+// Gera as DATAS de um período de falta (dia a dia, inclusive): pula domingo
+// e feriado em silêncio (não são dias de trabalho); dia em férias entra em
+// `emFerias` (o chamador aborta — conflito). Não toca no banco.
+export function datasFaltaPeriodo(inicioISO, fimISO, { feriados = [], ferias = [] } = {}) {
+  const fim = fimISO ?? inicioISO
+  const datas = []
+  const ignoradosDomFer = []
+  const emFerias = []
+  for (const data of diasDoPeriodo(inicioISO, fim)) {
+    if (ehDomingo(data) || ehFeriado(data, feriados)) {
+      ignoradosDomFer.push(data)
+      continue
+    }
+    if (ferias.some((f) => f.data_inicio <= data && data <= f.data_fim)) {
+      emFerias.push(data)
+      continue
+    }
+    datas.push(data)
+  }
+  return { datas, ignoradosDomFer, emFerias }
+}
+
+// Calcula UMA falta (pura; o hook grava uma linha por data e congela).
+// integral=true → minutos da carga do dia (lida da config); false → minutos
+// digitados (> 0). Destino válido: pagamento|banco|abonada. Desconto só com
+// destino pagamento (dia inteiro = fixo/6; parcial proporcional); piso zero
+// é aplicado no Previsto (soma da semana), não aqui por linha.
+// Só dia útil com carga (erro em domingo/feriado/férias/dia sem carga).
+export function calcularFalta(
+  dataISO,
+  { integral = true, minutos = null, destino = 'pagamento', fixoSemana = 0, tempos = TEMPOS_CARGA_PADRAO, feriados = [], ferias = [] } = {},
+) {
+  validarDataISO(dataISO)
+  if (!DESTINOS_VALIDOS.includes(destino)) {
+    throw new Error(`Destino inválido ("${destino}"): use pagamento, banco ou abonada.`)
+  }
+  if (classificarDia(dataISO, feriados) !== 'he') {
+    throw new Error('Falta só em dia útil com carga (domingo e feriado não são dias de trabalho).')
+  }
+  if (ferias.some((f) => f.data_inicio <= dataISO && dataISO <= f.data_fim)) {
+    throw new Error('Dia em férias não recebe falta (já está resolvido pelas férias).')
+  }
+  const carga = minutosCargaDia(dataISO, tempos)
+  if (!(carga > 0)) throw new Error('Dia sem carga não recebe falta.')
+  const min = integral ? carga : Math.round(Number(minutos))
+  if (!Number.isFinite(min) || !(min > 0)) {
+    throw new Error('Informe os minutos faltados (maior que zero).')
+  }
+  const fixo = Number(fixoSemana) || 0
+  const desconto = destino === 'pagamento'
+    ? Math.round(((integral ? fixo / 6 : (min / carga) * (fixo / 6))) * 100) / 100
+    : 0
+  return { tipo: 'falta', minutos: min, valor_desconto: desconto, destino }
+}
+
+// Desconto das faltas com destino pagamento numa janela (SOMA dos valores
+// congelados — reajuste da config não reescreve o passado). Molde de
+// descontoFeriadosDoFixo; soma com o desconto de feriado no Previsto.
+export function descontoFaltasDoFixo(faltas = [], inicioISO, fimISO) {
+  const dentro = (data) => !inicioISO || !fimISO || (data >= inicioISO && data <= fimISO)
+  const total = (faltas ?? []).reduce((acc, f) => {
+    if (!f || f.tipo !== 'falta' || f.destino !== 'pagamento') return acc
+    if (!dentro(String(f.data))) return acc
+    return acc + (Number(f.valor_desconto) || 0)
+  }, 0)
+  return Math.round(total * 100) / 100
+}
+
+// ---------------------------------------------------------------------------
+// Banco de horas EM MINUTOS (all-time por usuário — sem janela)
+// ---------------------------------------------------------------------------
+// Crédito: HE com destino banco (horas congeladas → minutos). Débito: faltas
+// com destino banco (minutos congelados). Abonada nunca entra; domfer nunca
+// tem destino banco (barrado na gravação).
+export function creditosBancoMinutos(excecoes = []) {
+  // HE no banco (horas extras) + dom/fer no banco (horas trabalhadas, pelo
+  // relógio). Abatem saldo negativo pelo FIFO (statusFaltasFIFO).
+  return (excecoes ?? []).reduce((acc, ex) => {
+    if (!ex || ex.destino !== 'banco') return acc
+    if (ex.tipo === 'he') return acc + Math.round(Number(ex.he || 0) * 60)
+    if (ex.tipo === 'domfer') return acc + Math.round(Number(ex.horas || 0) * 60)
+    return acc
+  }, 0)
+}
+
+export function debitosBancoMinutos(excecoes = []) {
+  return (excecoes ?? []).reduce((acc, ex) => {
+    if (!ex || ex.tipo !== 'falta' || ex.destino !== 'banco') return acc
+    return acc + (Number(ex.minutos_falta) || 0)
+  }, 0)
+}
+
+export function saldoBancoMinutos(excecoes = []) {
+  return creditosBancoMinutos(excecoes) - debitosBancoMinutos(excecoes)
+}
+
+// Direito a folga EM DIAS (só quando saldo > 0): saldo / carga de um dia útil.
+export function direitoFolgaDias(saldoMinutos, cargaDiaUtilMin) {
+  const s = Number(saldoMinutos)
+  const c = Number(cargaDiaUtilMin)
+  if (!(s > 0) || !(c > 0)) return 0
+  return Math.round((s / c) * 100) / 100
+}
+
+// Status FIFO das faltas com destino banco (ordenadas por data): uma falta é
+// "compensada" se o total de créditos cobre o acumulado até ela (inclusive),
+// senão "pendente". Devolve [{ data, minutos, acumulado, status }] na ordem.
+export function statusFaltasFIFO(faltasBanco = [], creditosMinutos = 0) {
+  const cred = Number(creditosMinutos) || 0
+  const ordenadas = [...(faltasBanco ?? [])].sort((a, b) =>
+    String(a.data) < String(b.data) ? -1 : String(a.data) > String(b.data) ? 1 : 0,
+  )
+  let acumulado = 0
+  return ordenadas.map((f) => {
+    acumulado += Number(f.minutos_falta) || 0
+    return {
+      data: f.data,
+      minutos: Number(f.minutos_falta) || 0,
+      acumulado,
+      status: cred >= acumulado ? 'compensada' : 'pendente',
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Fechamento (resumo) de um período — espelha o relatório do app antigo,
 // que SUMÁRIAVA as linhas da tabela registros. Aqui a matéria-prima são as
 // exceções da tabela ponto_excecoes (o resto do período é carga cumprida) e
 // os INTERVALOS de férias da tabela ponto_ferias (contam diasFerias na janela).
 // Ainda aceita exceções legadas com tipo 'ferias' para não quebrar relatórios
 // antigos, mas o app novo só grava férias em ponto_ferias.
+// Linhas tipo 'falta' NÃO somam aqui (ausência não é hora trabalhada) —
+// desconto e banco têm funções próprias acima.
+// ---------------------------------------------------------------------------
 export function fecharPeriodo(excecoes, { inicioISO, fimISO } = {}, ferias = []) {
   const dentro = (ex) =>
     !inicioISO || !fimISO || (ex.data >= inicioISO && ex.data <= fimISO)
@@ -487,6 +705,9 @@ export function fecharPeriodo(excecoes, { inicioISO, fimISO } = {}, ferias = [])
       diasFerias += 1
       continue
     }
+    // Falta é ausência (não hora trabalhada): nunca soma horas/HE/valores
+    // aqui — desconto vai por descontoFaltasDoFixo e banco por funções próprias.
+    if (ex.tipo === 'falta') continue
     // O banco devolve as colunas em snake_case (domfer_qtd, valor_he,
     // valor_domfer); a lib também aceita camelCase (testes/legado) para nunca
     // zerar o card Domingos/feriados por mismatch de nome.

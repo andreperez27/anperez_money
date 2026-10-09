@@ -131,6 +131,34 @@ verificar('V5 — semana com feriado em DOMINGO: fixo mantido', () => {
     2130,
   )
 })
+verificar('V6 — falta com destino pagamento desconta o fixo (2130 − 355)', () => {
+  // 02/09/2026 = quarta, falta integral congelada com desconto 355 (fixo 2130).
+  const ex = [{ data: '2026-09-02', tipo: 'falta', destino: 'pagamento', minutos_falta: 390, valor_desconto: 355 }]
+  assert.equal(
+    valorFechadoDaSemana({
+      excecoes: ex,
+      config: CONFIG,
+      inicioISO: '2026-08-31',
+      fimISO: '2026-09-06',
+    }),
+    1775,
+  )
+})
+verificar('V7 — falta banco/abonada NÃO desconta (só pagamento)', () => {
+  const ex = [
+    { data: '2026-09-02', tipo: 'falta', destino: 'banco', minutos_falta: 390, valor_desconto: 0 },
+    { data: '2026-09-03', tipo: 'falta', destino: 'abonada', minutos_falta: 390, valor_desconto: 0 },
+  ]
+  assert.equal(
+    valorFechadoDaSemana({
+      excecoes: ex,
+      config: CONFIG,
+      inicioISO: '2026-08-31',
+      fimISO: '2026-09-06',
+    }),
+    2130,
+  )
+})
 verificar('P7 — reconciliação usa o desconto do feriado', async () => {
   const updates = await decidirAtualizacoes({
     linhas: [linha('j7', { ...SEMANA_FECHADA, valor: 2130 })],

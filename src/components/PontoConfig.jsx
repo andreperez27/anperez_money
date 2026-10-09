@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { estilosComuns, formatarData } from '../lib/compartilhados'
-import { VALORES_PADRAO_PONTO } from '../lib/pontoCalc'
+import { VALORES_PADRAO_PONTO, TEMPOS_CARGA_PADRAO, horaEmMinutos, minutosEmHora } from '../lib/pontoCalc'
 
 // Edição dos valores monetários vigentes do Ponto Inteligente (tabela global
 // ponto_config) e de um feriado. Decisão do André (01/09/2026): os reajustes
@@ -46,11 +46,17 @@ export default function PontoConfig() {
         }
         const mapa = {}
         for (const l of data ?? []) mapa[l.chave] = Number(l.valor)
+        const minParaHora = (v, padrao) =>
+          Number.isFinite(Number(v)) ? minutosEmHora(Number(v)) : minutosEmHora(padrao)
         setValores({
           fixo: mapa.VALOR_FIXO_SEMANA ?? VALORES_PADRAO_PONTO.fixoSemana,
           he: mapa.VALOR_HE_NORMAL ?? VALORES_PADRAO_PONTO.heHora,
           domferAte4: mapa.VALOR_DOMINGO_ATE4 ?? VALORES_PADRAO_PONTO.domferAte4,
           domferAte6: mapa.VALOR_DOMINGO_ATE6 ?? VALORES_PADRAO_PONTO.domferAte6,
+          utilEntrada: minParaHora(mapa.CARGA_UTIL_ENTRADA, TEMPOS_CARGA_PADRAO.utilEntrada),
+          utilSaida: minParaHora(mapa.CARGA_UTIL_SAIDA, TEMPOS_CARGA_PADRAO.utilSaida),
+          sabadoEntrada: minParaHora(mapa.CARGA_SABADO_ENTRADA, TEMPOS_CARGA_PADRAO.sabadoEntrada),
+          sabadoSaida: minParaHora(mapa.CARGA_SABADO_SAIDA, TEMPOS_CARGA_PADRAO.sabadoSaida),
         })
       })
       .catch(() => {})
@@ -79,11 +85,28 @@ export default function PontoConfig() {
         return
       }
     }
+    let utilEntrada
+    let utilSaida
+    let sabadoEntrada
+    let sabadoSaida
+    try {
+      utilEntrada = horaEmMinutos(valores.utilEntrada)
+      utilSaida = horaEmMinutos(valores.utilSaida)
+      sabadoEntrada = horaEmMinutos(valores.sabadoEntrada)
+      sabadoSaida = horaEmMinutos(valores.sabadoSaida)
+    } catch {
+      setMensagem({ tipo: 'erro', texto: 'Horário de carga inválido (use HH:MM).' })
+      return
+    }
     const linhas = [
       ['VALOR_FIXO_SEMANA', fixo],
       ['VALOR_HE_NORMAL', he],
       ['VALOR_DOMINGO_ATE4', ate4],
       ['VALOR_DOMINGO_ATE6', ate6],
+      ['CARGA_UTIL_ENTRADA', utilEntrada],
+      ['CARGA_UTIL_SAIDA', utilSaida],
+      ['CARGA_SABADO_ENTRADA', sabadoEntrada],
+      ['CARGA_SABADO_SAIDA', sabadoSaida],
     ]
     setEnviando(true)
     const { error } = await supabase
@@ -143,6 +166,18 @@ export default function PontoConfig() {
     </label>
   )
 
+  const campoHora = (rotulo, chave) => (
+    <label style={estilosComuns.form}>
+      <span style={estilosCampo.rotulo}>{rotulo}</span>
+      <input
+        type="time"
+        value={valores?.[chave] ?? ''}
+        onChange={(e) => setValores((s) => ({ ...s, [chave]: e.target.value }))}
+        style={estilosComuns.input}
+      />
+    </label>
+  )
+
   return (
     <section style={estilosComuns.secao}>
       <h2>Ponto Inteligente · Valores</h2>
@@ -157,6 +192,10 @@ export default function PontoConfig() {
           {campo('Hora extra — R$/h', 'he')}
           {campo('Diária dom/fer — saída até 04:00 (R$)', 'domferAte4')}
           {campo('Diária dom/fer — saída após 04:00 (R$)', 'domferAte6')}
+          {campoHora('Carga seg–sex — entrada', 'utilEntrada')}
+          {campoHora('Carga seg–sex — saída', 'utilSaida')}
+          {campoHora('Carga sábado — entrada', 'sabadoEntrada')}
+          {campoHora('Carga sábado — saída', 'sabadoSaida')}
           <button type="submit" disabled={enviando} style={estilosComuns.botaoCriar}>
             {enviando ? 'Salvando...' : 'Salvar valores'}
           </button>

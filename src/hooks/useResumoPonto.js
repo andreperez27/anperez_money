@@ -26,6 +26,7 @@ export function useResumoPonto() {
       hojeISO,
       feriados: feriados || [],
       ferias: ferias || [],
+      faltas: excecoes || [],
       agora: new Date(),
     })
   }, [carregando, erro, excecoes, feriados, ferias, janela.inicioISO, janela.fimISO, hojeISO])

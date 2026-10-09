@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 import {
   VALORES_PADRAO_PONTO,
   QUOTA_FERIAS_ANUAL,
+  faltanteDoTurno,
   duracaoTurno,
   horaEmMinutos,
   baseDoDia,
@@ -41,6 +42,18 @@ import {
   fecharPeriodo,
   descontoFeriadosDoFixo,
   previstoAReceberDaSemana,
+  TEMPOS_CARGA_PADRAO,
+  minutosCargaDia,
+  minutosCargaDiaUtil,
+  formatarDuracaoHMin,
+  datasFaltaPeriodo,
+  calcularFalta,
+  descontoFaltasDoFixo,
+  creditosBancoMinutos,
+  debitosBancoMinutos,
+  saldoBancoMinutos,
+  direitoFolgaDias,
+  statusFaltasFIFO,
 } from '../src/lib/pontoCalc.js'
 
 let passou = 0
@@ -480,6 +493,228 @@ caso('previstoAReceberDaSemana: sem feriados mantém o soma normal', () => {
   const r = previstoAReceberDaSemana({ fixoSemana: 2130, resumo })
   assert.equal(r.valor, 2330)
   assert.equal(r.desconto, 0)
+})
+
+// ---------------------------------------------------------------------------
+// FASE 2 — faltas + banco de horas (23/09/2026)
+// ---------------------------------------------------------------------------
+const FALTA_SEG = (extras = {}) => ({
+  tipo: 'falta',
+  data: '2026-09-09',
+  minutos_falta: 390,
+  valor_desconto: 275,
+  destino: 'pagamento',
+  ...extras,
+})
+
+caso('minutosCargaDia: seg–sex 390, sáb 330, dom 0 (da config, sem literal)', () => {
+  assert.equal(minutosCargaDia('2026-09-09'), 390) // quarta
+  assert.equal(minutosCargaDia('2026-09-12'), 330) // sábado
+  assert.equal(minutosCargaDia('2026-09-13'), 0) // domingo
+  assert.equal(minutosCargaDiaUtil(), 390)
+  assert.equal(minutosCargaDia('2026-09-09', { ...TEMPOS_CARGA_PADRAO, utilSaida: 120 }), 330)
+})
+
+caso('formatarDuracaoHMin: "2h05", zero neutro e negativo com sinal', () => {
+  assert.equal(formatarDuracaoHMin(125), '2h05')
+  assert.equal(formatarDuracaoHMin(390), '6h30')
+  assert.equal(formatarDuracaoHMin(0), '0h00')
+  assert.equal(formatarDuracaoHMin(-90), '-1h30')
+})
+
+caso('calcularFalta integral: minutos da carga + desconto fixo/6 vigente', () => {
+  const f = calcularFalta('2026-09-09', { integral: true, destino: 'pagamento', fixoSemana: 1650 })
+  assert.deepEqual(f, { tipo: 'falta', minutos: 390, valor_desconto: 275, destino: 'pagamento' })
+  const sab = calcularFalta('2026-09-12', { integral: true, destino: 'pagamento', fixoSemana: 1650 })
+  assert.equal(sab.minutos, 330)
+  assert.equal(sab.valor_desconto, 275)
+  // Fixo alterado na config reflete no desconto (nada travado no código).
+  const reaj = calcularFalta('2026-09-09', { integral: true, destino: 'pagamento', fixoSemana: 1800 })
+  assert.equal(reaj.valor_desconto, 300)
+})
+
+caso('calcularFalta parcial: proporcional (min/carga) × (fixo/6)', () => {
+  const f = calcularFalta('2026-09-09', { integral: false, minutos: 195, destino: 'pagamento', fixoSemana: 1650 })
+  assert.equal(f.minutos, 195)
+  assert.equal(f.valor_desconto, 137.5) // (195/390) × 275
+})
+
+caso('calcularFalta banco/abonada: sem desconto, minutos iguais', () => {
+  assert.equal(calcularFalta('2026-09-09', { integral: true, destino: 'banco', fixoSemana: 1650 }).valor_desconto, 0)
+  assert.equal(calcularFalta('2026-09-09', { integral: true, destino: 'abonada', fixoSemana: 1650 }).valor_desconto, 0)
+})
+
+caso('calcularFalta rejeita domingo, feriado, férias, destino e minutos inválidos', () => {
+  assert.throws(() => calcularFalta('2026-09-13', { integral: true }), /dia útil/)
+  assert.throws(() => calcularFalta('2026-09-09', { integral: true, feriados: ['2026-09-09'] }), /dia útil/)
+  assert.throws(
+    () => calcularFalta('2026-09-09', { integral: true, ferias: [{ data_inicio: '2026-09-01', data_fim: '2026-09-30' }] }),
+    /férias/,
+  )
+  assert.throws(() => calcularFalta('2026-09-09', { integral: true, destino: 'ferias' }), /Destino inválido/)
+  assert.throws(() => calcularFalta('2026-09-09', { integral: false, minutos: 0 }), /minutos/)
+})
+
+caso('datasFaltaPeriodo: gera por data pulando dom/fer; férias vira conflito', () => {
+  // 07/09 (seg) a 13/09 (dom): 6 dias úteis, domingo pulado em silêncio.
+  const r = datasFaltaPeriodo('2026-09-07', '2026-09-13', { feriados: ['2026-09-09'] })
+  assert.deepStrictEqual(r.datas, ['2026-09-07', '2026-09-08', '2026-09-10', '2026-09-11', '2026-09-12'])
+  assert.deepStrictEqual(r.ignoradosDomFer, ['2026-09-09', '2026-09-13'])
+  assert.deepStrictEqual(r.emFerias, [])
+  const c = datasFaltaPeriodo('2026-09-07', '2026-09-08', { ferias: [{ data_inicio: '2026-09-08', data_fim: '2026-09-08' }] })
+  assert.deepStrictEqual(c.datas, ['2026-09-07'])
+  assert.deepStrictEqual(c.emFerias, ['2026-09-08'])
+  // Dia único: fim default = início.
+  assert.deepStrictEqual(datasFaltaPeriodo('2026-09-09', null, {}).datas, ['2026-09-09'])
+})
+
+caso('descontoFaltasDoFixo: soma congelados de pagamento na janela; ignora resto', () => {
+  const faltas = [
+    FALTA_SEG(),
+    FALTA_SEG({ data: '2026-09-10', minutos_falta: 195, valor_desconto: 137.5 }),
+    FALTA_SEG({ data: '2026-09-11', destino: 'banco', valor_desconto: 0 }),
+    FALTA_SEG({ data: '2026-09-12', destino: 'abonada', valor_desconto: 0 }),
+    { tipo: 'he', data: '2026-09-09', he: 2, valor_he: 80 },
+  ]
+  assert.equal(descontoFaltasDoFixo(faltas, '2026-09-07', '2026-09-13'), 412.5)
+  assert.equal(descontoFaltasDoFixo(faltas, '2026-09-07', '2026-09-09'), 275)
+  assert.equal(descontoFaltasDoFixo([], '2026-09-07', '2026-09-13'), 0)
+})
+
+caso('previstoAReceber: feriado + falta somam; piso zero no fixo', () => {
+  const faltas = [FALTA_SEG()]
+  const r = previstoAReceberDaSemana({
+    fixoSemana: 1650,
+    resumo: { valorHe: 80, valorDomfer: 0 },
+    feriados: ['2026-09-11'],
+    inicioISO: '2026-09-07',
+    fimISO: '2026-09-13',
+    faltas,
+  })
+  assert.equal(r.desconto, 275)
+  assert.equal(r.descontoFaltas, 275)
+  assert.equal(r.valor, 1650 - 275 - 275 + 80)
+  // Piso: fixo menor que os descontos nunca negativava.
+  const piso = previstoAReceberDaSemana({
+    fixoSemana: 100,
+    resumo: {},
+    feriados: ['2026-09-11'],
+    inicioISO: '2026-09-07',
+    fimISO: '2026-09-13',
+    faltas: [FALTA_SEG(), FALTA_SEG({ data: '2026-09-10' })],
+  })
+  assert.equal(piso.valor, 0)
+})
+
+caso('fecharPeriodo ignora falta (não soma horas/HE/valores nem dias)', () => {
+  const r = fecharPeriodo(
+    [
+      { tipo: 'he', data: '2026-09-09', horas: 8.5, he: 2, valor_he: 80 },
+      FALTA_SEG({ data: '2026-09-10', minutos_falta: 195, valor_desconto: 137.5, destino: 'banco' }),
+    ],
+    { inicioISO: '2026-09-07', fimISO: '2026-09-13' },
+    [],
+  )
+  assert.equal(r.horas, 8.5)
+  assert.equal(r.he, 2)
+  assert.equal(r.valorHe, 80)
+  assert.equal(r.diasTrabalho, 1)
+})
+
+caso('HE banco: conta nas horas (Resumo/Home) mas com valor zerado no Previsto', () => {
+  const r = fecharPeriodo(
+    [{ tipo: 'he', data: '2026-09-09', horas: 8.5, he: 2, valor_he: 0, destino: 'banco' }],
+    { inicioISO: '2026-09-07', fimISO: '2026-09-13' },
+    [],
+  )
+  assert.equal(r.he, 2) // aparece nas horas extras...
+  assert.equal(r.valorHe, 0) // ...mas não vira dinheiro
+  const p = previstoAReceberDaSemana({ fixoSemana: 1650, resumo: r, inicioISO: '2026-09-07', fimISO: '2026-09-13' })
+  assert.equal(p.valor, 1650)
+})
+
+caso('carga esperada/cumprida espelham feriado: falta integral zera o dia, parcial abate', () => {
+  const faltas = [{ tipo: 'falta', data: '2026-09-09', minutos_falta: 390 }]
+  // Semana 07–13/09: base 5×6,5 + 5,5 = 38; menos 6,5 da quarta.
+  assert.equal(cargaEsperadaHoras('2026-09-07', '2026-09-13', [], [], faltas), 31.5)
+  const parcial = [{ tipo: 'falta', data: '2026-09-09', minutos_falta: 195 }]
+  assert.equal(cargaEsperadaHoras('2026-09-07', '2026-09-13', [], [], parcial), 34.75)
+  assert.equal(cargaEsperadaHoras('2026-09-07', '2026-09-13', [], [], []), 38)
+})
+
+caso('banco: saldo positivo/negativo/zero e folga só com saldo > 0', () => {
+  const exc = (tipo, destino, heOuMin) => (tipo === 'he'
+    ? { tipo, destino, he: heOuMin }
+    : { tipo, destino, minutos_falta: heOuMin })
+  assert.equal(saldoBancoMinutos([exc('he', 'banco', 2), exc('falta', 'banco', 60)]), 60)
+  assert.equal(saldoBancoMinutos([exc('he', 'banco', 1)]), 60)
+  assert.equal(saldoBancoMinutos([exc('falta', 'banco', 60)]), -60)
+  assert.equal(saldoBancoMinutos([]), 0)
+  // Pagamento e abonada nunca entram no banco.
+  assert.equal(saldoBancoMinutos([exc('he', 'pagamento', 2), exc('falta', 'abonada', 60)]), 0)
+  assert.equal(creditosBancoMinutos([exc('he', 'banco', 1.5)]), 90)
+  assert.equal(debitosBancoMinutos([exc('falta', 'banco', 45)]), 45)
+  assert.equal(direitoFolgaDias(780, 390), 2)
+  assert.equal(direitoFolgaDias(0, 390), 0)
+  assert.equal(direitoFolgaDias(-60, 390), 0)
+})
+
+caso('faltanteDoTurno: saída antecipada devolve os minutos (20:30→01:00 = 120)', () => {
+  assert.deepEqual(faltanteDoTurno('2026-09-09', { entrada: '20:30', saida: '01:00' }, {}), { minutos: 120 })
+})
+
+caso('faltanteDoTurno: carga cumprida, HE a mais, dom/fer e padrão dão null', () => {
+  // 21:30→04:00 = 6,5h = carga cheia (caso 2: nada a fazer).
+  assert.equal(faltanteDoTurno('2026-09-09', { entrada: '21:30', saida: '04:00' }, {}), null)
+  assert.equal(faltanteDoTurno('2026-09-09', { entrada: '20:30', saida: '06:00' }, {}), null)
+  assert.equal(faltanteDoTurno('2026-09-13', { entrada: '20:30', saida: '01:00' }, {}), null) // domingo
+  assert.equal(faltanteDoTurno('2026-09-09', { entrada: '20:30', saida: '01:00' }, { feriados: ['2026-09-09'] }), null)
+  assert.equal(faltanteDoTurno('2026-09-09', { entrada: '20:30', saida: '03:00' }, {}), null) // padrão
+})
+
+caso('FIFO: compensada quando créditos cobrem o acumulado; senão pendente', () => {
+  const faltas = [
+    { data: '2026-09-10', minutos_falta: 200 },
+    { data: '2026-09-08', minutos_falta: 300 },
+  ]
+  const st = statusFaltasFIFO(faltas, 400)
+  assert.deepStrictEqual(st.map((s) => [s.data, s.status]), [
+    ['2026-09-08', 'compensada'],
+    ['2026-09-10', 'pendente'],
+  ])
+  assert.equal(st[1].acumulado, 500)
+  const tudo = statusFaltasFIFO(faltas, 500)
+  assert.ok(tudo.every((s) => s.status === 'compensada'))
+})
+
+caso('banco soma HE e dom/fer pelo relógio (390 min no turno padrão)', () => {
+  const exc = [
+    { tipo: 'he', destino: 'banco', he: 2 },
+    { data: '2026-09-06', tipo: 'domfer', destino: 'banco', horas: 6.5, valor_domfer: 0 },
+    { data: '2026-09-07', tipo: 'domfer', destino: 'pagamento', horas: 6.5, valor_domfer: 400 },
+  ]
+  assert.equal(creditosBancoMinutos(exc), 120 + 390)
+  assert.equal(saldoBancoMinutos(exc), 120 + 390)
+})
+
+caso('dom/fer no banco: diária zerada fora do Previsto; desconto de feriado igual nos dois destinos', () => {
+  const base = { tipo: 'domfer', horas: 6.5, domfer_qtd: 1 }
+  const rBanco = fecharPeriodo(
+    [{ ...base, data: '2026-09-06', valor_domfer: 0, destino: 'banco' }],
+    { inicioISO: '2026-08-31', fimISO: '2026-09-06' },
+    [],
+  )
+  const rPago = fecharPeriodo(
+    [{ ...base, data: '2026-09-06', valor_domfer: 400, destino: 'pagamento' }],
+    { inicioISO: '2026-08-31', fimISO: '2026-09-06' },
+    [],
+  )
+  assert.equal(rBanco.horasDomfer, 6.5) // horas continuam (trabalhadas)
+  assert.equal(rBanco.valorDomfer, 0) // ...mas sem diária a receber
+  const pBanco = previstoAReceberDaSemana({ fixoSemana: 1650, resumo: rBanco, inicioISO: '2026-08-31', fimISO: '2026-09-06' })
+  const pPago = previstoAReceberDaSemana({ fixoSemana: 1650, resumo: rPago, inicioISO: '2026-08-31', fimISO: '2026-09-06' })
+  assert.equal(pBanco.valor, 1650)
+  assert.equal(pPago.valor, 2050)
 })
 
 console.log(`\n${passou} ok, ${falhou} falharam`)

@@ -96,12 +96,16 @@ export function semanaDeTrabalhoDaData(dataPrevista) {
 // ----------------------------------------------------------------------------
 export function valorFechadoDaSemana({ excecoes, config, ferias = [], feriados = [], inicioISO, fimISO } = {}) {
   const resumo = fecharPeriodo(excecoes, { inicioISO, fimISO }, ferias)
+  // As faltas com destino pagamento chegam ao Previsto pelo mesmo caminho
+  // do desconto de feriado (resposta (a) da Fase 2: assinatura estendida com
+  // default — o hook não muda, as exceções da semana já vêm no lote).
   return previstoAReceberDaSemana({
     fixoSemana: Number(config?.fixoSemana ?? 0),
     resumo,
     feriados,
     inicioISO,
     fimISO,
+    faltas: excecoes,
   }).valor
 }
 
