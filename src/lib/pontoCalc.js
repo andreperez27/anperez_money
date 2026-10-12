@@ -424,7 +424,7 @@ function diaJaCumprido(dataISO, agora, feriados = [], ferias = []) {
 // Reaproveita diasDoPeriodo, baseDoDia, classificarDia sem duplicar regra.
 // Falta abate a base como na esperada (dia inteiro zera, parcial reduz) —
 // dia com falta não vira restante (não é pendência, já foi resolvido).
-function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], faltas = [], agora = new Date() } = {}) {
+export function cargaCumpridaParcial({ inicioISO, hojeISO, feriados = [], ferias = [], faltas = [], agora = new Date() } = {}) {
   if (String(hojeISO) < String(inicioISO)) return 0
   let dias
   try {

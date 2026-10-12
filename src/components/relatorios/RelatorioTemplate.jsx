@@ -42,7 +42,7 @@ function BlocoEmConstrucao() {
   )
 }
 
-export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) {
+export default function RelatorioTemplate({ cards, grafico, linhas, detalhes, semGrafico = false }) {
   const temCards = Array.isArray(cards) && cards.length > 0
   const temGraficoSimples =
     grafico &&
@@ -129,7 +129,10 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
         )}
       </section>
 
-      {/* Gráfico — barras proporcionais (simples OU buckets com colunas lado a lado) */}
+      {/* Gráfico — barras proporcionais (simples OU buckets com colunas lado a lado).
+          semGrafico (opt-in, default off): pula a seção (abas sem gráfico não
+          mostram o placeholder "Em construção"). */}
+      {!semGrafico && (
       <section aria-label="Gráfico">
         {temGrafico ? (
           <div style={estiloCardGrafico}>
@@ -197,18 +200,19 @@ export default function RelatorioTemplate({ cards, grafico, linhas, detalhes }) 
                     )
                   })}
             </div>
-            <div style={estiloEixo}>
-              {grafico.rotulos.map((rotulo, i) => (
-                <span key={i} style={estiloRotuloScroll}>
-                  {rotulo}
-                </span>
-              ))}
-            </div>
+          <div style={estiloEixo}>
+            {grafico.rotulos.map((rotulo, i) => (
+              <span key={i} style={estiloRotuloScroll}>
+                {rotulo}
+              </span>
+            ))}
           </div>
-        ) : (
-          <BlocoEmConstrucao />
-        )}
+        </div>
+      ) : (
+        <BlocoEmConstrucao />
+      )}
       </section>
+      )}
 
       {/* Lista — linhas detalhadas (ou nó customizado via `detalhes`) */}
       <section aria-label="Detalhes">

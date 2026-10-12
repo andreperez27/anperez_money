@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { usePonto, useBancoHoras } from '../hooks/usePonto'
 import { estilosComuns, formatoReal, formatarData, hoje } from '../lib/compartilhados'
 import ModalFormulario from '../components/ModalFormulario'
@@ -32,6 +33,7 @@ import {
 // O resumo da semana soma as exceções + dias de férias; os demais dias contam
 // como padrão. Os feriados são geridos na página Configurações (PontoConfig).
 export default function Ponto() {
+  const navigate = useNavigate()
   // Linha do tempo SEMANAL (mesmo padrão de Planejamento, via periodos.js +
   // SeletorPeriodo): a semana que contém hoje, navegável com ‹ › Hoje.
   const [periodo, setPeriodo] = useState(() => definirPeriodo('semana', hoje()))
@@ -543,6 +545,22 @@ export default function Ponto() {
                   style={estilosComuns.botaoCriar}
                 >
                   + Lançar falta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Mês da semana exibida (mês de hoje se ela contém hoje,
+                    // senão mês da segunda-feira) — a aba abre já filtrada.
+                    const h = hoje()
+                    const mes = (periodo.inicio <= h && h <= periodo.fim)
+                      ? h.slice(0, 7)
+                      : periodo.inicio.slice(0, 7)
+                    navigate(`/relatorios?aba=controle-ponto&mes=${mes}`)
+                  }}
+                  style={estilosComuns.botaoCriar}
+                  title="Abrir o espelho do mês em Relatórios"
+                >
+                  Relatório do mês
                 </button>
               </div>
             </div>

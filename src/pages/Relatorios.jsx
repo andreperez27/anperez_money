@@ -11,6 +11,7 @@ import RelatorioTemplate from '../components/relatorios/RelatorioTemplate'
 import AbaConsumos from '../components/relatorios/AbaConsumos'
 import AnalisePorCategoria from '../components/relatorios/AnalisePorCategoria'
 import ListaAnosAcordo from '../components/relatorios/ListaAnosAcordo'
+import { useSearchParams } from 'react-router-dom'
 import { useRelatorioRecebidoHoras } from '../hooks/useRelatorioRecebidoHoras'
 import { useRelatorioAcordo } from '../hooks/useRelatorioAcordo'
 import { useRelatorioEntradasDespesas } from '../hooks/useRelatorioEntradasDespesas'
@@ -19,17 +20,38 @@ import { useRelatorioConsumos } from '../hooks/useRelatorioConsumos'
 import { useRelatorioPdf } from '../hooks/useRelatorioPdf'
 import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
 import { gerarPdfConsumos, montarSecoesConsumos } from '../lib/gerarPdfConsumos'
+import { gerarPdfControlePonto } from '../lib/gerarPdfControlePonto'
+import { useRelatorioControlePonto } from '../hooks/useRelatorioControlePonto'
+import AbaControlePonto from '../components/relatorios/AbaControlePonto'
 import { abrirGuiaPrevia, entregarPdf } from '../lib/previaPdf'
 import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 
 const ABA_PADRAO = 'recebido-horas'
 
+const ABAS_VALIDAS = ['recebido-horas', 'acordo-trabalhista', 'entradas-x-despesas', 'patrimonio', 'por-categoria', 'consumos', 'controle-ponto']
+
 export default function Relatorios() {
+  // Deep-link (ex.: botão "Relatório do mês" do Ponto): ?aba=controle-ponto
+  // &mes=AAAA-MM abre direto na aba com o mês preenchido; inválido = padrão.
+  const [params] = useSearchParams()
   const [tipo, setTipo] = useState('mes')
-  const [periodoBasico, setPeriodoBasico] = useState(() => definirPeriodo('mes', hoje()))
+  const [periodoBasico, setPeriodoBasico] = useState(() => {
+    const mesParam = params.get('mes')
+    if (/^\d{4}-\d{2}$/.test(mesParam ?? '')) {
+      try {
+        return definirPeriodo('mes', `${mesParam}-01`)
+      } catch {
+        // cai no padrão abaixo
+      }
+    }
+    return definirPeriodo('mes', hoje())
+  })
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
-  const [aba, setAba] = useState(ABA_PADRAO)
+  const [aba, setAba] = useState(() => {
+    const abaParam = params.get('aba')
+    return ABAS_VALIDAS.includes(abaParam) ? abaParam : ABA_PADRAO
+  })
   const [erroPdf, setErroPdf] = useState('')
   // Categoria selecionada na aba "Por categoria" (elevada para cá para o
   // exportar PDF conhecer o filtro ativo; persiste ao trocar de aba).
@@ -93,6 +115,21 @@ export default function Relatorios() {
           return
         }
         const { doc, nomeArquivo } = gerarPdfConsumos({ ano: anoConsumos, secoes, rotulos: rotulosConsumos, previa: true })
+        entregarPdf(doc, nomeArquivo, abaPrevia)
+      } catch (e) {
+        abaPrevia?.close()
+        setErroPdf(e.message)
+      }
+      return
+    }
+
+    // Aba "Controle de ponto": espelho da aba ativa no período ativo.
+    if (aba === 'controle-ponto') {
+      const abaPrevia = abrirGuiaPrevia()
+      try {
+        if (controlePonto.erro) throw new Error(controlePonto.erro)
+        if (!controlePonto.dados) throw new Error('Defina um período válido antes de exportar o PDF.')
+        const { doc, nomeArquivo } = gerarPdfControlePonto({ periodo, dados: controlePonto.dados, previa: true })
         entregarPdf(doc, nomeArquivo, abaPrevia)
       } catch (e) {
         abaPrevia?.close()
@@ -183,6 +220,8 @@ export default function Relatorios() {
   const acordo = useRelatorioAcordo()
   const entradasDespesas = useRelatorioEntradasDespesas(periodo ?? undefined)
   const patrimonio = useRelatorioPatrimonio(periodo ?? undefined)
+  // Aba "Controle de ponto": mesmos dados da tela (aba ativa + período).
+  const controlePonto = useRelatorioControlePonto(periodo ?? undefined)
 
   return (
     <div style={estilosComuns.conteudo}>
@@ -309,6 +348,11 @@ export default function Relatorios() {
           rotulosSel={rotulosConsumos}
           aoTrocarRotulos={setRotulosConsumos}
         />
+      ) : aba === 'controle-ponto' ? (
+        /* Espelho dia a dia do Ponto (somente leitura): resumo + detalhes
+           custom no template compartilhado (sem tocar no seu comportamento;
+           gráfico desligado pela prop aditiva semGrafico). */
+        <AbaControlePonto periodo={periodo} />
       ) : (
         /* Busca/análise por categoria — reusa a fonte única de categorização
            do relatório (relatorioPdf.js) e o período da página. A seleção fica

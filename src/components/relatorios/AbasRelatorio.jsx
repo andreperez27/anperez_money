@@ -18,6 +18,7 @@ const ABAS = [
   { chave: 'entradas-x-despesas', rotulo: 'Entradas x despesas' },
   { chave: 'por-categoria', rotulo: 'Por categoria' },
   { chave: 'consumos', rotulo: 'Consumos' },
+  { chave: 'controle-ponto', rotulo: 'Controle de ponto' },
 ]
 
 export default function AbasRelatorio({ aba, aoTrocarAba }) {
