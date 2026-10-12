@@ -249,5 +249,31 @@ export function useCaixinhaMovimentos(caixinhaId) {
     setErro(null)
   }
 
-  return { movimentos, carregando, erro, atualizar }
+  // Edita valor/data/descrição de um lançamento (migration 42). Campos
+  // omitidos ou null = mantém. Trocar o tipo fica fora (excluir + relançar).
+  // Guardar/resgatar sem vínculo (lancamento_id null) são recusados pelo
+  // banco com mensagem clara — a tela desabilita esses botões.
+  async function editarMovimento(movimentoId, { valor, data, descricao }) {
+    const { error } = await supabase.rpc('caixinha_editar_movimento', {
+      p_movimento_id: movimentoId,
+      p_valor: valor ?? null,
+      p_data: data ?? null,
+      p_descricao: descricao ?? null,
+    })
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
+  // Exclui revertendo tudo (caixinha + contrapartida na conta), atômico.
+  async function excluirMovimento(movimentoId) {
+    const { error } = await supabase.rpc('caixinha_excluir_movimento', {
+      p_movimento_id: movimentoId,
+    })
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+  }
+
+  return { movimentos, carregando, erro, atualizar, editarMovimento, excluirMovimento }
 }

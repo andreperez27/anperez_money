@@ -40,6 +40,8 @@ export default function CaixinhaDetalhe() {
     carregando: movimentosCarregando,
     erro: movimentosErro,
     atualizar: atualizarMovimentos,
+    editarMovimento,
+    excluirMovimento,
   } = useCaixinhaMovimentos(id)
 
   // açoes: null | 'guardar' | 'resgatar' | 'taxa' | 'rendimento'
@@ -51,6 +53,80 @@ export default function CaixinhaDetalhe() {
   const [mostrandoExtrato, setMostrandoExtrato] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [mensagem, setMensagem] = useState(null)
+
+  // Edição/exclusão de lançamento do extrato (migration 42): 'edicao' guarda
+  // o movimento em edição; 'exclusao' guarda o movimento na confirmação.
+  const [edicao, setEdicao] = useState(null)
+  const [exclusao, setExclusao] = useState(null)
+  const [valorEdicao, setValorEdicao] = useState('')
+  const [dataEdicao, setDataEdicao] = useState('')
+  const [descricaoEdicao, setDescricaoEdicao] = useState('')
+
+  function abrirEdicao(mov) {
+    setEdicao(mov)
+    setValorEdicao(String(mov.valor))
+    setDataEdicao(String(mov.data).slice(0, 10))
+    setDescricaoEdicao(mov.descricao ?? '')
+    setMensagem(null)
+  }
+
+  // Guardar/resgatar ANTIGOS sem vínculo com a conta (lancamento_id null)
+  // são recusados pelo banco — os botões vêm desabilitados com o motivo.
+  function motivoSemVinculo(mov) {
+    if ((mov.tipo === 'guardar' || mov.tipo === 'resgatar') && !mov.lancamento_id) {
+      return 'Lançamento antigo sem vínculo com a conta: exclua e relance para corrigir.'
+    }
+    return null
+  }
+
+  async function handleSalvarEdicao(e) {
+    e.preventDefault()
+    if (!edicao) return
+    const valorNum = Number(String(valorEdicao).replace(',', '.'))
+    if (!valorNum || valorNum <= 0) {
+      setMensagem({ tipo: 'erro', texto: 'Informe um valor maior que zero.' })
+      return
+    }
+    setEnviando(true)
+    setMensagem(null)
+    try {
+      await editarMovimento(edicao.id, {
+        valor: valorNum,
+        data: dataEdicao || null,
+        // Vazio = mantém a descrição atual (NULL = mantém no banco).
+        descricao: descricaoEdicao.trim() === (edicao.descricao ?? '')
+          ? null
+          : descricaoEdicao.trim() || null,
+      })
+      await atualizarContas()
+      await atualizarMovimentos()
+      await atualizarCaixinhas()
+      setEdicao(null)
+      setMensagem(null)
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: err.message })
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function handleConfirmarExclusao() {
+    if (!exclusao) return
+    setEnviando(true)
+    setMensagem(null)
+    try {
+      await excluirMovimento(exclusao.id)
+      await atualizarContas()
+      await atualizarMovimentos()
+      await atualizarCaixinhas()
+      setExclusao(null)
+      setMensagem(null)
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: err.message })
+    } finally {
+      setEnviando(false)
+    }
+  }
 
   async function handleConfirmar(e) {
     e.preventDefault()
@@ -245,6 +321,7 @@ export default function CaixinhaDetalhe() {
             <ul style={estilosComuns.lista}>
               {movimentos.map((mov) => {
                 const ehEntrada = mov.tipo === 'guardar' || mov.tipo === 'rendimento'
+                const trava = motivoSemVinculo(mov)
                 return (
                   <li key={mov.id} style={estilosComuns.item}>
                     <div>
@@ -253,8 +330,32 @@ export default function CaixinhaDetalhe() {
                       </span>
                       <span style={estilosComuns.tipoConta}>{formatarData(mov.data)}</span>
                     </div>
-                    <span style={ehEntrada ? estilosComuns.valorEntrada : estilosComuns.valorSaida}>
-                      {ehEntrada ? '+' : '−'} {formatoReal.format(Number(mov.valor))}
+                    <span style={estilos.ladoValor}>
+                      <span style={ehEntrada ? estilosComuns.valorEntrada : estilosComuns.valorSaida}>
+                        {ehEntrada ? '+' : '−'} {formatoReal.format(Number(mov.valor))}
+                      </span>
+                      <span style={estilos.celulaAcoes}>
+                        <button
+                          type="button"
+                          disabled={!!trava}
+                          title={trava ?? `Editar este ${ROTULOS_TIPO[mov.tipo] ?? mov.tipo} (o tipo não pode mudar)`}
+                          aria-label={`Editar ${ROTULOS_TIPO[mov.tipo] ?? mov.tipo}`}
+                          onClick={() => abrirEdicao(mov)}
+                          style={trava ? estilos.botaoAcaoDesabilitado : estilos.botaoAcao}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!!trava}
+                          title={trava ?? 'Excluir e estornar dos dois lados (caixinha + conta)'}
+                          aria-label={`Excluir ${ROTULOS_TIPO[mov.tipo] ?? mov.tipo}`}
+                          onClick={() => { setExclusao(mov); setMensagem(null) }}
+                          style={trava ? estilos.botaoAcaoDesabilitado : estilos.botaoAcao}
+                        >
+                          🗑️
+                        </button>
+                      </span>
                     </span>
                   </li>
                 )
@@ -262,6 +363,82 @@ export default function CaixinhaDetalhe() {
             </ul>
           )}
         </section>
+      )}
+
+      {edicao && (
+        <ModalFormulario
+          titulo={`Editar ${ROTULOS_TIPO[edicao.tipo] ?? edicao.tipo}`}
+          aoFechar={() => { setEdicao(null); setMensagem(null) }}
+        >
+          <form onSubmit={handleSalvarEdicao} style={{ ...estilosComuns.form, maxWidth: '100%' }}>
+            <p style={estilosComuns.mensagem}>
+              O tipo não muda (para trocar, exclua e relance). Em guardar/resgatar a data nova
+              vale também na conta corrente.
+            </p>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              autoFocus
+              placeholder="Valor (R$)"
+              value={valorEdicao}
+              onChange={(e) => setValorEdicao(e.target.value)}
+              style={estilosComuns.input}
+            />
+            <input
+              type="date"
+              value={dataEdicao}
+              onChange={(e) => setDataEdicao(e.target.value)}
+              style={estilosComuns.input}
+            />
+            <input
+              type="text"
+              placeholder="Descrição (em branco = mantém a atual)"
+              value={descricaoEdicao}
+              onChange={(e) => setDescricaoEdicao(e.target.value)}
+              style={estilosComuns.input}
+            />
+            <button type="submit" disabled={enviando} style={estilos.botaoGuardar}>
+              {enviando ? 'Aguarde...' : 'Salvar'}
+            </button>
+          </form>
+
+          {mensagem && (
+            <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+              {mensagem.texto}
+            </p>
+          )}
+        </ModalFormulario>
+      )}
+
+      {exclusao && (
+        <ModalFormulario
+          titulo={`Excluir ${ROTULOS_TIPO[exclusao.tipo] ?? exclusao.tipo}`}
+          aoFechar={() => { setExclusao(null); setMensagem(null) }}
+        >
+          <p style={estilosComuns.mensagem}>
+            Excluir {formatoReal.format(Number(exclusao.valor))} ({formatarData(exclusao.data)})
+            {exclusao.descricao ? ` — ${exclusao.descricao}` : ''}?
+            O valor volta para onde saiu: a caixinha
+            {(exclusao.tipo === 'guardar' || exclusao.tipo === 'resgatar') && ' e a conta corrente '}
+            são ajustadas juntas.
+          </p>
+          <div style={estilos.botoes}>
+            <button type="button" disabled={enviando} onClick={handleConfirmarExclusao} style={estilos.botaoResgatar}>
+              {enviando ? 'Aguarde...' : 'Excluir e estornar'}
+            </button>
+            <button type="button" onClick={() => { setExclusao(null); setMensagem(null) }} style={estilos.botaoSecundario}>
+              Cancelar
+            </button>
+          </div>
+
+          {mensagem && (
+            <p style={mensagem.tipo === 'ok' ? estilosComuns.mensagemOk : estilosComuns.mensagemErro}>
+              {mensagem.texto}
+            </p>
+          )}
+        </ModalFormulario>
       )}
     </div>
   )
@@ -275,6 +452,33 @@ const estilos = {
     marginTop: '0.15rem',
   },
   botoes: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap' },
+  ladoValor: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
+  celulaAcoes: { display: 'flex', gap: '0.25rem', paddingLeft: '0.6rem', borderLeft: '1px solid #1f2937' },
+  // Mesmo padrão de Movimentacoes/FaturaDetalhe: ícones compactos ✏️/🗑️
+  // com tooltip e aria-label.
+  botaoAcao: {
+    background: 'transparent',
+    border: '1px solid #374151',
+    borderRadius: '6px',
+    color: '#9ca3af',
+    fontFamily: 'inherit',
+    fontSize: '0.78rem',
+    lineHeight: 1,
+    padding: '0.22rem 0.38rem',
+    cursor: 'pointer',
+  },
+  botaoAcaoDesabilitado: {
+    background: 'transparent',
+    border: '1px solid #1f2937',
+    borderRadius: '6px',
+    color: '#9ca3af',
+    fontFamily: 'inherit',
+    fontSize: '0.78rem',
+    lineHeight: 1,
+    padding: '0.22rem 0.38rem',
+    cursor: 'not-allowed',
+    opacity: 0.35,
+  },
   botaoGuardar: {
     flex: '1 1 100px',
     padding: '0.6rem',
