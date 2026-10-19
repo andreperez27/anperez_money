@@ -779,7 +779,6 @@ export default function Lancamentos({
             <GeradorRecorrenciaMensal
               nome={recNome}
               tipoOp="Entrada"
-              permiteSemanal
               permiteTipoOp
               contaPadrao={recForm.destino === 'conta' ? recForm.conta || undefined : undefined}
               destinoPadrao={recForm.destino || undefined}
@@ -881,9 +880,10 @@ export default function Lancamentos({
             </GeradorRecorrenciaMensal>
             <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
               Despesas fixas (DAS-MEI, Netflix, condomínio) entram como recorrência
-              MENSAL; entradas semanais (ex.: pagamento fixo) como SEMANAL — valor
-              fixo repetido. Use o campo "Tipo de lançamento" para escolher entre
-              Entrada (dinheiro a receber) ou Saída (despesa), editável antes de gerar.
+              MENSAL — valor fixo repetido. As ENTRADAS semanais do Ponto não são
+              criadas aqui: elas nascem e se ajustam sozinhas pelo valor fechado do
+              Ponto. Use o campo "Tipo de lançamento" para escolher entre Entrada
+              (dinheiro a receber) ou Saída (despesa), editável antes de gerar.
             </p>
           </div>
         )}

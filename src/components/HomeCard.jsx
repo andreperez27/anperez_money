@@ -18,7 +18,7 @@ export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilit
             {titulo}
             <span style={estilos.seloEmBreve}>Em breve</span>
           </div>
-          {descricao && <p style={estilos.descricao}>{descricao}</p>}
+          {descricao && <div style={estilos.descricao}>{descricao}</div>}
         </div>
       </div>
     )
@@ -28,8 +28,22 @@ export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilit
     ? estilos.descricao
     : { ...estilos.descricao, filter: valorVisivel ? 'none' : 'blur(5px)', opacity: valorVisivel ? 1 : 0.5 }
 
+  const aoTeclar = (e) => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      aoClicar?.()
+    }
+  }
+
   return (
-    <button type="button" onClick={aoClicar} style={estilos.card}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={aoClicar}
+      onKeyDown={aoTeclar}
+      style={estilos.card}
+    >
       <div style={estilos.icone}>{icone}</div>
       <div>
         <div style={estilos.rotulo}>{titulo}</div>
@@ -38,16 +52,17 @@ export default function HomeCard({ icone, titulo, descricao, aoClicar, desabilit
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); aoClicarValor() }}
+              onKeyDown={(e) => e.stopPropagation()}
               style={estilos.botaoDescricao}
             >
               {descricao}
             </button>
           ) : (
-            <p style={estiloDescricao}>{descricao}</p>
+            <div style={estiloDescricao}>{descricao}</div>
           )
         )}
       </div>
-    </button>
+    </div>
   )
 }
 

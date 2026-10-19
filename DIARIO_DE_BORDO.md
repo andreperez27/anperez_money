@@ -31,7 +31,17 @@ dinâmica por cartão (real + previstos, sem dupla contagem). Recorrência
    inteira só no futuro** (realizado/cancelado imutáveis) e **excluir série
    do banco** sem apagar movimentações reais; **escolha de conta no destino**
    na criação e na edição (`conta_destino_id`) e formulário recorrente que
-   **limpa automaticamente** após gerar.
+   **limpa automaticamente** após gerar. A **entrada semanal do Ponto** virou
+   **linha automática** (não mais série): uma linha independente por semana de
+   trabalho, criada/reajustada sozinha pelo valor do Ponto — **fechada** vale o
+   real (pode zerar e continua com R$ 0,00), **aberta** vale só o fixo semanal —
+   com a **descrição** "Pagamento da semana X" substituindo o antigo rótulo fixo
+   (`jornadaSemanal.js` + sincronização lazy; migration 43 desvincula o histórico
+   de `serie_id`; migration 44 libera `valor >= 0`; migration 45 remove as
+   duplicatas geradas pela corrida do StrictMode e cria índice único parcial;
+   migrations 46–48 renomeiam os lançamentos antigos que ficaram com
+   "Pagamento Semanal" pela **cadeia de origem** (`origem_atraso_id`), não pela
+   data de recebimento).
 - **Cartões de Crédito**: lista, fatura (real de `v_faturas`), lançar compra,
   extrato do cartão, fluxo de pagamento da fatura, migração do histórico do
   app antigo — e linhas de fatura/extrato **responsivas no celular** (2
@@ -234,6 +244,7 @@ completo daquele dia.
 - [diario/2026-09-22.md](diario/2026-09-22.md) — Modo Calendário no Planejamento (toggle Lista/Calendário, mês próprio via `listarPorPeriodo`, seletor de período oculto no modo calendário, semana seg–dom, grid rígido `minmax(0,1fr)` com ellipsis, tela cheia `100vw` furando o `CaberNaTela` de 720px, painel do dia com o próprio `Lancamentos` embutido, remoção das abas Cartões/Planejado x real) + consumo real com registro separado Gás/Água (1055 só com os dois, congelamento por item na reprojeção, banco sem corrupção) + importação do histórico da planilha (16 inseridas) + fatura fechada vale o real (divergência PF 1126,14 vs 984,99; tags [Fatura Fechada]/[Fatura em Aberto] na lista, no detalhe e nos Cartões; faturas no calendário)
 - [diario/2026-09-23.md](diario/2026-09-23.md) — Aba "Consumos" em Relatórios (água/gás por mes_referencia, lib pura + suíte 8/8, componente próprio com todos/detalhe/métrica/lista, seletor sem Semana; template compartilhado intacto) + FASE 2 do Ponto (faltas + banco de horas implementados, migration 41 aplicada, sem commit) + aba "Controle de ponto" (motor puro + suíte 12/12, botão no Ponto, PDF próprio; template intacto, sem commit)
 - [diario/2026-10-12.md](diario/2026-10-12.md) — Editar/excluir lançamentos de caixinha: migration 42 (`lancamento_id` + backfill só par único + RPCs editar/excluir com delta, bloqueio nomeando o saldo e TESTES autocontidos T1–T6, NÃO aplicada) + botões Editar/Excluir no extrato (sem-vínculo desabilitado com motivo) + modais de edição e confirmação; suíte 33 arquivos só com as 2 falhas pré-existentes, build ok, sem commit
+- [diario/2026-10-19.md](diario/2026-10-19.md) — Entrada semanal do Ponto vira **linha automática** (não mais série materializada): `jornadaSemanal.js` (horizonte rolante ~1 ano + 4 semanas para trás, quarta = segunda+9, **descrição** "Pagamento da semana X" substituindo o rótulo fixo), `usePlanejamentos.sincronizarSemanasJornada` (insere semanas ausentes; **fechada** vale o real do Ponto — pode zerar e a linha continua com R$ 0,00 — e **aberta** só o fixo semanal, `valorPrevistoJornada`), dedupe por semana de trabalho, respeita valor manual, não cria semana antiga; removido o "Vincular ao Ponto"/recorrência semanal do gerador; migrations 43–48 **aplicadas** (a 45 deduplica — 42 semanas duplicadas geradas pela corrida do StrictMode, corrigida com guard `useRef` — renomeia e cria índice único parcial; a 46 rotulou os antigos pela data de recebimento, a 47 tentou pela nota e a 48 corrige pela **cadeia de origem** `origem_atraso_id`); erros de console corrigidos (HomeCard `<p>`→`<div>`; manifest/favicon/ícone com **base duplicado** por `%BASE_URL%`+Vite → caminho absoluto; `statusPill` com shorthand `border` + `borderColor` → `borderWidth`/`borderStyle`; card da Home `<button>` com `<button>` aninhado → `<div role="button">`); suíte `teste_jornadaSemanal` 18/18, build ok, sem commit
 - **Planejamento vinculado ao Ponto** (migration 28): a série recorrente semanal
   pode nascer "Vincular ao Ponto" (`origem='jornada'`); cada ocorrência guarda a
   semana de trabalho e, quando ela fecha, o valor real (fixo + HE +

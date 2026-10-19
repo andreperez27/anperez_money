@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { hoje } from '../lib/compartilhados'
 import { semanaIso, inicioDaSemanaIso } from '../lib/semana'
@@ -12,11 +12,20 @@ import {
 } from '../lib/planejamentoSerie.js'
 import { validarFaixaDePeriodo } from '../lib/periodos.js'
 import {
-  decidirAtualizacoes,
   valorFechadoDaSemana,
+  semanaFechada,
   ehValorManualPonto,
   comMarcadorValorManual,
 } from '../lib/reconciliacaoPonto.js'
+import {
+  semanasJornadaNoHorizonte,
+  chaveSemanaTrabalho,
+  valorDiferente,
+  valorPrevistoJornada,
+  adicionarDiasISO,
+  descricaoDaSemana,
+  ehDescricaoAutomaticaJornada,
+} from '../lib/jornadaSemanal.js'
 import {
   identificarRegraValorVariavel,
   extrairHistoricosVariaveis,
@@ -46,6 +55,12 @@ import { calcularTotalCondominio, montarObservacaoCondominio } from '../lib/desp
 const TIPOS_OP = ['Entrada', 'Saida']
 const ESTADOS = ['previsto', 'realizado', 'cancelado']
 const ORIGENS = ['manual', 'jornada', 'recorrente', 'outro', 'historico_planilha']
+
+// Horizonte rolante de semanas sincronizadas de uma vez (~1 ano à frente) e
+// algumas semanas para TRÁS (reconcilia linhas recentes já vencidas sem criar
+// linhas antigas — o insert só acontece a partir da última quarta).
+const SEMANAS_HORIZONTE_JORNADA = 52
+const SEMANAS_ANTERIORES_JORNADA = 4
 
 // Validação completa da CRIAÇÃO antes do INSERT — só para barrar chamadas
 // obviamente inválidas; a proteção definitiva continua sendo os CHECKs do
@@ -856,103 +871,171 @@ export function usePlanejamentos({ ano, semana } = {}) {
     return data ?? []
   }
 
-  // --- RECONCILIAÇÃO COM O PONTO (ETAPA 06/E5-G) -----------------------------
-  // Lazy: ao carregar o Planejamento, percorre TODAS as ocorrências origin
-  // 'jornada' ainda 'previsto' cuja semana de trabalho JÁ FECHOU e, se o valor
-  // real do Ponto (fixo + HE + dom/fer) difere do previsto, atualiza o valor
-  // da ocorrência. Fica aqui, não num cron: é disparada no carregamento dos
-  // dados (mesma filosofia da regra "fatura vencida é considerada paga").
-  // Ocorrências 'realizado'/'cancelado' ou com semana ainda aberta nunca são
-  // tocadas; falhas ao ler o Ponto não derrubam a listagem.
-  async function reconciliarComPonto() {
-    const { data: jornadas, error } = await supabase
-      .from('planejamentos')
-      .select('*')
-      .eq('estado', 'previsto')
-      .eq('origem', 'jornada')
-    if (error) throw new Error(error.message)
-    if (!jornadas || jornadas.length === 0) return
+  // --- SEMANAS DO PONTO (MODELO AUTOMÁTICO — 19/10/2026) --------------------
+  // A entrada semanal do Ponto NÃO é mais uma série materializada: cada semana
+  // de trabalho é UMA linha INDEPENDENTE (sem serie_id/parcela_numero), criada
+  // e reajustada sozinha, como cartão/condomínio. Esta rotina, disparada LAZY
+  // no carregamento (não num cron — mesma filosofia da regra "fatura vencida é
+  // considerada paga"), percorre um HORIZONTE ROLANTE de semanas (da semana de
+  // trabalho corrente até ~1 ano à frente) e:
+  //   • INSERE a linha da semana AUSENTE (previsto, valor do Ponto);
+  //   • AJUSTA o valor das linhas 'previsto' cujo Ponto mudou;
+  //   • NUNCA toca 'realizado'/'cancelado' nem linha com valor manual travado.
+  // O valor de TODA semana vem de valorFechadoDaSemana (a MESMA conta do card
+  // "Previsto a receber" do Ponto): fixo − feriados da semana + HE + domingo/
+  // feriado já registrados. A deduplicação é por (ano, semana) de TRABALHO.
+  // Falha ao ler o Ponto não derruba a listagem.
+  async function sincronizarSemanasJornada() {
+    const hojeISO = hoje()
+    const semanas = semanasJornadaNoHorizonte({
+      hojeISO,
+      semanas: SEMANAS_HORIZONTE_JORNADA,
+      semanasAnteriores: SEMANAS_ANTERIORES_JORNADA,
+    })
+    const inicioJanela = semanas[0].inicio
+    const fimJanela = semanas[semanas.length - 1].fim
+    // Não cria linha para semana ANTIGA (evita item "atrasado" sintético):
+    // só insere a partir da última quarta-feira (margem de 7 dias), o que
+    // cobre a semana de trabalho corrente em qualquer dia da semana.
+    const limitePassado = adicionarDiasISO(hojeISO, -7)
 
-    // Config (fixo/HE/dom), férias e feriados do Ponto — globais; lidos uma vez.
-    const [cfgRes, feriasRes, feriadosRes] = await Promise.all([
+    // Tudo o que a sincronização precisa em UM lote: config (fixo), férias,
+    // feriados, TODAS as linhas jornada (para deduplicar/atualizar) e as
+    // exceções da janela inteira (uma consulta só — o filtro por semana é
+    // feito em memória por fecharPeriodo).
+    const [cfgRes, feriasRes, feriadosRes, jornadasRes, excecoesRes] = await Promise.all([
       supabase.from('ponto_config').select('chave, valor'),
       supabase.from('ponto_ferias').select('data_inicio, data_fim'),
       supabase.from('ponto_feriados').select('data'),
+      supabase.from('planejamentos').select('*').eq('origem', 'jornada'),
+      supabase.from('ponto_excecoes').select('*').gte('data', inicioJanela).lte('data', fimJanela),
     ])
-    if (cfgRes.error) throw new Error(cfgRes.error.message)
-    if (feriasRes.error) throw new Error(feriasRes.error.message)
-    if (feriadosRes.error) throw new Error(feriadosRes.error.message)
+    for (const r of [cfgRes, feriasRes, feriadosRes, jornadasRes, excecoesRes]) {
+      if (r.error) throw new Error(r.error.message)
+    }
+
     const mapaCfg = {}
     for (const l of cfgRes.data ?? []) mapaCfg[l.chave] = Number(l.valor)
-    const fixoSemana = mapaCfg.VALOR_FIXO_SEMANA ?? 1650
+    const config = { fixoSemana: mapaCfg.VALOR_FIXO_SEMANA ?? 1650 }
     const ferias = feriasRes.data ?? []
     const feriados = feriadosRes.data ?? []
+    const excecoes = excecoesRes.data ?? []
+    const jornadas = jornadasRes.data ?? []
 
-    // Cache das exceções de cada semana (evita re-buscar a mesma semana várias
-    // vezes quando há mais de uma ocorrência vinculada a ela).
-    const cacheExcecoes = new Map()
-    const buscarValorRealDaSemana = async ({ inicioISO, fimISO }) => {
-      let excs = cacheExcecoes.get(inicioISO + '|' + fimISO)
-      if (excs === undefined) {
-        const { data, error: err } = await supabase
-          .from('ponto_excecoes')
-          .select('*')
-          .gte('data', inicioISO)
-          .lte('data', fimISO)
-        if (err) throw new Error(err.message)
-        excs = data ?? []
-        cacheExcecoes.set(inicioISO + '|' + fimISO, excs)
-      }
-      return valorFechadoDaSemana({
-        excecoes: excs,
-        config: { fixoSemana },
-        ferias,
-        feriados,
-        inicioISO,
-        fimISO,
+    // Índice por semana de TRABALHO (linhas legadas sem referência ficam fora).
+    const porSemana = new Map()
+    for (const l of jornadas) {
+      if (!Number.isInteger(l.ano_semana_trabalho) || !Number.isInteger(l.semana_trabalho)) continue
+      porSemana.set(chaveSemanaTrabalho(l.ano_semana_trabalho, l.semana_trabalho), l)
+    }
+
+    // Molde das linhas NOVAS: copia conta/categoria/tipo de uma ocorrência real
+    // (senão, de qualquer não cancelada) — preserva a configuração do usuário
+    // sem hardcodar conta/categoria. A DESCRIÇÃO é sempre a da semana.
+    const modelo =
+      jornadas.find((l) => l.estado === 'realizado') ??
+      jornadas.find((l) => l.estado !== 'cancelado') ??
+      null
+
+    let mudou = false
+    const novos = []
+    for (const s of semanas) {
+      // Semana FECHADA → valor REAL do Ponto (fixo − feriados + HE + dom/fer),
+      // que pode dar ZERO (ex.: fixo consumido por feriados/faltas) e a linha
+      // continua existindo com 0. Semana ainda ABERTA (corrente/futura) →
+      // PREVISÃO só do FIXO semanal, sem descontos de feriado nem HE.
+      const fechada = semanaFechada(s.inicio, s.fim, hojeISO)
+      const valor = valorPrevistoJornada({
+        fechada,
+        fixoSemana: config.fixoSemana,
+        valorReal: valorFechadoDaSemana({
+          excecoes,
+          config,
+          ferias,
+          feriados,
+          inicioISO: s.inicio,
+          fimISO: s.fim,
+        }),
       })
+      const existente = porSemana.get(chaveSemanaTrabalho(s.ano, s.semana))
+      const descNova = descricaoDaSemana(s.semana)
+
+      if (existente) {
+        const payload = {}
+        // Reetiqueta a descrição AUTOMÁTICA antiga ("Pagamento Semanal") para
+        // "Pagamento da semana N" — descrição renomeada à mão é preservada.
+        if (
+          ehDescricaoAutomaticaJornada(existente.descricao) &&
+          existente.descricao.trim() !== descNova
+        ) {
+          payload.descricao = descNova
+        }
+        if (
+          existente.estado === 'previsto' &&
+          !ehValorManualPonto(existente) &&
+          valorDiferente(existente.valor, valor)
+        ) {
+          payload.valor = valor
+        }
+        if (Object.keys(payload).length > 0) {
+          const { error } = await supabase
+            .from('planejamentos')
+            .update(payload)
+            .eq('id', existente.id)
+          if (error) throw new Error(error.message)
+          mudou = true
+        }
+        continue
+      }
+
+      // Linha AUSENTE de semana antiga: não cria (só reconcilia as que existem).
+      if (String(s.dataPrevista) < limitePassado) continue
+
+      const { ano: anoPrev, semana: semPrev } = semanaIso(s.dataPrevista)
+      const payload = {
+        tipo_op: modelo?.tipo_op ?? 'Entrada',
+        descricao: descNova,
+        valor,
+        data_prevista: s.dataPrevista,
+        ano_semana: anoPrev,
+        semana: semPrev,
+        ano_semana_trabalho: s.ano,
+        semana_trabalho: s.semana,
+        estado: 'previsto',
+        origem: 'jornada',
+      }
+      if (modelo?.conta_destino_id) payload.conta_destino_id = modelo.conta_destino_id
+      if (modelo?.destino_padrao) payload.destino_padrao = modelo.destino_padrao
+      if (modelo?.categoria) payload.categoria = modelo.categoria
+      novos.push(payload)
     }
 
-    const updates = await decidirAtualizacoes({
-      linhas: jornadas,
-      hoje: hoje(),
-      buscarValorRealDaSemana,
-    })
-
-    // Valores podem diferir por linha → atualiza individualmente (são poucas;
-    // Supabase não aplica payloads distintos num update em lote único).
-    for (const u of updates) {
-      const { error: errUpd } = await supabase
-        .from('planejamentos')
-        .update({ valor: u.valor })
-        .eq('id', u.id)
-      if (errUpd) throw new Error(errUpd.message)
+    // Insere as semanas faltantes em UM insert em lote (são muitas na 1ª vez).
+    if (novos.length > 0) {
+      const { error } = await supabase.from('planejamentos').insert(novos)
+      if (error) throw new Error(error.message)
+      mudou = true
     }
 
-    if (updates.length > 0 && alvo) await atualizar()
+    if (mudou && alvo) await atualizar()
   }
 
-  // Dispara a reconciliação de forma LAZY no carregamento: após a listagem
-  // montar, verifica (em segundo plano, sem bloquear a renderização) se há
-  // ocorrências jornada a reconciliar. O guarda em useState/useEffect evita
-  // repetir a cada mudança de estado — roda uma vez por montagem do hook.
-  const [reconciliei, setReconciliei] = useState(false)
+  // Dispara a sincronização LAZY no carregamento: após a listagem montar,
+  // verifica (em segundo plano) se há semana a criar/ajustar. O guarda é um
+  // REF marcado SINCRONAMENTE antes do await: no StrictMode (dev) o efeito roda
+  // duas vezes e, com useState, as duas execuções liam `false` e inseriam o
+  // mesmo lote em paralelo (semanas duplicadas). O ref bloqueia a 2ª na hora.
+  const sincronizeiRef = useRef(false)
   useEffect(() => {
-    if (reconciliei || !alvo) return
-    let ativo = true
-    reconciliarComPonto()
-      .catch(() => {
-        // Falha silenciosa: a reconciliação re-tenta na próxima navegação;
-        // nunca quebra a experiência de listar planejamentos.
-      })
-      .finally(() => {
-        if (ativo) setReconciliei(true)
-      })
-    return () => {
-      ativo = false
-    }
+    if (sincronizeiRef.current || !alvo) return
+    sincronizeiRef.current = true
+    sincronizarSemanasJornada().catch(() => {
+      // Falha silenciosa: libera para re-tentar na próxima montagem/navegação;
+      // nunca quebra a experiência de listar planejamentos.
+      sincronizeiRef.current = false
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alvo, reconciliei])
+  }, [alvo])
 
   // Período da semana vigente, SEMPRE pela fonte única semana.js.
   const periodo = useMemo(() => {
@@ -994,7 +1077,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     criarSerieRecorrente,
     cancelarSerieAPartirDe,
     regenerarSerie,
-    reconciliarComPonto,
+    sincronizarSemanasJornada,
     salvarConsumoReal,
     lerConsumoMes,
   }

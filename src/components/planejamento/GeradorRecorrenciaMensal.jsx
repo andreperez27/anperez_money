@@ -107,10 +107,6 @@ export default function GeradorRecorrenciaMensal({
   const [periodicidade, setPeriodicidade] = useState('mensal')
   const [diaSemana, setDiaSemana] = useState(() => diaDaSemanaIso(hoje()))
   const [dataInicio, setDataInicio] = useState(() => hoje())
-  // Vincula a série SEMANAL ao Ponto (origem 'jornada'): cada ocorrência passa
-  // a guardar a semana de trabalho e o valor previsto será substituído pelo
-  // valor real fechado do Ponto assim que a semana encerrar (reconciliação).
-  const [vinculadoPonto, setVinculadoPonto] = useState(false)
   // Tipo do lançamento (Entrada/Saida) EDITÁVEL quando permiteTipoOp. Inicia na
   // prop tipoOp (o formulário genérico abre como 'Entrada' — salário); o
   // Condomínio/DAS-MEI não passam permiteTipoOp → segue fixo 'Saida'.
@@ -148,7 +144,6 @@ export default function GeradorRecorrenciaMensal({
     setPeriodicidade('mensal')
     setDiaSemana(diaDaSemanaIso(hoje()))
     setDataInicio(hoje())
-    setVinculadoPonto(false)
     setTipoOpSel(tipoOp)
   }
 
@@ -195,10 +190,10 @@ export default function GeradorRecorrenciaMensal({
         totalParcelas,
         dataPrimeiraParcela,
         periodicidade: ehSemanal ? 'semanal' : 'mensal',
-        // Vínculo ao Ponto: série semanal opcionalmente nasce como origem
-        // 'jornada' — cada ocorrência guarda a semana de trabalho e o valor é
-        // reconciliado com o fechado do Ponto quando a semana encerrar.
-        origem: ehSemanal && vinculadoPonto ? 'jornada' : 'recorrente',
+        // A entrada semanal do Ponto NÃO nasce mais aqui: virou linha
+        // AUTOMÁTICA independente, criada/reajustada pelo valor fechado do
+        // Ponto (usePlanejamentos). O gerador recorrente cria só 'recorrente'.
+        origem: 'recorrente',
         observacao: montarObservacaoCondominio(previa.detalhamento),
         serieDataTermino: dataTermino || undefined,
       }
@@ -332,14 +327,6 @@ export default function GeradorRecorrenciaMensal({
               Data de início (1ª ocorrência)
               <input style={estilosComuns.input} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
             </label>
-            <label style={estilos.vinculoPonto}>
-              <input
-                type="checkbox"
-                checked={vinculadoPonto}
-                onChange={(e) => setVinculadoPonto(e.target.checked)}
-              />
-              Vincular ao Ponto (ajuste pelo valor fechado)
-            </label>
           </>
         )}
         <label style={{ ...estilos.rotuloCampo, gridColumn: '1 / -1' }}>
@@ -378,7 +365,6 @@ const estilos = {
   rotuloTipo: { color: '#9ca3af', fontSize: '0.8rem' },
   toggle: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
   radioTipo: { display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#e5e7eb', cursor: 'pointer', fontSize: '0.9rem' },
-  vinculoPonto: { display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#e5e7eb', fontSize: '0.8rem', cursor: 'pointer' },
   totalLinha: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', borderRadius: '8px', background: '#111827', border: '1px solid #1f2937' },
   total: { color: '#4ade80', fontSize: '1.1rem' },
 }
