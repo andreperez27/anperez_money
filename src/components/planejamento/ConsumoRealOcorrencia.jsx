@@ -20,6 +20,12 @@ import ModalNovoItemFixo from './ModalNovoItemFixo'
 // save o efetivamente preenchido; o pré-preenchimento lê SÓ as leituras reais
 // já registradas (`aoLerConsumoMes`), nunca a estimativa da observação.
 //
+// AUTO-PREENCHIMENTO da leitura anterior (30/10/2026, opção B): o campo
+// "leitura anterior" sugere a `leitura_atual` do registro mais recente
+// ANTERIOR ao mês (`aoLerLeituraAnterior`) — o morador digita só a leitura
+// atual do medidor. Sempre EDITÁVEL (medidor trocado/zerado); a leitura JÁ
+// REGISTRADA no mês vence sobre a sugestão.
+//
 // ANTES dos campos de Gás/Água o formulário mostra a COMPOSIÇÃO do boleto daquele
 // mês no estilo "Composição da Arrecadação" (só leitura), com a referência
 // n/total das séries, para conferir contra o boleto físico. O "Reajustar item
@@ -42,7 +48,35 @@ function ultimoDia(mesAno) {
 
 const MES_3 = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
 
-export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLerConsumoMes, aoPosMutacao, aoFechar }) {
+// "AGO/2026" a partir de '2026-08' (para rotular a origem da sugestão).
+// Nome distinto do `rotuloMes` local do componente (que é o mês ALVO).
+function rotuloBoleto(mesAno) {
+  const [a, m] = String(mesAno ?? '').split('-').map(Number)
+  if (!a || !m || m < 1 || m > 12) return ''
+  return `${MES_3[m - 1]}/${a}`
+}
+
+// Texto da dica do auto-preenchimento (ou null): só quando a sugestão existe e
+// o campo está vazio OU igual à sugestão — se o morador digitou outra coisa, a
+// dica sumiria e confundiria (ele sabe o que digitou).
+function dicaDeSugestao(sug, campoTexto) {
+  const leitura = Number(sug?.leitura)
+  if (!Number.isFinite(leitura)) return null
+  const valorCampo = lerValor(campoTexto)
+  if (String(campoTexto ?? '').trim() !== '' && valorCampo !== leitura) return null
+  const origem = rotuloBoleto(sug.mes)
+  return ` Sugestão: ${leitura.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m³` +
+    (origem ? ` (leitura atual do boleto de ${origem})` : '')
+}
+
+export default function ConsumoRealOcorrencia({
+  item,
+  aoSalvarConsumoReal,
+  aoLerConsumoMes,
+  aoLerLeituraAnterior,
+  aoPosMutacao,
+  aoFechar,
+}) {
   // Mês da própria ocorrência (data_prevista) — o alvo da correção.
   const mes = String(item?.data_prevista || '').slice(0, 7)
   const [anoAtual, mesAtual] = mes.split('-').map(Number)
@@ -67,6 +101,10 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLer
   const [reais, setReais] = useState({ gas: null, agua: null })
   const [carregandoReais, setCarregandoReais] = useState(false)
 
+  // Sugestão da leitura anterior (leitura_atual do último registro anterior ao
+  // mês, por item): { gas: { leitura, mes }, agua: { leitura, mes } } ou null.
+  const [sugestoes, setSugestoes] = useState({ gas: null, agua: null })
+
   // Estimativas atuais da ocorrência (só para EXIBIR no preview enquanto o
   // item não tem real registrado — jamais vão para o save).
   const gasEstimativa = parseValorObservacao(item?.observacao, '1010') ?? 0
@@ -76,29 +114,37 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLer
     if (!/^\d{4}-\d{2}$/.test(mes) || !aoLerConsumoMes) return undefined
     let ativo = true
     setCarregandoReais(true)
-    aoLerConsumoMes(mes)
-      .then((r) => {
-        if (!ativo) return
-        setReais(r ?? { gas: null, agua: null })
-        const texto = (v) => (Number.isFinite(Number(v)) ? String(v).replace('.', ',') : '')
-        // Só preenche campo ainda vazio (não apaga o que o morador digitou).
-        setGas((atual) => atual || texto(r?.gas?.valor))
-        setAgua((atual) => atual || texto(r?.agua?.valor))
-        setGasLeitAtual((atual) => atual || texto(r?.gas?.leitura_atual))
-        setGasLeitAnterior((atual) => atual || texto(r?.gas?.leitura_anterior))
-        setAguaLeitAtual((atual) => atual || texto(r?.agua?.leitura_atual))
-        setAguaLeitAnterior((atual) => atual || texto(r?.agua?.leitura_anterior))
-      })
-      .catch(() => {
-        if (ativo) setReais({ gas: null, agua: null })
-      })
+    const texto = (v) => (Number.isFinite(Number(v)) ? String(v).replace('.', ',') : '')
+    // Reais do mês + sugestão da leitura anterior correm JUNTOS; ambos falham
+    // independentemente (a sugestão é conveniência, não requisito).
+    Promise.allSettled([
+      aoLerConsumoMes(mes),
+      aoLerLeituraAnterior ? aoLerLeituraAnterior(mes) : Promise.resolve(null),
+    ]).then(([reaisRes, sugRes]) => {
+      if (!ativo) return
+      const ok = (res) => (res.status === 'fulfilled' ? res.value : null)
+      const r = ok(reaisRes) ?? { gas: null, agua: null }
+      const sug = ok(sugRes) ?? { gas: null, agua: null }
+      setReais(r)
+      setSugestoes(sug)
+      // Só preenche campo ainda vazio (não apaga o que o morador digitou).
+      setGas((atual) => atual || texto(r?.gas?.valor))
+      setAgua((atual) => atual || texto(r?.agua?.valor))
+      // Leitura anterior: a JÁ REGISTRADA do mês vence; senão a sugestão
+      // (leitura_atual do último registro anterior). Editável em ambos os casos.
+      const anteriorDe = (registro, suge) => texto(registro?.leitura_anterior ?? suge?.leitura)
+      setGasLeitAnterior((atual) => atual || anteriorDe(r?.gas, sug?.gas))
+      setAguaLeitAnterior((atual) => atual || anteriorDe(r?.agua, sug?.agua))
+      setGasLeitAtual((atual) => atual || texto(r?.gas?.leitura_atual))
+      setAguaLeitAtual((atual) => atual || texto(r?.agua?.leitura_atual))
+    })
       .finally(() => {
         if (ativo) setCarregandoReais(false)
       })
     return () => {
       ativo = false
     }
-  }, [mes, aoLerConsumoMes])
+  }, [mes, aoLerConsumoMes, aoLerLeituraAnterior])
 
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState({ tipo: '', texto: '' })
@@ -132,6 +178,11 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLer
   const aguaRealValor = Number(reais.agua?.valor)
   const gasExib = temGas ? gasNum : (Number.isFinite(gasRealValor) ? gasRealValor : gasEstimativa)
   const aguaExib = temAgua ? aguaNum : (Number.isFinite(aguaRealValor) ? aguaRealValor : aguaEstimativa)
+
+  // Dica do auto-preenchimento da leitura anterior (editável — a sugestão só
+  // aparece enquanto o campo casa com ela).
+  const dicaGas = dicaDeSugestao(sugestoes.gas, gasLeitAnterior)
+  const dicaAgua = dicaDeSugestao(sugestoes.agua, aguaLeitAnterior)
 
   // Composição do boleto: mesmo cálculo do total (calcularTotalCondominio) — a
   // tabela só leitura exibe os FIXOS + os variáveis lendo os inputs vivos. O
@@ -271,10 +322,12 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLer
           <label style={estilos.rotuloCampo}>
             Gás — leitura anterior (m³, opcional)
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={gasLeitAnterior} onChange={(e) => setGasLeitAnterior(e.target.value)} />
+            {dicaGas && <span style={estilos.dicaAuto}>{dicaGas}</span>}
           </label>
           <label style={estilos.rotuloCampo}>
             Água — leitura anterior (m³, opcional)
             <input style={estilosComuns.input} type="text" inputMode="decimal" placeholder="0,00" value={aguaLeitAnterior} onChange={(e) => setAguaLeitAnterior(e.target.value)} />
+            {dicaAgua && <span style={estilos.dicaAuto}>{dicaAgua}</span>}
           </label>
           <label style={estilos.rotuloCampo}>
             Gás — leitura atual (m³, opcional)
@@ -310,6 +363,7 @@ export default function ConsumoRealOcorrencia({ item, aoSalvarConsumoReal, aoLer
 const estilos = {
   grade: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' },
   rotuloCampo: { display: 'flex', flexDirection: 'column', gap: '0.25rem', color: '#9ca3af', fontSize: '0.8rem' },
+  dicaAuto: { fontSize: '0.72rem', color: '#6b7280', lineHeight: 1.25 },
   composicao: {
     borderRadius: '10px',
     background: '#0f1422',

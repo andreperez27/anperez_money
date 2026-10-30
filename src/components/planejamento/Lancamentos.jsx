@@ -69,6 +69,7 @@ export default function Lancamentos({
   acoes,
   aoPosMutacao,
   aoLerConsumoMes,
+  aoLerLeituraAnterior,
 }) {
   const muyEstrecho = useMuyEstrecho()
   const [erroAcao, setErroAcao] = useState('')
@@ -928,6 +929,7 @@ export default function Lancamentos({
           item={consumoRealDe}
           aoSalvarConsumoReal={acoes.salvarConsumoReal}
           aoLerConsumoMes={aoLerConsumoMes}
+          aoLerLeituraAnterior={aoLerLeituraAnterior}
           aoPosMutacao={aoPosMutacao}
           aoFechar={() => setConsumoRealDe(null)}
         />

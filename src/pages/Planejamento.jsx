@@ -83,6 +83,7 @@ export default function Planejamento() {
     cancelarSerieAPartirDe,
     salvarConsumoReal,
     lerConsumoMes,
+    lerLeituraAnteriorSugerida,
     atualizar,
   } = usePlanejamentos({ ano: semanaInicial.ano, semana: semanaInicial.semana })
 
@@ -509,6 +510,7 @@ export default function Planejamento() {
           acoes={acoesCalendario}
           aoPosMutacao={aoPosMutacao}
           aoLerConsumoMes={lerConsumoMes}
+          aoLerLeituraAnterior={lerLeituraAnteriorSugerida}
         />
       ) : (
         <>
@@ -555,6 +557,7 @@ export default function Planejamento() {
         }}
         aoPosMutacao={aoPosMutacao}
         aoLerConsumoMes={lerConsumoMes}
+        aoLerLeituraAnterior={lerLeituraAnteriorSugerida}
       />
         </>
 

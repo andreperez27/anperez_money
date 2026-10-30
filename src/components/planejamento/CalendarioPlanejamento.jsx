@@ -25,6 +25,7 @@ export default function CalendarioPlanejamento({
   acoes,
   aoPosMutacao,
   aoLerConsumoMes,
+  aoLerLeituraAnterior,
 }) {
   const [diaAberto, setDiaAberto] = useState(null)
 
@@ -308,6 +309,7 @@ export default function CalendarioPlanejamento({
               acoes={acoes}
               aoPosMutacao={aoPosMutacao}
               aoLerConsumoMes={aoLerConsumoMes}
+              aoLerLeituraAnterior={aoLerLeituraAnterior}
             />
           </div>
         </div>

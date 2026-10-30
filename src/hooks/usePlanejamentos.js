@@ -630,6 +630,37 @@ export function usePlanejamentos({ ano, semana } = {}) {
     return reais
   }
 
+  // SUGESTÃO da leitura ANTERIOR (30/10/2026, opção B): para o formulário de
+  // consumo real, devolve por item (gas/agua) a `leitura_atual` do registro
+  // mais recente ANTERIOR ao mês — com o mês de origem para exibir a fonte.
+  // "Maior anterior" e não mês-1 de fixo: o boleto pode ser pulado (ex.:
+  // setembro/26 não registrado) e a leitura do medidor continua sendo a última
+  // conhecida (água 09/26 usou a atual de 08/26 = 1314,19 e bateu).
+  async function lerLeituraAnteriorSugerida(mesIso) {
+    const m = String(mesIso ?? '')
+    if (!/^\d{4}-\d{2}$/.test(m)) {
+      throw new Error('Mês inválido para a sugestão de leitura: use o formato YYYY-MM.')
+    }
+    const { data, error } = await supabase
+      .from('condominio_consumo_mensal')
+      .select('mes,mes_consumo,tipo,leitura_atual')
+      .lt('mes', `${m}-01`)
+      .not('leitura_atual', 'is', null)
+      .order('mes', { ascending: false })
+      .limit(50)
+    if (error) throw new Error(error.message)
+    const sugestao = { gas: null, agua: null }
+    for (const c of data ?? []) {
+      if (c?.tipo !== 'gas' && c?.tipo !== 'agua') continue
+      const leitura = Number(c.leitura_atual)
+      if (sugestao[c.tipo] === null && Number.isFinite(leitura)) {
+        // mes = mês do BOLETO (a fonte que o morador confere).
+        sugestao[c.tipo] = { leitura, mes: String(c.mes ?? '').slice(0, 7) }
+      }
+    }
+    return sugestao
+  }
+
   // SALVAR CONSUMO REAL DE GÁS/ÁGUA E AJUSTAR A PREVISÃO DO MÊS (ADENDO
   // PARTE 2 — 13/09/2026 + REGISTRO SEPARADO — 22/09/2026, decisão com André).
   // Gás e Água chegam em momentos diferentes: cada save grava em
@@ -1094,5 +1125,6 @@ export function usePlanejamentos({ ano, semana } = {}) {
     sincronizarSemanasJornada,
     salvarConsumoReal,
     lerConsumoMes,
+    lerLeituraAnteriorSugerida,
   }
 }
