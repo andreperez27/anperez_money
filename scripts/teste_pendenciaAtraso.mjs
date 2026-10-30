@@ -57,6 +57,19 @@ caso('série semanal soma 7 dias', () => {
   )
 })
 
+caso('migração explícita usa +7 da própria ocorrência (não a próxima segunda)', () => {
+  // "Jogar p/ próx. semana" numa ocorrência de 19/10 (semana 43) vai para
+  // 26/10 (semana 44) — mesmo com hoje 30/10, que daria 02/11 (semana 45).
+  assert.strictEqual(
+    proximaDataPendente({ data_prevista: '2026-10-19' }, '2026-10-30', { forcarSemanal: true }),
+    '2026-10-26',
+  )
+  assert.strictEqual(
+    proximaDataPendente({ data_prevista: '2026-10-21' }, '2026-10-30', { forcarSemanal: true }),
+    '2026-10-28',
+  )
+})
+
 caso('rótulo usa a segunda da semana de origem', () => {
   assert.strictEqual(rotuloSemanaAtraso('2026-09-16'), 'Pendente (atraso da semana de 14/09)')
 })

@@ -37,8 +37,17 @@ export function proximaSegunda(hojeISO) {
 //   • série mensal/parcelada (serie_id, demais casos) → mesmo dia no mês
 //     seguinte, com clamp no último dia do mês (mesma regra D2 de parcelas.js);
 //   • avulso (sem serie_id) → próxima segunda-feira após `hojeISO`.
-export function proximaDataPendente(item, hojeISO) {
+//
+// `forcarSemanal` (migração explícita "Jogar p/ próx. semana"): move SEMPRE
+// para data_prevista + 7 dias, relativo à própria ocorrência — e não à próxima
+// segunda depois de hoje. As linhas automáticas do Ponto perderam o serie_id
+// (migration 43), então sem isso o botão pulava semanas (ex.: item de 19/10
+// virava 02/11, caindo na semana 45 em vez da 44).
+export function proximaDataPendente(item, hojeISO, { forcarSemanal = false } = {}) {
   const base = String(item?.data_prevista || hojeISO)
+  if (forcarSemanal) {
+    return isoDe(tsDe(base) + 7 * MS_DIA)
+  }
   if (item?.serie_id) {
     if (item.periodicidade === 'semanal') {
       return isoDe(tsDe(base) + 7 * MS_DIA)

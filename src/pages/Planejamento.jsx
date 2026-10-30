@@ -75,6 +75,7 @@ export default function Planejamento() {
     realizarPlanejamento,
     realizarPlanejamentoCartao,
     migrarAtraso,
+    reverterMigracao,
     criarPlanejamento,
     criarSerieParcelada,
     criarSerieRecorrente,
@@ -433,6 +434,7 @@ export default function Planejamento() {
     realizar: comRecarga(realizarPlanejamento),
     realizarCartao: comRecarga(realizarPlanejamentoCartao),
     migrarAtraso: comRecarga(migrarAtraso),
+    reverterMigracao: comRecarga(reverterMigracao),
     realizarFatura: aoPagarFatura,
     salvarConsumoReal: comRecarga(salvarConsumoReal),
     exportarPdf: comRecarga((item) => Promise.resolve()),
@@ -450,6 +452,7 @@ export default function Planejamento() {
     realizarPlanejamento,
     realizarPlanejamentoCartao,
     migrarAtraso,
+    reverterMigracao,
     aoPagarFatura,
     salvarConsumoReal,
   ])
@@ -546,6 +549,7 @@ export default function Planejamento() {
           realizar: comRecarga(realizarPlanejamento),
           realizarCartao: comRecarga(realizarPlanejamentoCartao),
           migrarAtraso: comRecarga(migrarAtraso),
+          reverterMigracao: comRecarga(reverterMigracao),
           realizarFatura: aoPagarFatura,
           salvarConsumoReal: comRecarga(salvarConsumoReal),
         }}

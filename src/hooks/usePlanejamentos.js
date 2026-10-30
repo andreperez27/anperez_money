@@ -453,6 +453,19 @@ export function usePlanejamentos({ ano, semana } = {}) {
     return data
   }
 
+  // REVERTER a migração explícita (migration 49): apaga a pendência criada e
+  // devolve a ocorrência de origem para 'previsto'. A RPC revalida no servidor
+  // (origem precisa estar 'migrado' e a pendência ainda 'previsto').
+  async function reverterMigracao(origemId) {
+    const { data, error } = await supabase.rpc('reverter_migracao', {
+      p_origem_id: origemId,
+    })
+    if (error) throw new Error(error.message)
+
+    await atualizar()
+    return data
+  }
+
   // Realizar em CARTÃO (Efetivação Cartão — migration 19): transforma UMA
   // previsão 'previsto' (de DESPESA) em COMPRA no cartão de crédito via RPC
   // atômica. O banco valida estado/posse do cartão no servidor e reutiliza a
@@ -1073,6 +1086,7 @@ export function usePlanejamentos({ ano, semana } = {}) {
     realizarPlanejamento,
     realizarPlanejamentoCartao,
     migrarAtraso,
+    reverterMigracao,
     criarSerieParcelada,
     criarSerieRecorrente,
     cancelarSerieAPartirDe,

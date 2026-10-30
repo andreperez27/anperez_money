@@ -399,7 +399,9 @@ export default function Lancamentos({
   // cheio para a próxima ocorrência via RPC idempotente, com confirmação
   // mostrando valor e destino — decisão financeira equivalente a realizar.
   async function aoMigrarAtraso(item) {
-    const dataNova = proximaDataPendente(item, hoje())
+    // Migração explícita = sempre +7 dias da PRÓPRIA ocorrência ("próxima
+    // semana" dela), não a próxima segunda depois de hoje.
+    const dataNova = proximaDataPendente(item, hoje(), { forcarSemanal: true })
     const ddmm = (iso) => `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}`
     const ok = window.confirm(
       `Mover ${formatoReal.format(Number(item.valor))} (previsto de ${ddmm(item.data_prevista)}) pra ${ddmm(dataNova)}?`,
@@ -411,6 +413,24 @@ export default function Lancamentos({
       await aoPosMutacao?.()
     } catch (e) {
       setErroAcao(`Não foi possível migrar: ${e.message}`)
+    }
+  }
+
+  // REVERTER a migração explícita (migration 49): apaga a pendência criada e
+  // devolve a ocorrência de origem para 'previsto'. Funciona a partir da
+  // pendência (usa origem_atraso_id) ou da própria linha migrada (usa o id).
+  async function aoReverterMigracao(item) {
+    const origemId = item.origem_atraso_id || item.id
+    const ok = window.confirm(
+      `Reverter a migração de ${formatoReal.format(Number(item.valor))}? A pendência será apagada e a ocorrência original volta para "previsto".`,
+    )
+    if (!ok) return
+    setErroAcao('')
+    try {
+      await acoes.reverterMigracao(origemId)
+      await aoPosMutacao?.()
+    } catch (e) {
+      setErroAcao(`Não foi possível reverter: ${e.message}`)
     }
   }
 
@@ -1258,7 +1278,13 @@ export default function Lancamentos({
                               <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
                             )}
                             {item.estado === 'previsto' && String(item.data_prevista) < dataHoje && (
-                              <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
+                              <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima semana desta ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
+                            )}
+                            {item.origem_atraso_id && item.estado === 'previsto' && (
+                              <button type="button" onClick={() => aoReverterMigracao(item)} title="Apagar a pendência e devolver a ocorrência original para previsto" style={estilosItem.botaoAcaoNeutro}>Reverter migração</button>
+                            )}
+                            {item.estado === 'migrado' && (
+                              <button type="button" onClick={() => aoReverterMigracao(item)} title="Apagar a pendência e devolver esta ocorrência para previsto" style={estilosItem.botaoAcaoNeutro}>Reverter migração</button>
                             )}
                             {ehCondominioPrevisto && (
                               <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
@@ -1381,7 +1407,13 @@ export default function Lancamentos({
                             <button type="button" onClick={() => aoAbrirRealizar(item)} title="Lançar em conta (realizar)" style={estilosItem.botaoAcaoRealizar}>Lançar</button>
                           )}
                           {item.estado === 'previsto' && String(item.data_prevista) < dataHoje && (
-                            <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
+                            <button type="button" onClick={() => aoMigrarAtraso(item)} title="Mover o valor cheio para a próxima semana desta ocorrência (migração total do atraso)" style={estilosItem.botaoAcaoMigrar}>Jogar p/ próx. semana</button>
+                          )}
+                          {item.origem_atraso_id && item.estado === 'previsto' && (
+                            <button type="button" onClick={() => aoReverterMigracao(item)} title="Apagar a pendência e devolver a ocorrência original para previsto" style={estilosItem.botaoAcaoNeutro}>Reverter migração</button>
+                          )}
+                          {item.estado === 'migrado' && (
+                            <button type="button" onClick={() => aoReverterMigracao(item)} title="Apagar a pendência e devolver esta ocorrência para previsto" style={estilosItem.botaoAcaoNeutro}>Reverter migração</button>
                           )}
                           {ehCondominioPrevisto && (
                             <button type="button" onClick={() => setConsumoRealDe(item)} title="Corrigir o valor desta ocorrência pelo consumo real de Gás/Água (composição do boleto)" style={estilosItem.botaoAcaoConsumo}>Inserir consumo real</button>
