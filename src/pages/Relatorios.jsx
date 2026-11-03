@@ -22,7 +22,9 @@ import { gerarPdfRelatorio } from '../lib/gerarPdfRelatorio'
 import { gerarPdfConsumos, montarSecoesConsumos } from '../lib/gerarPdfConsumos'
 import { gerarPdfControlePonto } from '../lib/gerarPdfControlePonto'
 import { useRelatorioControlePonto } from '../hooks/useRelatorioControlePonto'
+import { useRelatorioMensal } from '../hooks/useRelatorioMensal'
 import AbaControlePonto from '../components/relatorios/AbaControlePonto'
+import { gerarPdfRelatorioMensal } from '../lib/gerarPdfRelatorioMensal'
 import { abrirGuiaPrevia, entregarPdf } from '../lib/previaPdf'
 import { TODAS_CATEGORIAS } from '../lib/relatorioPdf'
 
@@ -73,6 +75,20 @@ export default function Relatorios() {
 
   // Relatório consolidado em PDF (template único semana/mês).
   const { gerar, carregando: gerandoPdf } = useRelatorioPdf()
+
+  async function aoExportarPdfMensal() {
+    const abaPrevia = abrirGuiaPrevia()
+    setErroPdf('')
+    try {
+      if (relatorioMensal.erro) throw new Error(relatorioMensal.erro)
+      if (!relatorioMensal.dados) throw new Error('Ainda carregando os dados do mês…')
+      const { doc, nomeArquivo } = gerarPdfRelatorioMensal({ periodo: periodoMensal, dados: relatorioMensal.dados, previa: true })
+      entregarPdf(doc, nomeArquivo, abaPrevia)
+    } catch (e) {
+      abaPrevia?.close()
+      setErroPdf(e.message)
+    }
+  }
 
   async function aoExportarPdf() {
     // Aba "Acordo trabalhista": o acordo é um FATO fechado — fica FORA da
@@ -222,6 +238,14 @@ export default function Relatorios() {
   const patrimonio = useRelatorioPatrimonio(periodo ?? undefined)
   // Aba "Controle de ponto": mesmos dados da tela (aba ativa + período).
   const controlePonto = useRelatorioControlePonto(periodo ?? undefined)
+  // Aba "Relatório Mensal": dados consolidados do MÊS CIVIL que contém o
+  // período visível (o PDF é mensal, então sempre mês inteiro — independente
+  // de o seletor estar em Semana/Trimestre/etc.). Sem alterar o seletor.
+  const periodoMensal = useMemo(
+    () => (periodo ? definirPeriodo('mes', periodo.inicio) : definirPeriodo('mes', hoje())),
+    [periodo],
+  )
+  const relatorioMensal = useRelatorioMensal(periodoMensal)
 
   return (
     <div style={estilosComuns.conteudo}>
@@ -233,26 +257,47 @@ export default function Relatorios() {
             Em breve você analisa seus números por período, categoria e conta.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={aoExportarPdf}
-          disabled={gerandoPdf}
-          title="Visualizar o relatório em PDF antes de baixar"
-          style={{ ...estilos.botaoPdf, ...(gerandoPdf ? estilos.botaoPdfCarregando : {}) }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            aria-hidden="true"
-            style={{ stroke: 'currentColor', strokeWidth: 2, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={aoExportarPdfMensal}
+            disabled={relatorioMensal.carregando}
+            title="Gerar o Relatório Mensal em PDF (horas, recebimentos, movimentações, faturas, saldos)"
+            style={{ ...estilos.botaoPdf, ...(relatorioMensal.carregando ? estilos.botaoPdfCarregando : {}) }}
           >
-            <path d="M12 3v12" />
-            <path d="M7 10l5 5 5-5" />
-            <path d="M4 21h16" />
-          </svg>
-          <span>{gerandoPdf ? 'Gerando…' : 'Exportar PDF'}</span>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              style={{ stroke: 'currentColor', strokeWidth: 2, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }}
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+            </svg>
+            <span>{relatorioMensal.carregando ? 'Carregando…' : 'Relatório Mensal'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={aoExportarPdf}
+            disabled={gerandoPdf}
+            title="Visualizar o relatório em PDF antes de baixar"
+            style={{ ...estilos.botaoPdf, ...(gerandoPdf ? estilos.botaoPdfCarregando : {}) }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              style={{ stroke: 'currentColor', strokeWidth: 2, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }}
+            >
+              <path d="M12 3v12" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M4 21h16" />
+            </svg>
+            <span>{gerandoPdf ? 'Gerando…' : 'Exportar PDF'}</span>
+          </button>
+        </div>
       </header>
 
       {erroPdf && <p style={estilos.erro}>{erroPdf}</p>}
