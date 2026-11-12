@@ -447,11 +447,26 @@ export function calcularRecebidoHoras({ planejamentosRealizados = [], fixoSemana
     // Grupo SÓ de pendências (origem fora do período ou migrada): cada uma
     // vale a % explícita da sua nota; sem nota, integral sem extra além do
     // fixo. Com origem no grupo, manda a regra do grupo (inalterada).
+    //
+    // O FIXO é da SEMANA, não da linha: o grupo inteiro só pode consumir o
+    // fixo UMA VEZ. Por isso a base é um POOL que se esgota na ordem das
+    // linhas — a primeira que chega consome a sua parte do fixo e a que
+    // exceder vira extra; as seguintes só ganham o que sobrar acima do
+    // fixo JÁ consumido. Sem esse teto, um grupo com duas pendências sem
+    // nota (caso real de 12/11/2026: 2.050 + 120 da semana 39) descontaba
+    // 1.650 de cada linha e a diferença de 120 ficava com extra 0 — quando
+    // ela é 100% hora extra (o total da semana, 2.170 = 1.650 + 520 de
+    // extras, bate com o fechamento do Ponto).
     if (grupo.length > 0 && grupo.every((g) => g.ehPendente)) {
+      let poolBase = baseSemana
       for (const g of grupo) {
         const pct = pctDaNota(g.nota_pendencia)
         g.fracao = pct ?? (Number(g.valorPrevisto) > 0 ? g.valor / Number(g.valorPrevisto) : 1)
-        const fatia = arre2(Math.max(0, g.valor - baseSemana * (pct ?? 1)))
+        // Base desta linha: a fração declarada na nota (ou o fixo inteiro
+        // quando não há nota), limitada pelo que ainda resta do fixo.
+        const baseDaLinha = Math.min(baseSemana * (pct ?? 1), poolBase)
+        poolBase = arre2(poolBase - baseDaLinha)
+        const fatia = arre2(Math.max(0, g.valor - baseDaLinha))
         g.valorHorasExtras = arre2(g.valorHorasExtras + fatia)
         totalValorHorasExtras = arre2(totalValorHorasExtras + fatia)
       }

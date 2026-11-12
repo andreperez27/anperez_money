@@ -62,6 +62,7 @@ scripts/relatorio_migracao.md
 scripts/relatorio_migracao_cartoes.md
 scripts/relatorio_migracao_recebido.md
 scripts/relatorio_importacao_ponto_2025.md
+scripts/relatorio_pendente_recebimento.json
 scripts/backups/
 scripts/recebidos_para_planilha.json
 

@@ -1410,5 +1410,40 @@ caso('pendente sozinha (origem fora do período): sem crash, fração integral',
   assert.equal(r.recebimentos[0].fracao, 1)
 })
 
+caso('semana 39 (12/11/2026): a diferença de 120 do pagamento é 100% hora extra', () => {
+  const periodo = definirPeriodo('mes', '2026-11-01')
+  // Caso real: a semana 39 (21/09-27/09) tinha 2.170 previstos (1.650 de
+  // fixo + 520 de extras: 3 HE de 40 + 1 domingo de 400). Entrou 2.050 em
+  // 05/11 e a DIFERENÇA de 120 em 12/11 (pendência que herda a semana pelo
+  // encadeamento). O fixo é DA SEMANA: a 1ª linha consome os 1.650 e a
+  // diferença entra inteira como hora extra (2.170 - 1.650 = 520, que é
+  // exatamente o que o Ponto daquela semana fechou).
+  const plan = [
+    entrada('2026-11-02', 2170, {
+      lancamento_id: 5001,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 39,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000010',
+    }),
+    entrada('2026-11-09', 120, {
+      lancamento_id: 5002,
+      ano_semana_trabalho: 2026,
+      semana_trabalho: 39,
+      origem_atraso_id: '00000000-0000-0000-0000-000000000011',
+    }),
+  ]
+  const r = calcularRecebidoHoras({
+    planejamentosRealizados: plan,
+    fixoSemana: FIXO,
+    periodo,
+    dataRealPorLancamento: { 5001: '2026-11-05', 5002: '2026-11-12' },
+    valorRealPorLancamento: { 5001: 2050, 5002: 120 },
+  })
+  assert.equal(r.totalRecebido, 2170)
+  // 2.050 - 1.650 = 400 na 1ª linha; a diferença de 120 é toda extra.
+  assert.deepStrictEqual(r.recebimentos.map((i) => i.valorHorasExtras), [400, 120])
+  assert.equal(r.totalValorHorasExtras, 520)
+})
+
 console.log(`\n${passou} testes passaram, ${falhou} falharam.`)
 if (falhou > 0) process.exit(1)
