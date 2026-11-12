@@ -14,7 +14,12 @@
 // nenhum float participa das decisões de valor. O banco segue numeric(12,2).
 //
 // Regras aprovadas na modelagem E5-A:
-//   D1 — o resto da divisão vai às PRIMEIRAS parcelas, 1 centavo cada;
+//   D1 — o resto da divisão vai TODO para a PRIMEIRA parcela; as demais ficam
+//        com a parte inteira (é a regra da ADMINISTRADORA do cartão: a 1ª
+//        parcela leva a sobra e as outras são iguais). Confirmado em 35 das
+//        36 compras parceladas do banco (12/11/2026) — as 7 em que a regra
+//        antiga erra foram importadas do app antigo com os valores REAIS da
+//        fatura. Ajustado pela migration 53.
 //   D2 — datas ancoradas no dia da 1ª parcela com clamp no fim do mês:
 //        31/01 → 28/02 → 31/03 (o dia original permanece a intenção).
 // ============================================================================
@@ -47,8 +52,11 @@ function isoDe(ts) {
 }
 
 // ----------------------------------------------------------------------------
-// 1. DIVISÃO — primeiras parcelas recebem o restante dos centavos (D1)
+// 1. DIVISÃO — a PRIMEIRA parcela recebe o restante dos centavos (D1)
 // ----------------------------------------------------------------------------
+// Regra da administradora do cartão: a 1ª parcela leva a sobra INTEIRA e as
+// demais ficam com a parte inteira. Ex.: 313,28 em 10x -> 31,40 + 9 x 31,32.
+//
 // Garantia: soma das parcelas === totalCentavos, sempre, sem float.
 // Rejeita totais menores que a quantidade: alguma parcela sairia com 0 centavo
 // e o banco exige valor > 0 (CHECK da migration 08).
@@ -71,10 +79,8 @@ export function dividirValorEmParcelas(totalCentavos, quantidade) {
   const base = Math.floor(totalCentavos / quantidade)
   const resto = totalCentavos % quantidade
 
-  const parcelas = new Array(quantidade)
-  for (let i = 0; i < quantidade; i += 1) {
-    parcelas[i] = i < resto ? base + 1 : base
-  }
+  const parcelas = new Array(quantidade).fill(base)
+  parcelas[0] = base + resto
   return parcelas
 }
 

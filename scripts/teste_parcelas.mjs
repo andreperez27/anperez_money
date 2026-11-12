@@ -41,7 +41,7 @@ teste('TESTE D1 — 150000 / 10 → dez parcelas de 15000', () => {
   assert.deepEqual(dividirValorEmParcelas(150000, 10), new Array(10).fill(15000))
 })
 
-teste('TESTE D2 — 100000 / 3 → resto nas primeiras (33334, 33333, 33333)', () => {
+teste('TESTE D2 — 100000 / 3 → resto na 1ª (33334, 33333, 33333)', () => {
   assert.deepEqual(dividirValorEmParcelas(100000, 3), [33334, 33333, 33333])
 })
 
@@ -53,17 +53,62 @@ teste('TESTE D4 — 1 / 1 → [1]', () => {
   assert.deepEqual(dividirValorEmParcelas(1, 1), [1])
 })
 
+// Caso real de 12/11/2026: compra de R$ 313,28 em 10x no cartão PJ. A
+// administradora fatura 31,40 na PRIMEIRA parcela e 31,32 nas demais —
+// a regra antiga (resto de 1 centavo nas primeiras) daria 31,33 x8 + 31,32 x2.
+teste('TESTE D10 — 31328 / 10 → a 1ª leva o resto inteiro (3140 + 9 x 3132)', () => {
+  assert.deepEqual(dividirValorEmParcelas(31328, 10), [
+    3140, 3132, 3132, 3132, 3132, 3132, 3132, 3132, 3132, 3132,
+  ])
+})
+
+// Caso real de 06/07/2026 (Centauro, R$ 489,96 em 8x): a fatura real do
+// cartão foi 61,28 + 7 x 61,24.
+teste('TESTE D11 — 48996 / 8 → a 1ª leva o resto inteiro (6128 + 7 x 6124)', () => {
+  assert.deepEqual(dividirValorEmParcelas(48996, 8), [
+    6128, 6124, 6124, 6124, 6124, 6124, 6124, 6124,
+  ])
+})
+
+// A regra da administradora só difere da antiga quando o resto é >= 2
+// centavos: com resto 0 ou 1 as duas regras coincidem.
+teste('TESTE D12 — resto >= 2: só a 1ª parcela difere da regra antiga', () => {
+  const antigo = (total, qtd) => {
+    const base = Math.floor(total / qtd)
+    const resto = total % qtd
+    return [...new Array(resto).fill(base + 1), ...new Array(qtd - resto).fill(base)]
+  }
+  for (const [total, qtd] of [[31328, 10], [48996, 8], [10000, 6], [9999, 7]]) {
+    const base = Math.floor(total / qtd)
+    const resto = total % qtd
+    const novo = dividirValorEmParcelas(total, qtd)
+    const velho = antigo(total, qtd)
+    // a 1ª leva o resto INTEIRO (a antiga levava 1 centavo)
+    assert.equal(novo[0], base + resto)
+    assert.equal(velho[0], base + 1)
+    // as demais ficam com a parte inteira, iguais entre si
+    for (let i = 1; i < qtd; i += 1) {
+      assert.equal(novo[i], base)
+    }
+  }
+})
+
 teste('TESTE D5 — soma das parcelas === total (varredura determinística)', () => {
-  const totais = [1, 2, 7, 99, 100, 101, 999, 1500, 150000, 123456789]
+  const totais = [1, 2, 7, 99, 100, 101, 999, 1500, 31328, 48996, 150000, 123456789]
   for (const total of totais) {
     for (let qtd = 1; qtd <= Math.min(total, 13); qtd += 1) {
       const parcelas = dividirValorEmParcelas(total, qtd)
       assert.equal(parcelas.length, qtd)
       assert.equal(parcelas.reduce((s, p) => s + p, 0), total)
-      // Resto vai às primeiras: diferença entre consecutivas é no máximo 1
-      for (let i = 1; i < parcelas.length; i += 1) {
-        assert.ok(parcelas[i - 1] - parcelas[i] >= 0)
-        assert.ok(parcelas[i - 1] - parcelas[i] <= 1)
+      // Regra da administradora: a 1ª parcela é a MAIOR (carrega o resto
+      // inteiro) e todas as demais são iguais entre si.
+      if (qtd >= 2) {
+        assert.ok(parcelas[0] >= parcelas[1])
+        for (let i = 2; i < parcelas.length; i += 1) {
+          assert.equal(parcelas[i], parcelas[1])
+        }
+        // e o quanto a 1ª carrega a mais é exatamente o resto da divisão
+        assert.equal(parcelas[0] - parcelas[1], total % qtd)
       }
     }
   }
