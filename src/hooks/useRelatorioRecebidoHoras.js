@@ -159,18 +159,32 @@ export function useRelatorioRecebidoHoras(periodo) {
     const porData = agrupamentoPorTipoDePeriodo(periodo?.tipo) === 'data'
 
     // Média do período (pedido do André): divide SÓ pelos períodos que TÊM
-    // lançamento — Mês → nº de PAGAMENTOS realizados (dados.recebimentos: UMA
-    // linha por pagamento — correção 11/09/2026, o divisor era porSemana.length
-    // e dois pagamentos na mesma semana civil contavam como um só, inflando a
-    // média ex.: 4180/1=4180 em vez de 4180/2=2090); demais períodos
+    // lançamento — Mês → nº de SEMANAS DE TRABALHO distintas entre os
+    // recebimentos (dados.recebimentos: uma linha por pagamento — quando dois
+    // pagamentos cobrem a MESMA semana de trabalho, somam-se e a semana conta
+    // uma única vez, ex.: 2.170/1 e não 2.170/2). Pendências herdadas de
+    // atraso (ex.: os R$ 120,00 da semana 39) usam a semana de trabalho de
+    // ORIGEM (referente), não a semana civil de recebimento — por isso pode
+    // haver MAIS semanas do que semanas civis no mês. Demais períodos
     // (Trimestre/Semestre/Ano/Personalizado) → meses com lançamento
     // (dados.porMes). Assim o ano vigente não dilui por 12: em setembro (9º mês
     // com dado) a média anual divide por 9; a semanal divide pelo nº de
-    // pagamentos realizados.
+    // semanas de trabalho distintas com pagamento.
     let cardMedia = null
     if (temData) {
       if (porData) {
-        const n = dados.recebimentos.length
+        // Média por semana de TRABALHO (e não por pagamento nem por semana
+        // civil de recebimento): quando um pagamento é pendência herdada de
+        // atraso (ex.: os R$ 120,00 da semana 39 recebidos em 12/11), ele
+        // pertence à semana de trabalho de origem — e soma com o restante
+        // daquela semana (R$ 2.050,00 → R$ 2.170,00). A semana de trabalho
+        // é a gravada na ocorrência (referente); sem ela (seguro, Netflix,
+        // avulsos) cai na semana civil de recebimento. Assim meses anteriores
+        // não mudam de dados — só o divisor do card passa a contar semanas
+        // de trabalho distintas (pode haver MAIS semanas do que semanas
+        // civis, devido aos lançamentos de semanas em atraso).
+        const chaveDaSemana = (r) => r.referente ?? r.semana
+        const n = new Set(dados.recebimentos.map(chaveDaSemana)).size
         if (n > 0) cardMedia = { label: 'Média semanal', valor: formatoReal.format(dados.totalRecebido / n) }
       } else {
         const n = dados.porMes.length
